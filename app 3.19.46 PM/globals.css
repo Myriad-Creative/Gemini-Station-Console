@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body { @apply bg-ink text-white; }
+
+a { @apply text-accent; }
+.container { @apply max-w-7xl mx-auto px-4; }
+.page-title { @apply text-2xl font-semibold mb-4; }
+.card { @apply bg-panel rounded-lg border border-white/10 p-4; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.badge { @apply text-xs px-2 py-1 rounded bg-white/10; }
+.btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded bg-accent text-black hover:brightness-110 transition; }
+.input { @apply bg-white/5 border border-white/10 rounded px-3 py-2 w-full; }
+.select { @apply bg-white/5 border border-white/10 rounded px-3 py-2; }
+.label { @apply text-sm text-white/70; }
+.table { @apply w-full text-sm; }
+.table th { @apply text-left font-semibold border-b border-white/10 pb-2; }
+.table td { @apply border-b border-white/5 py-2; }
+.cursor-pointer { cursor: pointer; }
+
+/* tooltip for mods */
+.tooltip { position: absolute; top: 100%; left: 0; z-index: 50; }
+.tooltip-card { @apply bg-panel border border-white/10 rounded p-3 shadow-xl w-80; }
