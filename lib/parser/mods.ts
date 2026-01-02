@@ -6,9 +6,7 @@ type RawMods = {
   mods: Array<any> | Record<string, any>;
 } | Array<any>;
 
-export function parseMods(repoRoot: string): Mod[] {
-  const p = path.join(repoRoot, "data", "database", "mods", "Mods.json");
-  const data = readJson<RawMods>(p);
+function normalizeMods(data: RawMods | null): Mod[] {
   if (!data) return [];
   const arr: any[] = Array.isArray(data) ? data : (Array.isArray((data as any).mods) ? (data as any).mods : Object.values((data as any).mods || {}));
   const mods: Mod[] = arr.map((m: any) => {
@@ -43,4 +41,14 @@ export function parseMods(repoRoot: string): Mod[] {
     };
   });
   return mods;
+}
+
+export function parseMods(repoRoot: string): Mod[] {
+  const p = path.join(repoRoot, "data", "database", "mods", "Mods.json");
+  const data = readJson<RawMods>(p);
+  return normalizeMods(data);
+}
+
+export function parseModsFromData(data: RawMods | null): Mod[] {
+  return normalizeMods(data);
 }

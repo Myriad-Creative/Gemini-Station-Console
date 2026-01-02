@@ -1,5 +1,5 @@
-export function parseTresFields(source: string): Record<string, string | number> {
-  const out: Record<string, string | number> = {};
+export function parseTresFields(source: string): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
   const lines = source.split(/\r?\n/);
   for (const line of lines) {
     const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.+?)\s*$/);

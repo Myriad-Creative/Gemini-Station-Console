@@ -11,6 +11,7 @@ export async function GET() {
     return NextResponse.json({
       lastLoaded: store.lastLoaded,
       repoRoot: store.repoRoot,
+      dataUrls: store.dataUrls,
       errors: store.errors,
       ...summary
     });
@@ -18,6 +19,7 @@ export async function GET() {
     return NextResponse.json({
       lastLoaded: null,
       repoRoot: null,
+      dataUrls: null,
       errors: [String(e?.message || e)],
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });

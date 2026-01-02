@@ -3,16 +3,18 @@ import os from "os";
 import path from "path";
 import JSZip from "jszip";
 import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
-import { getConfig } from "@lib/config";
-import { parseMods } from "@parser/mods";
-import { parseAbilities } from "@parser/abilities";
-import { parseMobs } from "@parser/mobs";
-import { parseMissions } from "@parser/missions";
-import { parseItems } from "@parser/items";
+import { DataUrls, getConfig } from "@lib/config";
+import { parseMods, parseModsFromData } from "@parser/mods";
+import { parseAbilities, parseAbilitiesFromData } from "@parser/abilities";
+import { parseMobs, parseMobsFromData } from "@parser/mobs";
+import { parseMissions, parseMissionsFromData } from "@parser/missions";
+import { parseItems, parseItemsFromData } from "@parser/items";
 import { computeOutliers } from "@parser/stats";
+import { readJsonFromUrl } from "@parser/fileutils";
 
 type Store = {
   repoRoot: string | null;
+  dataUrls: DataUrls | null;
   mods: Mod[];
   abilities: Ability[];
   mobs: Mob[];
@@ -26,6 +28,7 @@ const G = global as any;
 if (!G.__GEMINI_STORE__) {
   G.__GEMINI_STORE__ = <Store>{
     repoRoot: getConfig().repo_root,
+    dataUrls: getConfig().data_urls,
     mods: [],
     abilities: [],
     mobs: [],
@@ -40,8 +43,10 @@ export function getStore() { return STORE; }
 
 export async function warmupLoadIfNeeded(): Promise<void> {
   const cfg = getConfig();
-  if (cfg.repo_root && (!STORE.lastLoaded || STORE.repoRoot !== cfg.repo_root)) {
-    try { await loadAll(cfg.repo_root); } catch {}
+  const cfgKey = JSON.stringify({ repo: cfg.repo_root, urls: cfg.data_urls });
+  const storeKey = JSON.stringify({ repo: STORE.repoRoot, urls: STORE.dataUrls });
+  if (!STORE.lastLoaded || cfgKey !== storeKey) {
+    try { await loadAll({ repoRoot: cfg.repo_root ?? undefined, dataUrls: cfg.data_urls }); } catch {}
   }
 }
 
@@ -49,17 +54,47 @@ export function setRepoRoot(p: string | null) {
   STORE.repoRoot = p;
 }
 
-export async function loadAll(repoRoot: string): Promise<Store> {
+type LoadOptions = { repoRoot?: string | null; dataUrls?: DataUrls | null };
+
+async function fetchJson<T = any>(url?: string | null): Promise<T | null> {
+  if (!url) return null;
+  return await readJsonFromUrl<T>(url);
+}
+
+export async function loadAll(repoRootOrOpts: string | LoadOptions): Promise<Store> {
   STORE.errors = [];
-  STORE.repoRoot = repoRoot;
+  const repoRoot = typeof repoRootOrOpts === "string" ? repoRootOrOpts : (repoRootOrOpts?.repoRoot ?? null);
+  const dataUrls = typeof repoRootOrOpts === "string" ? null : (repoRootOrOpts?.dataUrls ?? null);
+
+  STORE.repoRoot = repoRoot || null;
+  STORE.dataUrls = dataUrls || null;
 
   try {
-    const mobs = parseMobs(repoRoot);
+    const useRemote = dataUrls && Object.values(dataUrls).some(Boolean);
+
+    const [modsData, itemsData, mobsData, missionsData, abilitiesData] = await Promise.all([
+      fetchJson(dataUrls?.mods),
+      fetchJson(dataUrls?.items),
+      fetchJson(dataUrls?.mobs),
+      fetchJson(dataUrls?.missions),
+      fetchJson(dataUrls?.abilities)
+    ]);
+
+    const mobs = useRemote ? parseMobsFromData(mobsData) : (repoRoot ? parseMobs(repoRoot) : []);
+    if (useRemote && dataUrls?.mobs && !mobs.length) STORE.errors.push(`Loaded zero mobs from ${dataUrls.mobs}`);
     const mobIndex = new Map(mobs.map(m => [String(m.id), m]));
-    const missions = parseMissions(repoRoot, mobIndex);
-    const abilities = parseAbilities(repoRoot);
-    const mods = parseMods(repoRoot);
-    const items = parseItems(repoRoot);
+
+    const missions = useRemote ? parseMissionsFromData(missionsData, mobIndex) : (repoRoot ? parseMissions(repoRoot, mobIndex) : []);
+    if (useRemote && dataUrls?.missions && !missions.length) STORE.errors.push(`Loaded zero missions from ${dataUrls.missions}`);
+
+    const abilities = useRemote ? parseAbilitiesFromData(abilitiesData) : (repoRoot ? parseAbilities(repoRoot) : []);
+    if (useRemote && dataUrls?.abilities && !abilities.length) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
+
+    const mods = useRemote ? parseModsFromData(modsData) : (repoRoot ? parseMods(repoRoot) : []);
+    if (useRemote && dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
+
+    const items = useRemote ? parseItemsFromData(itemsData) : (repoRoot ? parseItems(repoRoot) : []);
+    if (useRemote && dataUrls?.items && !items.length) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);
 
     STORE.mods = mods;
     STORE.items = items;
@@ -99,7 +134,7 @@ export async function loadFromZip(zipBuffer: Buffer): Promise<{ repoRoot: string
     const candidate = subs.find(looksLikeRepo);
     if (candidate) root = candidate;
   }
-  await loadAll(root);
+  await loadAll({ repoRoot: root });
   return { repoRoot: root };
 }
 

@@ -1,5 +1,12 @@
 {
   "repo_root": null,
+  "data_urls": {
+    "mods": null,
+    "items": null,
+    "missions": null,
+    "abilities": null,
+    "mobs": null
+  },
   "level_bands": [
     [
       1,

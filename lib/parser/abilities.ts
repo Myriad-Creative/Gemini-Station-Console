@@ -54,3 +54,16 @@ export function parseAbilities(repoRoot: string): Ability[] {
   }
   return abilities;
 }
+
+export function parseAbilitiesFromData(raw: Array<any> | Record<string, any> | null): Ability[] {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : Object.values(raw);
+  return arr.map((a): Ability => ({
+    id: a.id ?? a.key ?? a.name,
+    name: a.name,
+    description: a.description,
+    cooldown: typeof a.cooldown === "number" ? a.cooldown : undefined,
+    energy_cost: typeof a.energy_cost === "number" ? a.energy_cost : undefined,
+    resource: a.resource
+  }));
+}

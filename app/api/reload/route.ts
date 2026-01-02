@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadAll, loadFromZip, setRepoRoot } from "@lib/datastore";
-import { saveConfig } from "@lib/config";
+import { DataUrls, saveConfig } from "@lib/config";
 
 export const runtime = "nodejs";
 
@@ -20,12 +20,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  if (typeof body.repoRoot === "string" && body.repoRoot.trim()) {
-    const repoRoot = body.repoRoot.trim();
-    await loadAll(repoRoot);
-    saveConfig({ repo_root: repoRoot });
+  const repoRoot = typeof body.repoRoot === "string" && body.repoRoot.trim() ? body.repoRoot.trim() : null;
+  const dataUrls: DataUrls | null = body.dataUrls && typeof body.dataUrls === "object" ? body.dataUrls : null;
+
+  if (repoRoot || dataUrls) {
+    await loadAll({ repoRoot: repoRoot ?? undefined, dataUrls: dataUrls ?? undefined });
+    saveConfig({ repo_root: repoRoot, data_urls: dataUrls ?? {} });
     setRepoRoot(repoRoot);
-    return NextResponse.json({ ok: true, repoRoot, via: "path" });
+    return NextResponse.json({ ok: true, repoRoot, dataUrls, via: dataUrls ? "urls" : "path" });
   }
 
   return NextResponse.json({ ok: false, error: "Provide repoRoot or upload zip" }, { status: 400 });

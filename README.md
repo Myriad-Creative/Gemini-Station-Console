@@ -11,6 +11,7 @@ Then open <http://localhost:3000>.
 ## Set data source
 Open **Settings**:
 - **Repo folder path** → your `Gemini-Station` root (contains `data/` and `scripts/`) → **Reload from folder**.
+- **Hosted JSON URLs** → paste URLs for Mods, Items, Missions, Abilities, and Mobs JSON files → **Load from URLs**.
 - Or **Upload ZIP** of your repo (auto-detects the actual repo directory inside the zip).
 
 ## Features

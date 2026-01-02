@@ -2,9 +2,9 @@ import path from "path";
 import { readJson } from "./fileutils";
 import { Mob, StatMap } from "@lib/types";
 
-export function parseMobs(repoRoot: string): Mob[] {
-  const p = path.join(repoRoot, "data", "database", "mobs", "mobs.json");
-  const data = readJson<Record<string, any> | any[]>(p);
+type RawMobs = Record<string, any> | any[] | null;
+
+function normalizeMobs(data: RawMobs): Mob[] {
   if (!data) return [];
   const arr: any[] = Array.isArray(data) ? data : Object.values(data);
   return arr.map((m: any): Mob => {
@@ -24,4 +24,14 @@ export function parseMobs(repoRoot: string): Mob[] {
       stats
     };
   });
+}
+
+export function parseMobs(repoRoot: string): Mob[] {
+  const p = path.join(repoRoot, "data", "database", "mobs", "mobs.json");
+  const data = readJson<Record<string, any> | any[]>(p);
+  return normalizeMobs(data);
+}
+
+export function parseMobsFromData(data: RawMobs): Mob[] {
+  return normalizeMobs(data);
 }
