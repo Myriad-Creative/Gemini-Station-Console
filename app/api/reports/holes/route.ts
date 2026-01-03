@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@lib/config";
-import { getStore } from "@lib/datastore";
+import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 
 export const runtime = "nodejs";
 
@@ -10,6 +10,7 @@ function bandOf(level: number, bands: [number,number][]) {
 }
 
 export async function GET(req: NextRequest) {
+  await warmupLoadIfNeeded();
   const cfg = getConfig();
   const { mods } = getStore();
   const bands = cfg.level_bands;
