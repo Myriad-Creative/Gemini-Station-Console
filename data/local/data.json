@@ -1,0 +1,153 @@
+{
+  "mods": [
+    {
+      "id": "aegis_shield_matrix",
+      "name": "Aegis Shield Matrix",
+      "slot": "Shield",
+      "level_requirement": 2,
+      "rarity": 0,
+      "stats": { "shields": 120, "shield_regen": 4 },
+      "abilities": [3, 5],
+      "icon": "assets/mods/aegis_shield_matrix.png",
+      "description": "Frontline defensive barrier plating for shield tanks."
+    },
+    {
+      "id": "assault_core",
+      "name": "Assault Core",
+      "slot": "Weapon",
+      "level_requirement": 3,
+      "rarity": 0,
+      "stats": { "power": 18, "targeting": 6 },
+      "abilities": [18],
+      "icon": "assets/mods/assault_core.png",
+      "description": "Core that ramps weapon throughput for close-range strikes."
+    },
+    {
+      "id": "basic_armor_panel",
+      "name": "Basic Armor Panel",
+      "slot": "Armor",
+      "level_requirement": 1,
+      "rarity": 0,
+      "stats": { "hull": 60, "evasion": -1 },
+      "abilities": [18],
+      "icon": "assets/mods/basic_armor_panel.png",
+      "description": "Simple armor plating for general protection."
+    },
+    {
+      "id": "basic_shield_chip",
+      "name": "Basic Shield Chip",
+      "slot": "Utility",
+      "level_requirement": 4,
+      "rarity": 2,
+      "stats": { "shields": 40, "shield_regen": 2 },
+      "abilities": [3],
+      "icon": "assets/mods/basic_shield_chip.png",
+      "description": "Compact shield strengthener."
+    },
+    {
+      "id": "dented_armor_panel",
+      "name": "Dented Armor Panel",
+      "slot": "Armor",
+      "level_requirement": 1,
+      "rarity": 0,
+      "stats": { "hull": 22 },
+      "abilities": [],
+      "icon": "assets/mods/dented_armor_panel.png",
+      "description": "Well-used but serviceable hull patch."
+    },
+    {
+      "id": "ion_booster",
+      "name": "Ion Booster",
+      "slot": "Engine",
+      "level_requirement": 2,
+      "rarity": 0,
+      "stats": { "evasion": 4, "speed": 6 },
+      "abilities": [],
+      "icon": "assets/mods/ion_booster.png",
+      "description": "Basic thruster overcharger for tight maneuvers."
+    },
+    {
+      "id": "mining_beam",
+      "name": "Mining Beam",
+      "slot": "Weapon",
+      "level_requirement": 2,
+      "rarity": 1,
+      "stats": { "power": 9 },
+      "abilities": [17],
+      "icon": "assets/mods/mining_beam.png",
+      "description": "Low-power beam tuned for asteroid mining."
+    },
+    {
+      "id": "missile_module",
+      "name": "Missile Module",
+      "slot": "Weapon",
+      "level_requirement": 3,
+      "rarity": 0,
+      "stats": { "power": 14, "targeting": 2 },
+      "abilities": [9],
+      "icon": "assets/mods/missile_module.png",
+      "description": "Guidance and payload package for standard missiles."
+    },
+    {
+      "id": "overdrive_relay",
+      "name": "Overdrive Relay",
+      "slot": "Utility",
+      "level_requirement": 3,
+      "rarity": 0,
+      "stats": { "power": 4, "evasion": 2 },
+      "abilities": [6],
+      "icon": "assets/mods/overdrive_relay.png",
+      "description": "Routes additional reactor output to nearby modules."
+    },
+    {
+      "id": "spectra_scanner",
+      "name": "Spectra Scanner",
+      "slot": "Sensor",
+      "level_requirement": 1,
+      "rarity": 0,
+      "stats": { "targeting": 8 },
+      "abilities": [5],
+      "icon": "assets/mods/spectra_scanner.png",
+      "description": "Entry-level sensor suite with enhanced spectral filters."
+    }
+  ],
+  "abilities": [
+    { "id": 3, "name": "Bulwark Pulse", "description": "Short burst of shield strength." },
+    { "id": 5, "name": "Spectral Sweep", "description": "Temporarily reveals obscured targets." },
+    { "id": 6, "name": "Overdrive Surge", "description": "Redirects spare energy to all systems." },
+    { "id": 9, "name": "Smart Guidance", "description": "Improves missile lock reliability." },
+    { "id": 17, "name": "Focused Beam", "description": "Concentrates beam for mining efficiency." },
+    { "id": 18, "name": "Targeting Array", "description": "Stabilizes weapon accuracy." }
+  ],
+  "items": [
+    { "id": "shield_battery", "name": "Shield Battery", "level_requirement": 2, "rarity": 0, "type": "Utility", "stats": { "shields": 20 } },
+    { "id": "armor_plate", "name": "Armor Plate", "level_requirement": 3, "rarity": 1, "type": "Armor", "stats": { "hull": 35 } },
+    { "id": "thruster_nozzle", "name": "Thruster Nozzle", "level_requirement": 1, "rarity": 0, "type": "Engine", "stats": { "speed": 4 } }
+  ],
+  "mobs": [
+    { "id": "pirate_raider", "name": "Pirate Raider", "level": 5, "faction": "Pirates", "abilities": [9], "stats": { "power": 10, "hull": 80 } },
+    { "id": "asteroid_drone", "name": "Asteroid Drone", "level": 3, "faction": "Neutral", "abilities": [17], "stats": { "power": 6, "hull": 40 } }
+  ],
+  "missions": [
+    {
+      "id": "containment_drill",
+      "title": "Containment Drill",
+      "level_min": 2,
+      "level_max": 4,
+      "has_explicit_gating": true,
+      "objectives": [
+        { "type": "kill", "target_ids": ["pirate_raider"], "count": 3 }
+      ]
+    },
+    {
+      "id": "asteroid_survey",
+      "title": "Asteroid Survey",
+      "level_min": 1,
+      "level_max": 3,
+      "has_explicit_gating": true,
+      "objectives": [
+        { "type": "kill", "target_ids": ["asteroid_drone"], "count": 4 }
+      ]
+    }
+  ]
+}

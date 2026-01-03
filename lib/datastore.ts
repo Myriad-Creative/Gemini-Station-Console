@@ -1,3 +1,4 @@
+import path from "path";
 import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
 import { DataUrls, getConfig } from "@lib/config";
 import { parseModsFromData } from "@parser/mods";
@@ -6,7 +7,7 @@ import { parseMobsFromData } from "@parser/mobs";
 import { parseMissionsFromData } from "@parser/missions";
 import { parseItemsFromData } from "@parser/items";
 import { computeOutliers } from "@parser/stats";
-import { readJsonFromUrl } from "@parser/fileutils";
+import { readJson, readJsonFromUrl } from "@parser/fileutils";
 
 type Store = {
   manifestUrl: string;
@@ -34,6 +35,19 @@ if (!G.__GEMINI_STORE__) {
   };
 }
 const STORE: Store = G.__GEMINI_STORE__;
+
+type FallbackData = Partial<{
+  mods: any[];
+  items: any[];
+  mobs: any[];
+  missions: any[];
+  abilities: any[];
+}>;
+
+function loadFallbackData(): FallbackData | null {
+  const p = path.join(process.cwd(), "data", "local", "data.json");
+  return readJson<FallbackData>(p);
+}
 
 export function getStore() { return STORE; }
 
@@ -91,33 +105,51 @@ export async function loadAll(): Promise<Store> {
   try {
     const manifestRes = await fetchJson<any>(manifestUrl);
     const manifest = manifestRes.data;
+    let dataUrls: DataUrls | null = null;
+    let fallbackData: FallbackData | null = null;
+
     if (!manifest) {
       STORE.errors.push(manifestRes.error || `Failed to fetch manifest from ${manifestUrl}`);
-      STORE.mods = []; STORE.items = []; STORE.abilities = []; STORE.mobs = []; STORE.missions = [];
-      STORE.lastLoaded = new Date().toISOString();
-      return STORE;
+      fallbackData = loadFallbackData();
+      if (!fallbackData) {
+        STORE.mods = []; STORE.items = []; STORE.abilities = []; STORE.mobs = []; STORE.missions = [];
+        STORE.lastLoaded = new Date().toISOString();
+        return STORE;
+      }
+      STORE.manifestUrl = "local:fallback";
+    } else {
+      dataUrls = extractDataUrls(manifest, manifestUrl);
     }
-    const dataUrls = extractDataUrls(manifest, manifestUrl);
     STORE.dataUrls = dataUrls;
 
-    const fetchResults = await Promise.all([
-      fetchJson(dataUrls?.mods),
-      fetchJson(dataUrls?.items),
-      fetchJson(dataUrls?.mobs),
-      fetchJson(dataUrls?.missions),
-      fetchJson(dataUrls?.abilities)
-    ]);
-    const [modsRes, itemsRes, mobsRes, missionsRes, abilitiesRes] = fetchResults;
-    const [modsData, itemsData, mobsData, missionsData, abilitiesData] = [modsRes.data, itemsRes.data, mobsRes.data, missionsRes.data, abilitiesRes.data];
-    const urlMap: Array<[keyof DataUrls, { data: any; error?: string }]> = [
-      ["mods", modsRes],
-      ["items", itemsRes],
-      ["mobs", mobsRes],
-      ["missions", missionsRes],
-      ["abilities", abilitiesRes]
-    ];
-    for (const [k, res] of urlMap) {
-      if (res.error && (dataUrls as any)?.[k]) STORE.errors.push(res.error);
+    let modsData: any = null, itemsData: any = null, mobsData: any = null, missionsData: any = null, abilitiesData: any = null;
+
+    if (dataUrls) {
+      const fetchResults = await Promise.all([
+        fetchJson(dataUrls?.mods),
+        fetchJson(dataUrls?.items),
+        fetchJson(dataUrls?.mobs),
+        fetchJson(dataUrls?.missions),
+        fetchJson(dataUrls?.abilities)
+      ]);
+      const [modsRes, itemsRes, mobsRes, missionsRes, abilitiesRes] = fetchResults;
+      [modsData, itemsData, mobsData, missionsData, abilitiesData] = [modsRes.data, itemsRes.data, mobsRes.data, missionsRes.data, abilitiesRes.data];
+      const urlMap: Array<[keyof DataUrls, { data: any; error?: string }]> = [
+        ["mods", modsRes],
+        ["items", itemsRes],
+        ["mobs", mobsRes],
+        ["missions", missionsRes],
+        ["abilities", abilitiesRes]
+      ];
+      for (const [k, res] of urlMap) {
+        if (res.error && (dataUrls as any)?.[k]) STORE.errors.push(res.error);
+      }
+    } else if (fallbackData) {
+      modsData = fallbackData.mods ?? [];
+      itemsData = fallbackData.items ?? [];
+      mobsData = fallbackData.mobs ?? [];
+      missionsData = fallbackData.missions ?? [];
+      abilitiesData = fallbackData.abilities ?? [];
     }
 
     const mobs = parseMobsFromData(mobsData);

@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getConfig } from "@lib/config";
 import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
+import { fetchWithProxy } from "@parser/fileutils";
 
 function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 function searchRecursive(dir: string, name: string): string | null {
@@ -84,10 +85,10 @@ export async function GET(req: NextRequest) {
 
   for (const candidate of remoteCandidates) {
     try {
-      const r = await fetch(candidate);
+      const r = await fetchWithProxy(candidate);
       if (!r.ok) continue;
       const buf = Buffer.from(await r.arrayBuffer());
-      const type = r.headers.get("content-type") || "application/octet-stream";
+      const type = (r as any)?.headers?.get ? (r as any).headers.get("content-type") : (r as any)?.headers?.["content-type"] || "application/octet-stream";
       return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
     } catch {
       continue;
