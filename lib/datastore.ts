@@ -41,7 +41,14 @@ export async function warmupLoadIfNeeded(): Promise<void> {
   const cfg = getConfig();
   const cfgKey = cfg.manifest_url;
   const storeKey = STORE.manifestUrl;
-  if (!STORE.lastLoaded || cfgKey !== storeKey) {
+  const isEmpty =
+    !STORE.mods.length &&
+    !STORE.items.length &&
+    !STORE.missions.length &&
+    !STORE.mobs.length &&
+    !STORE.abilities.length;
+  const hasErrors = STORE.errors.length > 0;
+  if (!STORE.lastLoaded || cfgKey !== storeKey || isEmpty || hasErrors) {
     try { await loadAll(); } catch {}
   }
 }
