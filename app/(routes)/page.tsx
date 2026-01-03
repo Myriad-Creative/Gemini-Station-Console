@@ -8,6 +8,7 @@ type Summary = {
   manifestUrl: string | null;
   lastLoaded?: string;
   errors: string[];
+  counts: { mods: number; items: number; missions: number; mobs: number; abilities: number };
   missionsByBand: { band: string; count: number }[];
   modsCoverage: { slot: string; level: number; count: number }[];
   modsCoverageBands: { slot: string; band: string; count: number }[];
@@ -19,8 +20,8 @@ type Summary = {
 
 export default function DashboardPage() {
   const [data, setData] = useState<Summary | null>(null);
-  const DEFAULTS: Summary = { manifestUrl: null, lastLoaded: null as any, errors: [], missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: [] };
-  useEffect(() => { (async ()=>{ try { const r=await fetch("/api/summary"); const j=await r.json().catch(()=>null); setData(j); } catch(e) { setData({ missionsByBand:[], modsCoverage:[], modsCoverageBands:[], bandLabels:[], rarityCounts:[], holes:[], outliers:[], lastLoaded:null, manifestUrl:null, errors:[String(e)] } as any);} })(); }, []);
+  const DEFAULTS: Summary = { manifestUrl: null, lastLoaded: null as any, errors: [], counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0 }, missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: [] };
+  useEffect(() => { (async ()=>{ try { const r=await fetch("/api/summary"); const j=await r.json().catch(()=>null); setData(j); } catch(e) { setData({ missionsByBand:[], modsCoverage:[], modsCoverageBands:[], bandLabels:[], rarityCounts:[], holes:[], outliers:[], lastLoaded:null, manifestUrl:null, errors:[String(e)], counts:{ mods:0, items:0, missions:0, mobs:0, abilities:0 } } as any);} })(); }, []);
   if (!data) return <div>Loading…</div>;
 
   return (
@@ -31,8 +32,17 @@ export default function DashboardPage() {
         <Card>
           <CardTitle>Data Source</CardTitle>
           <div className="text-sm text-white/80">
-            <div><span className="label">Manifest:</span> {data.manifestUrl || <em>not set</em>}</div>
             <div><span className="label">Last loaded:</span> {data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
+            <div className="mt-1 space-y-1">
+              <div className="label">Parsed records</div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div>Mods: {data.counts?.mods ?? 0}</div>
+                <div>Items: {data.counts?.items ?? 0}</div>
+                <div>Missions: {data.counts?.missions ?? 0}</div>
+                <div>Mobs: {data.counts?.mobs ?? 0}</div>
+                <div className="col-span-2">Abilities: {data.counts?.abilities ?? 0}</div>
+              </div>
+            </div>
             {data.errors?.length ? <div className="text-red-400 mt-2">Errors: {data.errors.join("; ")}</div> : null}
           </div>
         </Card>
