@@ -9,7 +9,7 @@ import { computeOutliers } from "@parser/stats";
 import { readJsonFromUrl } from "@parser/fileutils";
 
 type Store = {
-  manifestUrl: string;
+  manifestUrl: string | null;
   dataUrls: DataUrls | null;
   mods: Mod[];
   abilities: Ability[];
@@ -23,7 +23,7 @@ type Store = {
 const G = global as any;
 if (!G.__GEMINI_STORE__) {
   G.__GEMINI_STORE__ = <Store>{
-    manifestUrl: getConfig().manifest_url,
+    manifestUrl: null,
     dataUrls: null,
     mods: [],
     abilities: [],
@@ -38,40 +38,9 @@ const STORE: Store = G.__GEMINI_STORE__;
 export function getStore() { return STORE; }
 
 export async function warmupLoadIfNeeded(): Promise<void> {
-  const cfg = getConfig();
-  const cfgKey = cfg.manifest_url;
-  const storeKey = STORE.manifestUrl;
-  if (!STORE.lastLoaded || cfgKey !== storeKey) {
+  if (!STORE.lastLoaded) {
     try { await loadAll(); } catch {}
   }
-}
-
-function normalizeUrl(maybeUrl: string, manifestUrl: string): string {
-  try {
-    return new URL(maybeUrl, manifestUrl).toString();
-  } catch {
-    return maybeUrl;
-  }
-}
-
-function extractDataUrls(manifest: any, manifestUrl: string): DataUrls {
-  if (!manifest || typeof manifest !== "object") return {};
-  const dataUrls: DataUrls = {};
-  const directKeys: Array<keyof DataUrls> = ["mods", "items", "missions", "abilities", "mobs"];
-  for (const k of directKeys) {
-    const v = (manifest as any)[k];
-    if (typeof v === "string") dataUrls[k] = normalizeUrl(v, manifestUrl);
-  }
-  if (Array.isArray((manifest as any).files)) {
-    for (const f of (manifest as any).files) {
-      const name = (f?.type ?? f?.name)?.toString().toLowerCase();
-      const url = f?.url;
-      if (typeof url === "string" && name && directKeys.includes(name as any)) {
-        (dataUrls as any)[name] = normalizeUrl(url, manifestUrl);
-      }
-    }
-  }
-  return dataUrls;
 }
 
 async function fetchJson<T = any>(url?: string | null): Promise<{ data: T | null; error?: string }> {
@@ -86,20 +55,15 @@ async function fetchJson<T = any>(url?: string | null): Promise<{ data: T | null
 
 export async function loadAll(): Promise<Store> {
   STORE.errors = [];
-  const manifestUrl = getConfig().manifest_url;
-  STORE.manifestUrl = manifestUrl;
+  const cfg = getConfig();
+  const dataUrls: DataUrls = { ...(cfg.data_urls || {}) };
+  STORE.manifestUrl = null;
+  STORE.dataUrls = dataUrls;
+  const missingRequired = ["mods", "items"].filter(k => !(dataUrls as any)?.[k]);
+  if (missingRequired.length) {
+    STORE.errors.push(`Missing URLs for: ${missingRequired.join(", ")}`);
+  }
   try {
-    const manifestRes = await fetchJson<any>(manifestUrl);
-    const manifest = manifestRes.data;
-    if (!manifest) {
-      STORE.errors.push(manifestRes.error || `Failed to fetch manifest from ${manifestUrl}`);
-      STORE.mods = []; STORE.items = []; STORE.abilities = []; STORE.mobs = []; STORE.missions = [];
-      STORE.lastLoaded = new Date().toISOString();
-      return STORE;
-    }
-    const dataUrls = extractDataUrls(manifest, manifestUrl);
-    STORE.dataUrls = dataUrls;
-
     const fetchResults = await Promise.all([
       fetchJson(dataUrls?.mods),
       fetchJson(dataUrls?.items),

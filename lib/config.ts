@@ -11,6 +11,7 @@ export type DataUrls = {
 
 type Config = {
   manifest_url: string;
+  data_urls?: DataUrls;
   level_bands: [number, number][];
   coverage_threshold_per_slot: number;
   zscore_threshold: number;
@@ -24,6 +25,10 @@ type Config = {
 
 const defaultConfig: Config = {
   manifest_url: "https://json-service-production-e4bb.up.railway.app/json/manifest.json",
+  data_urls: {
+    mods: "https://json-service-production-e4bb.up.railway.app/json/Mods.json",
+    items: "https://json-service-production-e4bb.up.railway.app/json/items.json"
+  },
   level_bands: [[1,9],[10,19],[20,29],[30,39],[40,49],[50,59],[60,69],[70,79],[80,89],[90,99],[100,100]],
   coverage_threshold_per_slot: 10,
   zscore_threshold: 2.0,
@@ -39,6 +44,7 @@ export function getConfig(): Config {
     return {
       ...defaultConfig,
       ...cfg,
+      data_urls: { ...defaultConfig.data_urls, ...(cfg.data_urls || {}) },
       weights: { ...defaultConfig.weights, ...(cfg.weights || {}) }
     };
   }

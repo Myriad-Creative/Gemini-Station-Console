@@ -8,10 +8,11 @@ Read-only console to analyze Gemini Station content: mods, missions, mobs, items
 
 Then open <http://localhost:3000>.
 
-## Set data source
-The console now loads from a fixed manifest URL:
-- `https://json-service-production-e4bb.up.railway.app/json/manifest.json`
-Open **Settings** to view the manifest location and force a reload from that manifest.
+## Data sources
+The console now loads directly from fixed JSON endpoints:
+- Mods: `https://json-service-production-e4bb.up.railway.app/json/Mods.json`
+- Items: `https://json-service-production-e4bb.up.railway.app/json/items.json`
+Open **Settings** to view the currently loaded URLs and force a reload.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
