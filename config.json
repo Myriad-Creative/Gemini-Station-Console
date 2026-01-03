@@ -1,12 +1,5 @@
 {
-  "repo_root": null,
-  "data_urls": {
-    "mods": null,
-    "items": null,
-    "missions": null,
-    "abilities": null,
-    "mobs": null
-  },
+  "manifest_url": "https://json-service-production-e4bb.up.railway.app/json/manifest.json",
   "level_bands": [
     [
       1,

@@ -9,10 +9,9 @@ Read-only console to analyze Gemini Station content: mods, missions, mobs, items
 Then open <http://localhost:3000>.
 
 ## Set data source
-Open **Settings**:
-- **Repo folder path** → your `Gemini-Station` root (contains `data/` and `scripts/`) → **Reload from folder**.
-- **Hosted JSON URLs** → paste URLs for Mods, Items, Missions, Abilities, and Mobs JSON files → **Load from URLs**.
-- Or **Upload ZIP** of your repo (auto-detects the actual repo directory inside the zip).
+The console now loads from a fixed manifest URL:
+- `https://json-service-production-e4bb.up.railway.app/json/manifest.json`
+Open **Settings** to view the manifest location and force a reload from that manifest.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)

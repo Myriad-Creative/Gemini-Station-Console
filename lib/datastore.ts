@@ -1,19 +1,15 @@
-import fs from "fs";
-import os from "os";
-import path from "path";
-import JSZip from "jszip";
 import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
 import { DataUrls, getConfig } from "@lib/config";
-import { parseMods, parseModsFromData } from "@parser/mods";
-import { parseAbilities, parseAbilitiesFromData } from "@parser/abilities";
-import { parseMobs, parseMobsFromData } from "@parser/mobs";
-import { parseMissions, parseMissionsFromData } from "@parser/missions";
-import { parseItems, parseItemsFromData } from "@parser/items";
+import { parseModsFromData } from "@parser/mods";
+import { parseAbilitiesFromData } from "@parser/abilities";
+import { parseMobsFromData } from "@parser/mobs";
+import { parseMissionsFromData } from "@parser/missions";
+import { parseItemsFromData } from "@parser/items";
 import { computeOutliers } from "@parser/stats";
 import { readJsonFromUrl } from "@parser/fileutils";
 
 type Store = {
-  repoRoot: string | null;
+  manifestUrl: string;
   dataUrls: DataUrls | null;
   mods: Mod[];
   abilities: Ability[];
@@ -27,8 +23,8 @@ type Store = {
 const G = global as any;
 if (!G.__GEMINI_STORE__) {
   G.__GEMINI_STORE__ = <Store>{
-    repoRoot: getConfig().repo_root,
-    dataUrls: getConfig().data_urls,
+    manifestUrl: getConfig().manifest_url,
+    dataUrls: null,
     mods: [],
     abilities: [],
     mobs: [],
@@ -43,34 +39,49 @@ export function getStore() { return STORE; }
 
 export async function warmupLoadIfNeeded(): Promise<void> {
   const cfg = getConfig();
-  const cfgKey = JSON.stringify({ repo: cfg.repo_root, urls: cfg.data_urls });
-  const storeKey = JSON.stringify({ repo: STORE.repoRoot, urls: STORE.dataUrls });
+  const cfgKey = cfg.manifest_url;
+  const storeKey = STORE.manifestUrl;
   if (!STORE.lastLoaded || cfgKey !== storeKey) {
-    try { await loadAll({ repoRoot: cfg.repo_root ?? undefined, dataUrls: cfg.data_urls }); } catch {}
+    try { await loadAll(); } catch {}
   }
 }
 
-export function setRepoRoot(p: string | null) {
-  STORE.repoRoot = p;
+function extractDataUrls(manifest: any): DataUrls {
+  if (!manifest || typeof manifest !== "object") return {};
+  const dataUrls: DataUrls = {};
+  const directKeys: Array<keyof DataUrls> = ["mods", "items", "missions", "abilities", "mobs"];
+  for (const k of directKeys) {
+    const v = (manifest as any)[k];
+    if (typeof v === "string") dataUrls[k] = v;
+  }
+  if (Array.isArray((manifest as any).files)) {
+    for (const f of (manifest as any).files) {
+      const name = (f?.type ?? f?.name)?.toString().toLowerCase();
+      const url = f?.url;
+      if (typeof url === "string" && name && directKeys.includes(name as any)) {
+        (dataUrls as any)[name] = url;
+      }
+    }
+  }
+  return dataUrls;
 }
-
-type LoadOptions = { repoRoot?: string | null; dataUrls?: DataUrls | null };
 
 async function fetchJson<T = any>(url?: string | null): Promise<T | null> {
   if (!url) return null;
   return await readJsonFromUrl<T>(url);
 }
 
-export async function loadAll(repoRootOrOpts: string | LoadOptions): Promise<Store> {
+export async function loadAll(): Promise<Store> {
   STORE.errors = [];
-  const repoRoot = typeof repoRootOrOpts === "string" ? repoRootOrOpts : (repoRootOrOpts?.repoRoot ?? null);
-  const dataUrls = typeof repoRootOrOpts === "string" ? null : (repoRootOrOpts?.dataUrls ?? null);
-
-  STORE.repoRoot = repoRoot || null;
-  STORE.dataUrls = dataUrls || null;
-
+  const manifestUrl = getConfig().manifest_url;
+  STORE.manifestUrl = manifestUrl;
   try {
-    const useRemote = dataUrls && Object.values(dataUrls).some(Boolean);
+    const manifest = await fetchJson<any>(manifestUrl);
+    if (!manifest) {
+      STORE.errors.push(`Failed to fetch manifest from ${manifestUrl}`);
+    }
+    const dataUrls = extractDataUrls(manifest);
+    STORE.dataUrls = dataUrls;
 
     const [modsData, itemsData, mobsData, missionsData, abilitiesData] = await Promise.all([
       fetchJson(dataUrls?.mods),
@@ -80,21 +91,21 @@ export async function loadAll(repoRootOrOpts: string | LoadOptions): Promise<Sto
       fetchJson(dataUrls?.abilities)
     ]);
 
-    const mobs = useRemote ? parseMobsFromData(mobsData) : (repoRoot ? parseMobs(repoRoot) : []);
-    if (useRemote && dataUrls?.mobs && !mobs.length) STORE.errors.push(`Loaded zero mobs from ${dataUrls.mobs}`);
+    const mobs = parseMobsFromData(mobsData);
+    if (dataUrls?.mobs && !mobs.length) STORE.errors.push(`Loaded zero mobs from ${dataUrls.mobs}`);
     const mobIndex = new Map(mobs.map(m => [String(m.id), m]));
 
-    const missions = useRemote ? parseMissionsFromData(missionsData, mobIndex) : (repoRoot ? parseMissions(repoRoot, mobIndex) : []);
-    if (useRemote && dataUrls?.missions && !missions.length) STORE.errors.push(`Loaded zero missions from ${dataUrls.missions}`);
+    const missions = parseMissionsFromData(missionsData, mobIndex);
+    if (dataUrls?.missions && !missions.length) STORE.errors.push(`Loaded zero missions from ${dataUrls.missions}`);
 
-    const abilities = useRemote ? parseAbilitiesFromData(abilitiesData) : (repoRoot ? parseAbilities(repoRoot) : []);
-    if (useRemote && dataUrls?.abilities && !abilities.length) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
+    const abilities = parseAbilitiesFromData(abilitiesData);
+    if (dataUrls?.abilities && !abilities.length) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
 
-    const mods = useRemote ? parseModsFromData(modsData) : (repoRoot ? parseMods(repoRoot) : []);
-    if (useRemote && dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
+    const mods = parseModsFromData(modsData);
+    if (dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
 
-    const items = useRemote ? parseItemsFromData(itemsData) : (repoRoot ? parseItems(repoRoot) : []);
-    if (useRemote && dataUrls?.items && !items.length) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);
+    const items = parseItemsFromData(itemsData);
+    if (dataUrls?.items && !items.length) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);
 
     STORE.mods = mods;
     STORE.items = items;
@@ -102,40 +113,13 @@ export async function loadAll(repoRootOrOpts: string | LoadOptions): Promise<Sto
     STORE.mobs = mobs;
     STORE.missions = missions;
     STORE.lastLoaded = new Date().toISOString();
-    if (!mods.length && !missions.length && !mobs.length) {
-      STORE.errors.push('Parsed zero records. Check repo path — expected data/database & scripts/system/missions.');
+    if (!mods.length && !missions.length && !mobs.length && !items.length && !abilities.length) {
+      STORE.errors.push('Parsed zero records. Check manifest and source URLs.');
     }
   } catch (e: any) {
     STORE.errors.push(String(e?.message || e));
   }
   return STORE;
-}
-
-export async function loadFromZip(zipBuffer: Buffer): Promise<{ repoRoot: string }> {
-  const z = await JSZip.loadAsync(zipBuffer);
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gemini_upload_"));
-  const entries = Object.values(z.files);
-  for (const entry of entries) {
-    const dest = path.join(tmpDir, entry.name);
-    if (entry.dir) {
-      fs.mkdirSync(dest, { recursive: true });
-      continue;
-    }
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    const content = await entry.async("nodebuffer");
-    fs.writeFileSync(dest, content);
-  }
-  function looksLikeRepo(p: string) {
-    return fs.existsSync(path.join(p, "data", "database")) || fs.existsSync(path.join(p, "scripts", "system", "missions"));
-  }
-  let root = tmpDir;
-  if (!looksLikeRepo(root)) {
-    const subs = fs.readdirSync(tmpDir).map(n => path.join(tmpDir, n)).filter(p => fs.statSync(p).isDirectory());
-    const candidate = subs.find(looksLikeRepo);
-    if (candidate) root = candidate;
-  }
-  await loadAll({ repoRoot: root });
-  return { repoRoot: root };
 }
 
 // --------- Queries & summaries ----------

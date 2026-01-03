@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
   const resParam = url.searchParams.get("res");
   if (!resParam) return new NextResponse("Missing res", { status: 400 });
   const store = getStore();
-  const repo = store.repoRoot;
-  if (!repo) return new NextResponse("No repo", { status: 404 });
+  const repo = (store as any).repoRoot as string | undefined;
+  if (!repo) return new NextResponse("No local repo configured for icon lookup", { status: 404 });
 
   let p = resParam;
   if (p.startsWith("res://")) p = p.slice("res://".length);

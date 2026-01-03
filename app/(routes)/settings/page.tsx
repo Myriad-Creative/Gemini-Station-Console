@@ -1,57 +1,34 @@
 "use client";
 import { useEffect, useState } from "react";
 
-type DataUrlsState = { mods?: string; items?: string; missions?: string; abilities?: string; mobs?: string };
+type Summary = { manifestUrl: string | null; lastLoaded?: string; errors: string[] };
 
 export default function SettingsPage() {
-  const [repoRoot, setRepoRoot] = useState<string>("");
-  const [dataUrls, setDataUrls] = useState<DataUrlsState>({});
+  const [summary, setSummary] = useState<Summary>({ manifestUrl: null, lastLoaded: undefined, errors: [] });
   const [status, setStatus] = useState<string>("");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/summary");
-        const j = await r.json().catch(()=>({repoRoot:"", dataUrls:{}}));
-        setRepoRoot(j.repoRoot || "");
-        setDataUrls(j.dataUrls || {});
-      } catch {}
-    })();
-  }, []);
-
-  const reloadFromPath = async () => {
-    setStatus("Reloading…");
+  const loadSummary = async () => {
     try {
-      const r = await fetch("/api/reload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repoRoot }) });
-      let j:any = {}; try { j = await r.json(); } catch {}
-      if (!r.ok || !j.ok) setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
-      else setStatus(`Loaded from ${j.repoRoot}`);
-    } catch (e:any) { setStatus(`Error: ${e?.message || e}`); }
+      const r = await fetch("/api/summary");
+      const j = await r.json();
+      setSummary({ manifestUrl: j.manifestUrl || null, lastLoaded: j.lastLoaded, errors: j.errors || [] });
+    } catch (e:any) {
+      setSummary({ manifestUrl: null, lastLoaded: undefined, errors: [String(e?.message || e)] });
+    }
   };
 
-  const reloadFromUrls = async () => {
-    setStatus("Loading from URLs…");
-    try {
-      const r = await fetch("/api/reload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataUrls }) });
-      let j:any = {}; try { j = await r.json(); } catch {}
-      if (!r.ok || !j.ok) setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
-      else setStatus("Loaded from URLs");
-    } catch (e:any) { setStatus(`Error: ${e?.message || e}`); }
-  };
+  useEffect(() => { loadSummary(); }, []);
 
-  const onUrlChange = (field: keyof DataUrlsState, value: string) => {
-    setDataUrls(prev => ({ ...prev, [field]: value }));
-  };
-
-  const uploadZip = async (file: File) => {
-    setStatus("Uploading ZIP…");
+  const reloadFromManifest = async () => {
+    setStatus("Reloading from manifest…");
     try {
-      const fd = new FormData();
-      fd.append("zip", file);
-      const r = await fetch("/api/reload", { method: "POST", body: fd });
-      let j:any = {}; try { j = await r.json(); } catch {}
+      const r = await fetch("/api/reload", { method: "POST" });
+      const j = await r.json().catch(()=>({}));
       if (!r.ok || !j.ok) setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
-      else setStatus(`Loaded from ZIP to ${j.repoRoot}`);
+      else {
+        setStatus("Loaded from manifest");
+        await loadSummary();
+      }
     } catch (e:any) { setStatus(`Error: ${e?.message || e}`); }
   };
 
@@ -59,35 +36,21 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <h1 className="page-title">Settings</h1>
       <div className="card grid gap-3 md:grid-cols-2">
-        <div>
-          <div className="label">Repo folder path</div>
-          <input className="input" placeholder="C:\\path\\to\\Gemini-Station or /Users/you/Gemini-Station" value={repoRoot} onChange={e=>setRepoRoot(e.target.value)} />
-        </div>
-        <div className="flex items-end">
-          <button className="btn" onClick={reloadFromPath}>Reload from folder</button>
-        </div>
-
         <div className="md:col-span-2">
-          <div className="label">Or load from hosted JSON URLs</div>
-          <div className="grid md:grid-cols-2 gap-2">
-            <input className="input" placeholder="Mods JSON URL" value={dataUrls.mods || ""} onChange={e=>onUrlChange("mods", e.target.value)} />
-            <input className="input" placeholder="Items JSON URL" value={dataUrls.items || ""} onChange={e=>onUrlChange("items", e.target.value)} />
-            <input className="input" placeholder="Missions JSON URL" value={dataUrls.missions || ""} onChange={e=>onUrlChange("missions", e.target.value)} />
-            <input className="input" placeholder="Abilities JSON URL" value={dataUrls.abilities || ""} onChange={e=>onUrlChange("abilities", e.target.value)} />
-            <input className="input" placeholder="Mobs JSON URL" value={dataUrls.mobs || ""} onChange={e=>onUrlChange("mobs", e.target.value)} />
-          </div>
+          <div className="label">Manifest URL</div>
+          <div className="input bg-white/5">{summary.manifestUrl || "Not set"}</div>
         </div>
-        <div className="flex items-end">
-          <button className="btn" onClick={reloadFromUrls}>Load from URLs</button>
-        </div>
-
         <div>
-          <div className="label">Or upload repo ZIP</div>
-          <input className="input" type="file" accept=".zip" onChange={e => e.target.files && e.target.files[0] && uploadZip(e.target.files[0])} />
+          <div className="label">Last loaded</div>
+          <div className="input bg-white/5">{summary.lastLoaded ? new Date(summary.lastLoaded).toLocaleString() : "—"}</div>
         </div>
         <div className="flex items-end">
-          <span className="text-white/70">{status}</span>
+          <button className="btn" onClick={reloadFromManifest}>Reload from manifest</button>
         </div>
+        {summary.errors?.length ? (
+          <div className="md:col-span-2 text-red-400 text-sm">Errors: {summary.errors.join("; ")}</div>
+        ) : null}
+        <div className="md:col-span-2 text-white/70">{status}</div>
       </div>
     </div>
   );

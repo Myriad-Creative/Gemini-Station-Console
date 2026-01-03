@@ -10,8 +10,7 @@ export type DataUrls = {
 };
 
 type Config = {
-  repo_root: string | null;
-  data_urls: DataUrls;
+  manifest_url: string;
   level_bands: [number, number][];
   coverage_threshold_per_slot: number;
   zscore_threshold: number;
@@ -24,8 +23,7 @@ type Config = {
 };
 
 const defaultConfig: Config = {
-  repo_root: null,
-  data_urls: { mods: null, items: null, missions: null, abilities: null, mobs: null },
+  manifest_url: "https://json-service-production-e4bb.up.railway.app/json/manifest.json",
   level_bands: [[1,9],[10,19],[20,29],[30,39],[40,49],[50,59],[60,69],[70,79],[80,89],[90,99],[100,100]],
   coverage_threshold_per_slot: 10,
   zscore_threshold: 2.0,
@@ -41,7 +39,6 @@ export function getConfig(): Config {
     return {
       ...defaultConfig,
       ...cfg,
-      data_urls: { ...defaultConfig.data_urls, ...(cfg.data_urls || {}) },
       weights: { ...defaultConfig.weights, ...(cfg.weights || {}) }
     };
   }
@@ -54,7 +51,6 @@ export function saveConfig(partial: Partial<Config>) {
   const merged: Config = {
     ...current,
     ...partial,
-    data_urls: { ...current.data_urls, ...(partial as any).data_urls || {} },
     weights: { ...current.weights, ...(partial.weights || {}) }
   };
   fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), "utf-8");
