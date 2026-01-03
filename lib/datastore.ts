@@ -46,6 +46,8 @@ export async function warmupLoadIfNeeded(): Promise<void> {
   }
 }
 
+const DIRECT_KEYS: Array<keyof DataUrls> = ["mods", "items", "missions", "abilities", "mobs"];
+
 function normalizeUrl(maybeUrl: string, manifestUrl: string): string {
   try {
     return new URL(maybeUrl, manifestUrl).toString();
@@ -54,20 +56,38 @@ function normalizeUrl(maybeUrl: string, manifestUrl: string): string {
   }
 }
 
+function pickUrl(value: any, manifestUrl: string): string | null {
+  if (typeof value === "string") return normalizeUrl(value, manifestUrl);
+  if (value && typeof value === "object") {
+    const candidate = value.url ?? value.href ?? value.path ?? value.file ?? value.location;
+    if (typeof candidate === "string") return normalizeUrl(candidate, manifestUrl);
+  }
+  return null;
+}
+
+function findManifestValue(manifest: any, key: keyof DataUrls): any {
+  if (!manifest || typeof manifest !== "object") return undefined;
+  for (const [k, v] of Object.entries(manifest)) {
+    const lowered = k.toLowerCase();
+    if (lowered === key || lowered === `${key}_url` || lowered === `${key}url`) return v;
+  }
+  return undefined;
+}
+
 function extractDataUrls(manifest: any, manifestUrl: string): DataUrls {
   if (!manifest || typeof manifest !== "object") return {};
   const dataUrls: DataUrls = {};
-  const directKeys: Array<keyof DataUrls> = ["mods", "items", "missions", "abilities", "mobs"];
-  for (const k of directKeys) {
-    const v = (manifest as any)[k];
-    if (typeof v === "string") dataUrls[k] = normalizeUrl(v, manifestUrl);
+  for (const k of DIRECT_KEYS) {
+    const v = findManifestValue(manifest, k);
+    const url = pickUrl(v, manifestUrl);
+    if (url) dataUrls[k] = url;
   }
   if (Array.isArray((manifest as any).files)) {
     for (const f of (manifest as any).files) {
-      const name = (f?.type ?? f?.name)?.toString().toLowerCase();
-      const url = f?.url;
-      if (typeof url === "string" && name && directKeys.includes(name as any)) {
-        (dataUrls as any)[name] = normalizeUrl(url, manifestUrl);
+      const name = (f?.type ?? f?.name ?? f?.key ?? f?.id)?.toString().toLowerCase();
+      const url = pickUrl(f?.url ?? f?.href ?? f?.path ?? f?.file ?? f?.location ?? f, manifestUrl);
+      if (url && name && DIRECT_KEYS.includes(name as any)) {
+        (dataUrls as any)[name] = url;
       }
     }
   }
@@ -99,6 +119,10 @@ export async function loadAll(): Promise<Store> {
     }
     const dataUrls = extractDataUrls(manifest, manifestUrl);
     STORE.dataUrls = dataUrls;
+    const missingRequired = ["mods", "items"].filter(k => !(dataUrls as any)?.[k]);
+    if (missingRequired.length) {
+      STORE.errors.push(`Manifest missing URLs for: ${missingRequired.join(", ")}`);
+    }
 
     const fetchResults = await Promise.all([
       fetchJson(dataUrls?.mods),
