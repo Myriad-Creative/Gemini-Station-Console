@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@lib/config";
-import { getStore, queryMods } from "@lib/datastore";
+import { getStore, queryMods, warmupLoadIfNeeded } from "@lib/datastore";
 import { computeCompositeScore } from "@parser/stats";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
+  await warmupLoadIfNeeded();
   const url = new URL(req.url);
   const slot = url.searchParams.get("slot") || undefined;
   const level_min = url.searchParams.get("level_min") ? Number(url.searchParams.get("level_min")) : undefined;

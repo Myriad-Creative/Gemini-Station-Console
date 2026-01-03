@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStore } from "@lib/datastore";
+import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
+  await warmupLoadIfNeeded();
   const store = getStore();
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.toLowerCase();
