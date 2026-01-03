@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "es2022"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "es2022"
+    ],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -14,10 +18,29 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@lib/*": ["lib/*"],
-      "@parser/*": ["lib/parser/*"],
-      "@components/*": ["components/*"]
-    }
+      "@lib/*": [
+        "lib/*"
+      ],
+      "@parser/*": [
+        "lib/parser/*"
+      ],
+      "@components/*": [
+        "components/*"
+      ]
+    },
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

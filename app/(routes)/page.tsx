@@ -5,7 +5,7 @@ import HeatmapBands from "@components/HeatmapBands";
 import { Card, CardTitle, Stat } from "@components/Cards";
 
 type Summary = {
-  repoRoot: string | null;
+  manifestUrl: string | null;
   lastLoaded?: string;
   errors: string[];
   missionsByBand: { band: string; count: number }[];
@@ -19,8 +19,8 @@ type Summary = {
 
 export default function DashboardPage() {
   const [data, setData] = useState<Summary | null>(null);
-  const DEFAULTS: Summary = { repoRoot: null, lastLoaded: null as any, errors: [], missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: [] };
-  useEffect(() => { (async ()=>{ try { const r=await fetch("/api/summary"); const j=await r.json().catch(()=>null); setData(j); } catch(e) { setData({ missionsByBand:[], modsCoverage:[], modsCoverageBands:[], bandLabels:[], rarityCounts:[], holes:[], outliers:[], lastLoaded:null, repoRoot:null, errors:[String(e)] } as any);} })(); }, []);
+  const DEFAULTS: Summary = { manifestUrl: null, lastLoaded: null as any, errors: [], missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: [] };
+  useEffect(() => { (async ()=>{ try { const r=await fetch("/api/summary"); const j=await r.json().catch(()=>null); setData(j); } catch(e) { setData({ missionsByBand:[], modsCoverage:[], modsCoverageBands:[], bandLabels:[], rarityCounts:[], holes:[], outliers:[], lastLoaded:null, manifestUrl:null, errors:[String(e)] } as any);} })(); }, []);
   if (!data) return <div>Loading…</div>;
 
   return (
@@ -31,7 +31,7 @@ export default function DashboardPage() {
         <Card>
           <CardTitle>Data Source</CardTitle>
           <div className="text-sm text-white/80">
-            <div><span className="label">Repo:</span> {data.repoRoot || <em>not set</em>}</div>
+            <div><span className="label">Manifest:</span> {data.manifestUrl || <em>not set</em>}</div>
             <div><span className="label">Last loaded:</span> {data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
             {data.errors?.length ? <div className="text-red-400 mt-2">Errors: {data.errors.join("; ")}</div> : null}
           </div>

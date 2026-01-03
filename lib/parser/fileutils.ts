@@ -25,3 +25,13 @@ export function listFilesRecursive(dir: string, exts: string[]): string[] {
   } catch {}
   return out;
 }
+
+export async function readJsonFromUrl<T>(url: string): Promise<T | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json() as T;
+  } catch {
+    return null;
+  }
+}

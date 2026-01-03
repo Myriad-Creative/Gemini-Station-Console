@@ -10,14 +10,16 @@ export async function GET() {
     const summary = getSummary();
     return NextResponse.json({
       lastLoaded: store.lastLoaded,
-      repoRoot: store.repoRoot,
+      manifestUrl: store.manifestUrl,
+      dataUrls: store.dataUrls,
       errors: store.errors,
       ...summary
     });
   } catch (e:any) {
     return NextResponse.json({
       lastLoaded: null,
-      repoRoot: null,
+      manifestUrl: null,
+      dataUrls: null,
       errors: [String(e?.message || e)],
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });
