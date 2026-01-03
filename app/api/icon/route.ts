@@ -67,19 +67,31 @@ export async function GET(req: NextRequest) {
     return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
   }
 
-  // Remote fallback (manifest host + /assets)
+  // Remote fallback (data-url hosts + /assets)
   const cfg = getConfig();
-  let manifestOrigin: URL | null = null;
-  try { manifestOrigin = new URL(cfg.manifest_url); } catch {}
+  const baseHosts = new Set<string>();
+  function addOrigin(maybeUrl?: string | null) {
+    if (!maybeUrl) return;
+    try {
+      const u = new URL(maybeUrl);
+      baseHosts.add(`${u.protocol}//${u.host}`);
+    } catch {}
+  }
+  addOrigin(cfg.manifest_url);
+  addOrigin(store.dataUrls?.mods || undefined);
+  addOrigin(store.dataUrls?.items || undefined);
+
   const remoteCandidates: string[] = [];
   if (/^https?:\/\//i.test(cleaned)) remoteCandidates.push(cleaned);
-  if (manifestOrigin) {
-    const base = `${manifestOrigin.protocol}//${manifestOrigin.host}`;
-    const baseClean = cleaned.replace(/^\/+/, "");
+  const baseClean = cleaned.replace(/^\/+/, "");
+  const baseName = path.basename(baseClean);
+  for (const base of Array.from(baseHosts)) {
     remoteCandidates.push(`${base}/${baseClean}`);
     if (!baseClean.toLowerCase().startsWith("assets/")) {
       remoteCandidates.push(`${base}/assets/${baseClean}`);
     }
+    remoteCandidates.push(`${base}/assets/mods/${baseName}`);
+    remoteCandidates.push(`${base}/assets/items/${baseName}`);
   }
 
   for (const candidate of remoteCandidates) {
