@@ -8,7 +8,7 @@ html, body { @apply bg-ink text-white; }
 a { @apply text-accent; }
 .container { @apply max-w-7xl mx-auto px-4; }
 .page-title { @apply text-2xl font-semibold mb-4; }
-.card { @apply bg-panel rounded-lg border border-white/10 p-4; }
+.card { @apply relative bg-panel rounded-lg border border-white/10 p-4; }
 .grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
 .badge { @apply text-xs px-2 py-1 rounded bg-white/10; }
 .btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded bg-accent text-black hover:brightness-110 transition; }
@@ -21,5 +21,5 @@ a { @apply text-accent; }
 .cursor-pointer { cursor: pointer; }
 
 /* tooltip for mods */
-.tooltip { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 50; }
+.tooltip { position: absolute; top: calc(100% + 8px); left: 0; z-index: 1000; }
 .tooltip-card { @apply bg-panel border border-white/10 rounded p-3 shadow-xl w-80; }

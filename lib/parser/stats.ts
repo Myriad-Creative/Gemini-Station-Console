@@ -54,9 +54,7 @@ export function computeOutliers(mods: Mod[], zThreshold: number): Outlier[] {
 }
 
 export function computeCompositeScore(m: Mod, weightsGlobal: Record<string, number>, weightsPerSlot?: Record<string, Record<string, number>>, abilityWeight=1) {
-  const slotWeights = { ...(weightsGlobal || {}), ...(weightsPerSlot?.[m.slot] || {}) };
-  let s = 0;
-  for (const [k, v] of Object.entries(m.stats)) s += (slotWeights[k] ?? 1) * v;
-  s += abilityWeight * (m.abilities?.length || 0);
-  return s;
+  const statTotal = Object.values(m.stats || {}).reduce((sum, val) => sum + Number(val ?? 0), 0);
+  const abilitiesScore = (m.abilities?.length || 0) * 5;
+  return statTotal + abilitiesScore;
 }

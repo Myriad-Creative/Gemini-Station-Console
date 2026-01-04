@@ -52,7 +52,6 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
     ) },
     { key: "slot", header: "Slot", render: (r: Row) => r.slot },
     { key: "levelRequirement", header: "Level", render: (r: Row) => r.levelRequirement },
-    { key: "rarity", header: "Rarity", render: (r: Row) => <span style={rarityStyle(r.rarity)}>{r.rarity}</span> },
     { key: "abilities", header: "Abilities", render: (r: Row) => {
       const count = (r.abilities || []).length;
       return count ? <span className="badge mr-1">{count}</span> : <span className="text-white/50">—</span>;
@@ -66,7 +65,7 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
   );
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto overflow-y-visible pb-28">
       <table className="table">
         <thead>
           <tr>{columns.map(headerCell)}</tr>
