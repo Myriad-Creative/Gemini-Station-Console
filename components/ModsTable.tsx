@@ -65,7 +65,7 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
   );
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto overflow-y-visible">
       <table className="table">
         <thead>
           <tr>{columns.map(headerCell)}</tr>
