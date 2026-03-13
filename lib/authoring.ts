@@ -152,6 +152,12 @@ function cleanObject<T extends JsonObject>(value: T): T {
   return out as T;
 }
 
+function parseScalarString(value: string): string | number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return /^-?\d+(?:\.\d+)?$/.test(trimmed) ? Number(trimmed) : trimmed;
+}
+
 function looksLikeMission(value: JsonObject) {
   return (
     "id" in value ||
@@ -673,26 +679,30 @@ export function exportModDraft(mod: ModDraft) {
 
   return cleanObject({
     ...extra,
-    id: mod.id.trim(),
+    id: parseScalarString(mod.id) ?? mod.id.trim(),
     name: mod.name.trim(),
     slot: mod.slot.trim(),
-    class_restriction: mod.classRestriction.map((entry) => entry.trim()).filter(Boolean),
+    class_restriction: (() => {
+      const values = mod.classRestriction.map((entry) => entry.trim()).filter(Boolean);
+      if (!values.length) return undefined;
+      return values.length === 1 ? values[0] : values;
+    })(),
     level_requirement: parseNumber(mod.levelRequirement),
     item_level: parseNumber(mod.itemLevel),
     rarity: parseNumber(mod.rarity) ?? 0,
     durability: parseNumber(mod.durability),
     sell_price: parseNumber(mod.sellPrice),
     stats,
-    abilities: mod.abilities.map((entry) => entry.trim()).filter(Boolean),
+    abilities: mod.abilities
+      .map((entry) => parseScalarString(entry))
+      .filter((entry): entry is string | number => entry !== undefined),
     icon: mod.icon.trim() || undefined,
     description: mod.description.trim() || undefined,
   });
 }
 
 export function exportModsJson(mods: ModDraft[]) {
-  return {
-    mods: mods.map((mod) => exportModDraft(mod)),
-  };
+  return mods.map((mod) => exportModDraft(mod));
 }
 
 export function missionFilename(mission: MissionDraft, index: number) {

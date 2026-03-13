@@ -31,6 +31,7 @@ import {
   normalizeImportedMissionCollection,
   validateMissionDrafts,
 } from "@lib/authoring";
+import { parseLooseJson } from "@lib/json";
 
 const OBJECTIVE_TYPES = ["talk", "travel", "kill", "collect", "deliver", "custom"];
 
@@ -150,7 +151,7 @@ export default function MissionWorkshop({
     for (const file of files) {
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text);
+        const parsed = parseLooseJson(text);
         const normalized = normalizeImportedMissionCollection(parsed);
         if (normalized.length) imported.push(...normalized);
         else invalidFiles += 1;

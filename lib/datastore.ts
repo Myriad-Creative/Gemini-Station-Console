@@ -7,6 +7,7 @@ import { parseMissionsFromData } from "@parser/missions";
 import { parseItemsFromData } from "@parser/items";
 import { computeOutliers } from "@parser/stats";
 import { readJsonFromUrl } from "@parser/fileutils";
+import { parseLooseJson } from "@lib/json";
 
 type Store = {
   manifestUrl: string | null;
@@ -56,7 +57,7 @@ async function fetchJson<T = any>(url?: string | null): Promise<{ data: T | null
 async function loadModsData(url?: string | null, overrideJson?: string | null): Promise<{ data: any | null; error?: string }> {
   if (overrideJson?.trim()) {
     try {
-      return { data: JSON.parse(overrideJson) };
+      return { data: parseLooseJson(overrideJson) };
     } catch (e: any) {
       return { data: null, error: `Invalid Mods.json override: ${e?.message || e}` };
     }

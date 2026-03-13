@@ -15,6 +15,7 @@ import {
   normalizeImportedModCollection,
   validateModDrafts,
 } from "@lib/authoring";
+import { parseLooseJson } from "@lib/json";
 
 export default function ModWorkshop({
   mods,
@@ -109,7 +110,7 @@ export default function ModWorkshop({
 
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
+      const parsed = parseLooseJson(text);
       const imported = normalizeImportedModCollection(parsed);
       if (imported.length) {
         startTransition(() => {

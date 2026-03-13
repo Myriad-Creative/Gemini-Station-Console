@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, saveConfig } from "@lib/config";
 import { getStore, loadAll, warmupLoadIfNeeded } from "@lib/datastore";
+import { parseLooseJson } from "@lib/json";
 
 export const runtime = "nodejs";
 
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     const trimmedOverride = rawOverride.trim();
 
     if (trimmedOverride) {
-      const parsed = JSON.parse(trimmedOverride);
+      const parsed = parseLooseJson(trimmedOverride);
       if (parsed === null || typeof parsed !== "object") {
         throw new Error("Mods.json override must be a JSON object or array.");
       }
