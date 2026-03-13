@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, HTMLAttributes, startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import {
   ModDraft,
   ModStatDraft,
@@ -20,12 +21,10 @@ import { parseLooseJson } from "@lib/json";
 export default function ModWorkshop({
   mods,
   onChange,
-  slotOptions,
   consoleModCount,
 }: {
   mods: ModDraft[];
   onChange: (next: ModDraft[]) => void;
-  slotOptions: string[];
   consoleModCount: number;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -57,6 +56,7 @@ export default function ModWorkshop({
 
   const errorCount = validation.filter((message) => message.level === "error").length;
   const warningCount = validation.length - errorCount;
+  const statDefaults = useMemo(() => Object.fromEntries(MOD_STAT_DEFAULTS.map((entry) => [entry.key, entry.defaultValue])), []);
 
   function setModAt(index: number, next: ModDraft) {
     onChange(mods.map((mod, modIndex) => (modIndex === index ? next : mod)));
@@ -157,7 +157,7 @@ export default function ModWorkshop({
           <div>
             <h2 className="text-lg font-semibold">Mod Library</h2>
             <div className="text-xs text-white/50">
-              {mods.length} draft(s) · {slotOptions.length} known slot(s) · {consoleModCount} console mod seed(s)
+              {mods.length} draft(s) · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
             </div>
           </div>
           <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
@@ -258,16 +258,15 @@ export default function ModWorkshop({
                 onChange={() => {}}
               />
               <Field label="Name" value={selectedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
-              <Field
+              <SelectField
                 label="Slot"
                 value={selectedMod.slot}
-                datalistId="mod-slot-options"
+                options={MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot }))}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, slot: value }))}
               />
-              <Field
+              <RarityField
                 label="Rarity"
                 value={selectedMod.rarity}
-                inputMode="numeric"
                 onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }))}
               />
               <Field
@@ -311,12 +310,6 @@ export default function ModWorkshop({
               />
             </div>
 
-            <datalist id="mod-slot-options">
-              {slotOptions.map((slot) => (
-                <option key={slot} value={slot} />
-              ))}
-            </datalist>
-
             <div>
               <div className="label mb-2">Description</div>
               <textarea
@@ -349,10 +342,23 @@ export default function ModWorkshop({
             <div className="space-y-3">
               {selectedMod.stats.map((entry, statIndex) => (
                 <div key={`${entry.key || "stat"}-${statIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
-                  <Field
+                  <SelectField
                     label={statIndex === 0 ? "Stat Key" : " "}
                     value={entry.key}
-                    onChange={(value) => updateStat(statIndex, (current) => ({ ...current, key: value }))}
+                    options={[
+                      { value: "", label: "Select stat" },
+                      ...MOD_STAT_DEFAULTS.map((stat) => ({
+                        value: stat.key,
+                        label: `${stat.key} (${stat.defaultValue})`,
+                      })),
+                    ]}
+                    onChange={(value) =>
+                      updateStat(statIndex, (current) => ({
+                        ...current,
+                        key: value,
+                        value: current.value.trim() ? current.value : statDefaults[value] ?? current.value,
+                      }))
+                    }
                   />
                   <Field
                     label={statIndex === 0 ? "Value" : " "}
@@ -441,7 +447,6 @@ function Field({
   label,
   value,
   onChange,
-  datalistId,
   inputMode,
   readOnly,
   helpText,
@@ -449,7 +454,6 @@ function Field({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  datalistId?: string;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
   readOnly?: boolean;
   helpText?: string;
@@ -460,12 +464,67 @@ function Field({
       <input
         className={`input ${readOnly ? "cursor-default text-white/70" : ""}`}
         value={value}
-        list={datalistId}
         inputMode={inputMode}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
       />
       {helpText ? <div className="mt-1 text-xs text-white/50">{helpText}</div> : null}
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <div className="label mb-2">{label.trim() ? label : "\u00a0"}</div>
+      <select className="select w-full" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={`${label}-${option.value || "empty"}`} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function RarityField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const rarityNumber = Number(value);
+  const selectedColor = Number.isFinite(rarityNumber) ? RARITY_COLOR[rarityNumber] || "#FFFFFF" : "#FFFFFF";
+
+  return (
+    <label>
+      <div className="label mb-2">{label}</div>
+      <select
+        className="select w-full font-medium"
+        value={value}
+        style={{ color: selectedColor }}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {Object.entries(RARITY_LABEL).map(([rarityValue, rarityLabel]) => (
+          <option key={rarityValue} value={rarityValue} style={{ color: RARITY_COLOR[Number(rarityValue)] || "#FFFFFF" }}>
+            {rarityValue} · {rarityLabel}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

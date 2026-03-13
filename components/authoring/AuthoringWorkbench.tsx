@@ -117,15 +117,6 @@ export default function AuthoringWorkbench() {
     ).sort((left, right) => left.localeCompare(right));
   }, [existingMissions, missions]);
 
-  const slotOptions = useMemo(() => {
-    return Array.from(
-      new Set([
-        ...existingMods.map((mod) => mod.slot.trim()).filter(Boolean),
-        ...mods.map((mod) => mod.slot.trim()).filter(Boolean),
-      ]),
-    ).sort((left, right) => left.localeCompare(right));
-  }, [existingMods, mods]);
-
   function seedMissionDrafts() {
     if (!existingMissions.length) {
       setWorkspaceMessage("No mission data is currently loaded in the console.");
@@ -244,7 +235,7 @@ export default function AuthoringWorkbench() {
           consoleMissionCount={existingMissions.length}
         />
       ) : (
-        <ModWorkshop mods={mods} onChange={setMods} slotOptions={slotOptions} consoleModCount={existingMods.length} />
+        <ModWorkshop mods={mods} onChange={setMods} consoleModCount={existingMods.length} />
       )}
     </div>
   );
