@@ -53,19 +53,34 @@ async function fetchJson<T = any>(url?: string | null): Promise<{ data: T | null
   }
 }
 
+async function loadModsData(url?: string | null, overrideJson?: string | null): Promise<{ data: any | null; error?: string }> {
+  if (overrideJson?.trim()) {
+    try {
+      return { data: JSON.parse(overrideJson) };
+    } catch (e: any) {
+      return { data: null, error: `Invalid Mods.json override: ${e?.message || e}` };
+    }
+  }
+  return fetchJson(url);
+}
+
 export async function loadAll(): Promise<Store> {
   STORE.errors = [];
   const cfg = getConfig();
   const dataUrls: DataUrls = { ...(cfg.data_urls || {}) };
+  const usingModsOverride = !!cfg.mods_override_json?.trim();
   STORE.manifestUrl = null;
   STORE.dataUrls = dataUrls;
-  const missingRequired = ["mods", "items"].filter(k => !(dataUrls as any)?.[k]);
+  const missingRequired = ["mods", "items"].filter(k => {
+    if (k === "mods" && usingModsOverride) return false;
+    return !(dataUrls as any)?.[k];
+  });
   if (missingRequired.length) {
     STORE.errors.push(`Missing URLs for: ${missingRequired.join(", ")}`);
   }
   try {
     const fetchResults = await Promise.all([
-      fetchJson(dataUrls?.mods),
+      loadModsData(dataUrls?.mods, cfg.mods_override_json ?? null),
       fetchJson(dataUrls?.items),
       fetchJson(dataUrls?.mobs),
       fetchJson(dataUrls?.missions),
@@ -95,7 +110,8 @@ export async function loadAll(): Promise<Store> {
     if (dataUrls?.abilities && !abilities.length) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
 
     const mods = parseModsFromData(modsData);
-    if (dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
+    if (usingModsOverride && !mods.length) STORE.errors.push("Loaded zero mods from the saved Mods.json override.");
+    else if (dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
 
     const items = parseItemsFromData(itemsData);
     if (dataUrls?.items && !items.length) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);

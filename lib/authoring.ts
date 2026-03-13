@@ -79,6 +79,31 @@ type JsonObject = Record<string, unknown>;
 export const MISSION_STORAGE_KEY = "gemini.console.authoring.missions.v1";
 export const MOD_STORAGE_KEY = "gemini.console.authoring.mods.v1";
 
+function incrementTrailingNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "mod_001";
+
+  const match = trimmed.match(/^(.*?)(\d+)$/);
+  if (match) {
+    const [, prefix, digits] = match;
+    const nextValue = String(Number(digits) + 1).padStart(digits.length, "0");
+    return `${prefix}${nextValue}`;
+  }
+
+  return `${trimmed}_001`;
+}
+
+export function nextGeneratedModId(existingIds: string[], previousId?: string) {
+  const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
+  let candidate = incrementTrailingNumber(previousId || existingIds[existingIds.length - 1] || "");
+
+  while (taken.has(candidate)) {
+    candidate = incrementTrailingNumber(candidate);
+  }
+
+  return candidate;
+}
+
 function asObject(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as JsonObject;
@@ -343,9 +368,9 @@ export function createMissionDraft(): MissionDraft {
   };
 }
 
-export function createModDraft(): ModDraft {
+export function createModDraft(existingIds: string[] = [], previousId?: string): ModDraft {
   return {
-    id: "",
+    id: nextGeneratedModId(existingIds, previousId),
     name: "",
     slot: "",
     classRestriction: [],
@@ -390,10 +415,10 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
   };
 }
 
-export function duplicateModDraft(draft: ModDraft): ModDraft {
+export function duplicateModDraft(draft: ModDraft, existingIds: string[] = []): ModDraft {
   return {
     ...JSON.parse(JSON.stringify(draft)),
-    id: draft.id ? `${draft.id}_copy` : "",
+    id: nextGeneratedModId(existingIds, draft.id),
     name: draft.name ? `${draft.name} Copy` : "",
   };
 }

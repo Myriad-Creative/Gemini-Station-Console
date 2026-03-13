@@ -74,16 +74,22 @@ export default function ModWorkshop({
   }
 
   function addMod() {
-    const next = [...mods, createModDraft()];
+    const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
+    const previousId = selectedMod?.id.trim() || existingIds[existingIds.length - 1];
+    const newDraft = createModDraft(existingIds, previousId);
+    const insertAt = selectedMod ? clampedSelectedIndex + 1 : mods.length;
+    const next = [...mods];
+    next.splice(insertAt, 0, newDraft);
     onChange(next);
-    setSelectedIndex(next.length - 1);
+    setSelectedIndex(insertAt);
     setStatus("Created a new mod draft.");
   }
 
   function duplicateSelectedMod() {
     if (!selectedMod) return;
+    const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
     const next = [...mods];
-    next.splice(clampedSelectedIndex + 1, 0, duplicateModDraft(selectedMod));
+    next.splice(clampedSelectedIndex + 1, 0, duplicateModDraft(selectedMod, existingIds));
     onChange(next);
     setSelectedIndex(clampedSelectedIndex + 1);
     setStatus("Duplicated the selected mod draft.");
@@ -130,6 +136,11 @@ export default function ModWorkshop({
   function exportAllMods() {
     downloadJson(exportModsJson(mods), "Mods.json");
     setStatus("Exported the full Mods.json draft.");
+  }
+
+  async function copyAllModsJson() {
+    const didCopy = await copyText(JSON.stringify(exportModsJson(mods), null, 2));
+    setStatus(didCopy ? "Copied the full Mods.json payload to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
   async function copySelectedJson() {
@@ -222,8 +233,14 @@ export default function ModWorkshop({
                 <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copySelectedJson}>
                   Copy JSON
                 </button>
+                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copyAllModsJson}>
+                  Copy All Mods JSON
+                </button>
                 <button className="btn" onClick={exportSelectedMod}>
                   Export Selected
+                </button>
+                <button className="btn" onClick={exportAllMods}>
+                  Export Mods.json
                 </button>
                 <button className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30" onClick={removeSelectedMod}>
                   Delete
@@ -232,7 +249,13 @@ export default function ModWorkshop({
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Mod ID" value={selectedMod.id} onChange={(value) => updateSelected((draft) => ({ ...draft, id: value }))} />
+              <Field
+                label="Mod ID (Auto-generated)"
+                value={selectedMod.id}
+                readOnly
+                helpText={selectedMod.id ? `Auto-generated from the previous mod id.` : `Will be generated from the previous mod id.`}
+                onChange={() => {}}
+              />
               <Field label="Name" value={selectedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
               <Field
                 label="Slot"
@@ -419,23 +442,29 @@ function Field({
   onChange,
   datalistId,
   inputMode,
+  readOnly,
+  helpText,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   datalistId?: string;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
+  readOnly?: boolean;
+  helpText?: string;
 }) {
   return (
     <label>
       <div className="label mb-2">{label.trim() ? label : "\u00a0"}</div>
       <input
-        className="input"
+        className={`input ${readOnly ? "cursor-default text-white/70" : ""}`}
         value={value}
         list={datalistId}
         inputMode={inputMode}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
       />
+      {helpText ? <div className="mt-1 text-xs text-white/50">{helpText}</div> : null}
     </label>
   );
 }
