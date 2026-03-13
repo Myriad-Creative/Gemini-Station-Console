@@ -4,7 +4,7 @@ import Nav from "@components/Nav";
 
 export const metadata = {
   title: "Gemini Balance Console",
-  description: "Content coverage and balance tooling for Gemini Station (read-only)"
+  description: "Content coverage, balance, and authoring tooling for Gemini Station"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

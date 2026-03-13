@@ -7,6 +7,7 @@ const tabs = [
   { href: "/mods", label: "Mods" },
   { href: "/items", label: "Items" },
   { href: "/missions", label: "Missions" },
+  { href: "/authoring", label: "Authoring" },
   { href: "/reports/holes", label: "Holes" },
   { href: "/reports/outliers", label: "Outliers" },
   { href: "/settings", label: "Settings" }
@@ -20,7 +21,15 @@ export default function Nav() {
         <Link
           key={t.href}
           href={t.href}
-          className={`text-sm ${pathname === t.href ? "text-accent" : "text-white/80 hover:text-white"}`}
+          className={`text-sm ${
+            t.href === "/"
+              ? pathname === "/"
+                ? "text-accent"
+                : "text-white/80 hover:text-white"
+              : pathname === t.href || pathname?.startsWith(`${t.href}/`)
+                ? "text-accent"
+                : "text-white/80 hover:text-white"
+          }`}
         >
           {t.label}
         </Link>
