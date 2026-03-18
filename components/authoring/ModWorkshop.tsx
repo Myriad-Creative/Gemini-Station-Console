@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, HTMLAttributes, startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import {
   BulkModTemplateDraft,
   ModDraft,
@@ -411,9 +411,13 @@ export default function ModWorkshop({
                   inputMode="numeric"
                   onChange={(value) => updateBulkCreate("sellPrice", value)}
                 />
-                <Field
-                  label="Class Restriction(s)"
+                <SelectField
+                  label="Class Restriction"
                   value={bulkCreate.classRestriction}
+                  options={[
+                    { value: "", label: "Select class restriction" },
+                    ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
+                  ]}
                   onChange={(value) => updateBulkCreate("classRestriction", value)}
                 />
                 <Field
@@ -529,10 +533,19 @@ export default function ModWorkshop({
                 inputMode="numeric"
                 onChange={(value) => updateSelected((draft) => ({ ...draft, sellPrice: value }))}
               />
-              <Field
-                label="Class Restrictions (comma separated)"
-                value={csvFromList(selectedMod.classRestriction)}
-                onChange={(value) => updateSelected((draft) => ({ ...draft, classRestriction: listFromCsv(value) }))}
+              <SelectField
+                label="Class Restriction"
+                value={selectedMod.classRestriction[0] ?? ""}
+                options={[
+                  { value: "", label: "Select class restriction" },
+                  ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
+                ]}
+                onChange={(value) =>
+                  updateSelected((draft) => ({
+                    ...draft,
+                    classRestriction: value ? [value] : [],
+                  }))
+                }
               />
               <Field
                 label="Abilities (comma separated)"
@@ -641,7 +654,7 @@ export default function ModWorkshop({
             <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
           </div>
           </>
-          )}
+        )}
         </div>
       )}
     </div>

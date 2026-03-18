@@ -23,6 +23,15 @@ export const MOD_SLOT_OPTIONS = [
   "Weapon"
 ] as const;
 
+export const CLASS_RESTRICTION_OPTIONS = [
+  "None",
+  "Soldier",
+  "Entrepreneur",
+  "Scout",
+  "Engineer",
+  "Miner"
+] as const;
+
 export const MOD_STAT_DEFAULTS = [
   { key: "armor", defaultValue: "100.0" },
   { key: "shields", defaultValue: "100.0" },
