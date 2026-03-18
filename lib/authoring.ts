@@ -1,3 +1,14 @@
+import {
+  MOD_MAX_ABILITIES,
+  MOD_MAX_STATS,
+  MOD_REQUIRED_LEVEL_MAX,
+  MOD_REQUIRED_LEVEL_MIN,
+  calculateModBudgetSummary,
+  clampModRequiredLevel,
+  getModStatBudgetConfig,
+  getModStatMaxAtRequiredLevel,
+} from "@lib/mod-budget";
+
 export type ValidationLevel = "error" | "warning";
 
 export interface ValidationMessage {
@@ -57,6 +68,11 @@ export interface ModStatDraft {
   value: string;
 }
 
+export interface ModAbilityDraft {
+  id: string;
+  budgetCost: string;
+}
+
 export interface ModDraft {
   id: string;
   name: string;
@@ -68,7 +84,7 @@ export interface ModDraft {
   durability: string;
   sellPrice: string;
   stats: ModStatDraft[];
-  abilities: string[];
+  abilities: ModAbilityDraft[];
   icon: string;
   description: string;
   extraJson: string;
@@ -78,11 +94,10 @@ export interface BulkModTemplateDraft {
   slot: string;
   classRestriction: string[];
   levelRequirement: string;
-  itemLevel: string;
   rarity: string;
   durability: string;
   sellPrice: string;
-  abilities: string[];
+  abilities: ModAbilityDraft[];
   icon: string;
   description: string;
 }
@@ -252,6 +267,39 @@ export function parseNumber(input: string) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+export function clampLevelInput(input: string) {
+  const parsed = parseNumber(input);
+  if (parsed === undefined) return input;
+  return String(clampModRequiredLevel(parsed));
+}
+
+export function createModAbilityDraft(id = "", budgetCost = "0"): ModAbilityDraft {
+  return { id, budgetCost };
+}
+
+export function buildModBudgetSummary(mod: ModDraft) {
+  return calculateModBudgetSummary({
+    requiredLevel: parseNumber(mod.levelRequirement),
+    rarity: parseNumber(mod.rarity),
+    stats: mod.stats.map((entry) => ({
+      key: entry.key.trim(),
+      value: parseNumber(entry.value),
+    })),
+    abilities: mod.abilities.map((entry) => ({
+      budgetCost: parseNumber(entry.budgetCost),
+    })),
+  });
+}
+
+export function syncDerivedModFields(mod: ModDraft): ModDraft {
+  const budget = buildModBudgetSummary(mod);
+  return {
+    ...mod,
+    levelRequirement: mod.levelRequirement.trim() ? clampLevelInput(mod.levelRequirement).trim() : "",
+    itemLevel: budget.itemLevel === undefined ? "" : String(budget.itemLevel),
+  };
+}
+
 export function parseExtraJson(input: string): JsonObject {
   if (!input.trim()) return {};
   const value = JSON.parse(input);
@@ -395,7 +443,7 @@ export function createMissionDraft(): MissionDraft {
 }
 
 export function createModDraft(existingIds: string[] = [], previousId?: string): ModDraft {
-  return {
+  return syncDerivedModFields({
     id: nextGeneratedModId(existingIds, previousId),
     name: "",
     slot: "",
@@ -410,7 +458,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     icon: "",
     description: "",
     extraJson: "",
-  };
+  });
 }
 
 export function duplicateMissionStepDraft(step: MissionStepDraft): MissionStepDraft {
@@ -442,11 +490,11 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
 }
 
 export function duplicateModDraft(draft: ModDraft, existingIds: string[] = []): ModDraft {
-  return {
+  return syncDerivedModFields({
     ...JSON.parse(JSON.stringify(draft)),
     id: nextGeneratedModId(existingIds, draft.id),
     name: draft.name ? `${draft.name} Copy` : "",
-  };
+  });
 }
 
 export function createBulkModDrafts(
@@ -466,20 +514,22 @@ export function createBulkModDrafts(
       slot: template.slot.trim(),
       classRestriction: [...template.classRestriction],
       levelRequirement: template.levelRequirement.trim(),
-      itemLevel: template.itemLevel.trim(),
+      itemLevel: "",
       rarity: template.rarity.trim(),
       durability: template.durability.trim(),
       sellPrice: template.sellPrice.trim(),
       stats: [],
-      abilities: [...template.abilities],
+      abilities: template.abilities.map((ability) => ({ ...ability })),
       icon: template.icon.trim(),
       description: template.description,
       extraJson: "",
     };
 
-    knownIds.push(nextDraft.id);
-    previous = nextDraft.id;
-    return nextDraft;
+    const syncedDraft = syncDerivedModFields(nextDraft);
+
+    knownIds.push(syncedDraft.id);
+    previous = syncedDraft.id;
+    return syncedDraft;
   });
 }
 
@@ -585,11 +635,35 @@ export function normalizeImportedMissionCollection(raw: unknown): MissionDraft[]
 export function normalizeImportedMod(raw: unknown): ModDraft {
   const source = asObject(raw);
   const statsSource =
-    source.stats && typeof source.stats === "object" && !Array.isArray(source.stats)
-      ? (source.stats as Record<string, unknown>)
-      : {};
+    Array.isArray(source.stats)
+      ? (source.stats as unknown[]).map((entry) => {
+          const stat = asObject(entry);
+          return {
+            key: String(stat.key ?? ""),
+            value: numberString(stat.value),
+          };
+        })
+      : source.stats && typeof source.stats === "object" && !Array.isArray(source.stats)
+        ? Object.entries(source.stats as Record<string, unknown>).map(([key, value]) => ({
+            key,
+            value: numberString(value as string | number | null | undefined),
+          }))
+        : [];
 
-  return {
+  const abilitiesSource = Array.isArray(source.abilities)
+    ? (source.abilities as unknown[]).map((entry) => {
+        if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+          const ability = asObject(entry);
+          return createModAbilityDraft(
+            String(ability.id ?? ability.ability_id ?? ability.key ?? ""),
+            numberString(ability.budget_cost ?? ability.budgetCost ?? 0),
+          );
+        }
+        return createModAbilityDraft(String(entry ?? ""), "0");
+      })
+    : [];
+
+  return syncDerivedModFields({
     id: String(source.id ?? source.key ?? ""),
     name: String(source.name ?? source.id ?? source.key ?? ""),
     slot: String(source.slot ?? source.mod_slot ?? ""),
@@ -601,13 +675,8 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     rarity: numberString(source.rarity ?? 0),
     durability: numberString(source.durability),
     sellPrice: numberString(source.sell_price ?? source.sellPrice),
-    stats: Object.entries(statsSource).length
-      ? Object.entries(statsSource).map(([key, value]) => ({
-          key,
-          value: numberString(value as string | number | null | undefined),
-        }))
-      : [{ key: "power", value: "" }],
-    abilities: stringList(source.abilities),
+    stats: statsSource.length ? statsSource : [{ key: "power", value: "" }],
+    abilities: abilitiesSource,
     icon: String(source.icon ?? ""),
     description: String(source.description ?? source.desc ?? ""),
     extraJson: prettyExtraJson(
@@ -634,7 +703,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
         "desc",
       ]),
     ),
-  };
+  });
 }
 
 export function normalizeImportedModCollection(raw: unknown): ModDraft[] {
@@ -722,9 +791,10 @@ export function exportMissionDraft(draft: MissionDraft) {
 }
 
 export function exportModDraft(mod: ModDraft) {
+  const syncedMod = syncDerivedModFields(mod);
   const extra = safeExtraJson(mod.extraJson);
   const stats: Record<string, number> = {};
-  for (const entry of mod.stats) {
+  for (const entry of syncedMod.stats) {
     const key = entry.key.trim();
     const value = parseNumber(entry.value);
     if (!key || value === undefined) continue;
@@ -733,25 +803,25 @@ export function exportModDraft(mod: ModDraft) {
 
   return cleanObject({
     ...extra,
-    id: parseScalarString(mod.id) ?? mod.id.trim(),
-    name: mod.name.trim(),
-    slot: mod.slot.trim(),
+    id: parseScalarString(syncedMod.id) ?? syncedMod.id.trim(),
+    name: syncedMod.name.trim(),
+    slot: syncedMod.slot.trim(),
     class_restriction: (() => {
-      const values = mod.classRestriction.map((entry) => entry.trim()).filter(Boolean);
+      const values = syncedMod.classRestriction.map((entry) => entry.trim()).filter(Boolean);
       if (!values.length) return undefined;
       return values.length === 1 ? values[0] : values;
     })(),
-    level_requirement: parseNumber(mod.levelRequirement),
-    item_level: parseNumber(mod.itemLevel),
-    rarity: parseNumber(mod.rarity) ?? 0,
-    durability: parseNumber(mod.durability),
-    sell_price: parseNumber(mod.sellPrice),
+    level_requirement: parseNumber(syncedMod.levelRequirement),
+    item_level: parseNumber(syncedMod.itemLevel),
+    rarity: parseNumber(syncedMod.rarity) ?? 0,
+    durability: parseNumber(syncedMod.durability),
+    sell_price: parseNumber(syncedMod.sellPrice),
     stats,
-    abilities: mod.abilities
-      .map((entry) => parseScalarString(entry))
+    abilities: syncedMod.abilities
+      .map((entry) => parseScalarString(entry.id))
       .filter((entry): entry is string | number => entry !== undefined),
-    icon: mod.icon.trim() || undefined,
-    description: mod.description.trim() || undefined,
+    icon: syncedMod.icon.trim() || undefined,
+    description: syncedMod.description.trim() || undefined,
   });
 }
 
@@ -1006,6 +1076,11 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
 
   for (const [draftIndex, mod] of mods.entries()) {
     const id = mod.id.trim();
+    const syncedMod = syncDerivedModFields(mod);
+    const levelRequirement = parseNumber(syncedMod.levelRequirement);
+    const rarity = parseNumber(syncedMod.rarity);
+    const budget = buildModBudgetSummary(syncedMod);
+
     if (!id) {
       messages.push({ level: "warning", scope: "mods", draftIndex, message: "Mod id is blank." });
     } else {
@@ -1020,9 +1095,9 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Mod slot is blank." });
     }
 
-    if (!mod.levelRequirement.trim()) {
+    if (!syncedMod.levelRequirement.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Level requirement is blank." });
-    } else if (parseNumber(mod.levelRequirement) === undefined) {
+    } else if (levelRequirement === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -1030,23 +1105,19 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         itemId: id || undefined,
         message: "Level requirement must be numeric.",
       });
-    }
-
-    if (!mod.itemLevel.trim()) {
-      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Item level is blank." });
-    } else if (parseNumber(mod.itemLevel) === undefined) {
+    } else if (levelRequirement < MOD_REQUIRED_LEVEL_MIN || levelRequirement > MOD_REQUIRED_LEVEL_MAX) {
       messages.push({
         level: "error",
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: "Item level must be numeric.",
+        message: `Level requirement must stay between ${MOD_REQUIRED_LEVEL_MIN} and ${MOD_REQUIRED_LEVEL_MAX}.`,
       });
     }
 
-    if (!mod.rarity.trim()) {
+    if (!syncedMod.rarity.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Rarity is blank." });
-    } else if (parseNumber(mod.rarity) === undefined) {
+    } else if (rarity === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -1054,11 +1125,19 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         itemId: id || undefined,
         message: "Rarity must be numeric.",
       });
+    } else if (!(rarity in { 0: true, 1: true, 2: true, 3: true, 4: true })) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "Rarity must be between 0 and 4.",
+      });
     }
 
-    if (!mod.durability.trim()) {
+    if (!syncedMod.durability.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Durability is blank." });
-    } else if (parseNumber(mod.durability) === undefined) {
+    } else if (parseNumber(syncedMod.durability) === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -1068,9 +1147,9 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       });
     }
 
-    if (!mod.sellPrice.trim()) {
+    if (!syncedMod.sellPrice.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Sell price is blank." });
-    } else if (parseNumber(mod.sellPrice) === undefined) {
+    } else if (parseNumber(syncedMod.sellPrice) === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -1080,7 +1159,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       });
     }
 
-    if (!mod.classRestriction.length) {
+    if (!syncedMod.classRestriction.length) {
       messages.push({
         level: "warning",
         scope: "mods",
@@ -1090,14 +1169,14 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       });
     }
 
-    if (!mod.icon.trim()) {
+    if (!syncedMod.icon.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Icon is blank." });
     }
 
     try {
-      parseExtraJson(mod.extraJson);
+      parseExtraJson(syncedMod.extraJson);
     } catch {
-      if (mod.extraJson.trim()) {
+      if (syncedMod.extraJson.trim()) {
         messages.push({
           level: "error",
           scope: "mods",
@@ -1109,17 +1188,17 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
     }
 
     const statKeys = new Set<string>();
-    if (!mod.stats.length) {
+    if (syncedMod.stats.length > MOD_MAX_STATS) {
       messages.push({
-        level: "warning",
+        level: "error",
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: "No stat entries are set.",
+        message: `A mod can have at most ${MOD_MAX_STATS} stats.`,
       });
     }
 
-    for (const [statIndex, stat] of mod.stats.entries()) {
+    for (const [statIndex, stat] of syncedMod.stats.entries()) {
       const key = stat.key.trim();
       const value = stat.value.trim();
 
@@ -1167,6 +1246,31 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         continue;
       }
 
+      if (!getModStatBudgetConfig(key)) {
+        messages.push({
+          level: "error",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Stat "${key}" is not supported by the current budget config.`,
+        });
+        continue;
+      }
+
+      if (levelRequirement !== undefined) {
+        const maxAtLevel = getModStatMaxAtRequiredLevel(key, levelRequirement);
+        const numericValue = parseNumber(value);
+        if (maxAtLevel !== undefined && numericValue !== undefined && numericValue > maxAtLevel) {
+          messages.push({
+            level: "error",
+            scope: "mods",
+            draftIndex,
+            itemId: id || undefined,
+            message: `Stat "${key}" exceeds its level-${levelRequirement} max of ${maxAtLevel}.`,
+          });
+        }
+      }
+
       if (statKeys.has(key)) {
         messages.push({
           level: "error",
@@ -1177,6 +1281,73 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         });
       }
       statKeys.add(key);
+    }
+
+    if (syncedMod.abilities.length > MOD_MAX_ABILITIES) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: `A mod can have at most ${MOD_MAX_ABILITIES} abilities.`,
+      });
+    }
+
+    for (const [abilityIndex, ability] of syncedMod.abilities.entries()) {
+      const abilityId = ability.id.trim();
+      const budgetCost = ability.budgetCost.trim();
+
+      if (!abilityId && !budgetCost) {
+        messages.push({
+          level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Ability row ${abilityIndex + 1} is blank.`,
+        });
+        continue;
+      }
+
+      if (!abilityId) {
+        messages.push({
+          level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Ability row ${abilityIndex + 1} is missing an ability id.`,
+        });
+      }
+
+      if (!budgetCost) {
+        messages.push({
+          level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Ability "${abilityId || abilityIndex + 1}" is missing a budget cost.`,
+        });
+        continue;
+      }
+
+      if (parseNumber(budgetCost) === undefined) {
+        messages.push({
+          level: "error",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Ability "${abilityId || abilityIndex + 1}" must have a numeric budget cost.`,
+        });
+      }
+    }
+
+    if (rarity !== undefined && budget.budgetCap > 0 && budget.isOverBudget) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: `Budget cap exceeded: ${budget.totalBudgetSpent} spent against ${budget.budgetCap}.`,
+      });
     }
   }
 

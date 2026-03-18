@@ -68,7 +68,7 @@ export default function AuthoringWorkbench() {
     const storedMods = loadDrafts<ModDraft[]>(MOD_STORAGE_KEY, []);
 
     setMissions(storedMissions.length ? storedMissions : [createMissionDraft()]);
-    setMods(storedMods.length ? storedMods : [createModDraft()]);
+    setMods(storedMods.length ? storedMods.map((mod) => normalizeImportedMod(mod)) : [createModDraft()]);
     setHydrated(true);
   }, []);
 

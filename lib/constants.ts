@@ -1,3 +1,5 @@
+import { MOD_STAT_BUDGET_CONFIG } from "@lib/mod-budget";
+
 export const RARITY_COLOR: Record<number, string> = {
   0: "#FFFFFF",
   1: "#3CB371",
@@ -32,25 +34,9 @@ export const CLASS_RESTRICTION_OPTIONS = [
   "Miner"
 ] as const;
 
-export const MOD_STAT_DEFAULTS = [
-  { key: "armor", defaultValue: "100.0" },
-  { key: "shields", defaultValue: "100.0" },
-  { key: "power", defaultValue: "20.0" },
-  { key: "evasion", defaultValue: "5.0" },
-  { key: "energy_regen_rate", defaultValue: "5.0" },
-  { key: "shield_regen", defaultValue: "1.0" },
-  { key: "armor_regen", defaultValue: "0.0" },
-  { key: "targeting", defaultValue: "0.0" },
-  { key: "threat_generation", defaultValue: "0.0" },
-  { key: "hacking", defaultValue: "0.0" },
-  { key: "damage_reflect", defaultValue: "0.0" },
-  { key: "damage_reduction", defaultValue: "0.0" },
-  { key: "stealth", defaultValue: "0.0" },
-  { key: "sensors", defaultValue: "0.0" },
-  { key: "salvage_bonus", defaultValue: "0.0" },
-  { key: "heat_resistance", defaultValue: "0.0" },
-  { key: "speed", defaultValue: "0.0" },
-  { key: "overclock", defaultValue: "0.0" }
-] as const;
+export const MOD_STAT_DEFAULTS = Object.entries(MOD_STAT_BUDGET_CONFIG).map(([key, value]) => ({
+  key,
+  defaultValue: value.defaultDraftValue.toFixed(1),
+})) as ReadonlyArray<{ key: string; defaultValue: string }>;
 
 export const ALL_STATS: string[] = MOD_STAT_DEFAULTS.map((entry) => entry.key);

@@ -1,25 +1,30 @@
 "use client";
 
-import { ChangeEvent, HTMLAttributes, startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
 import { CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import {
   BulkModTemplateDraft,
+  ModAbilityDraft,
   ModDraft,
   ModStatDraft,
   ValidationMessage,
+  buildModBudgetSummary,
+  clampLevelInput,
   createBulkModDrafts,
+  createModAbilityDraft,
   createModDraft,
-  csvFromList,
   duplicateModDraft,
   exportModDraft,
   exportModsJson,
-  listFromCsv,
   listFromLines,
   modFilename,
   normalizeImportedModCollection,
+  parseNumber,
+  syncDerivedModFields,
   validateModDrafts,
 } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
+import { MOD_MAX_ABILITIES, MOD_MAX_STATS, calculateModBudgetSummary, getModStatMaxAtRequiredLevel } from "@lib/mod-budget";
 
 type IssueFilter = "all" | "error" | "warning";
 
@@ -28,11 +33,10 @@ type BulkCreateState = {
   slot: string;
   rarity: string;
   levelRequirement: string;
-  itemLevel: string;
   durability: string;
   sellPrice: string;
   classRestriction: string;
-  abilities: string;
+  abilities: ModAbilityDraft[];
   icon: string;
   description: string;
 };
@@ -40,13 +44,12 @@ type BulkCreateState = {
 const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   titles: "",
   slot: "",
-  rarity: "",
+  rarity: "0",
   levelRequirement: "",
-  itemLevel: "",
   durability: "",
   sellPrice: "",
   classRestriction: "None",
-  abilities: "",
+  abilities: [],
   icon: "",
   description: "",
 };
@@ -66,7 +69,6 @@ export default function ModWorkshop({
   const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
   const [showBulkCreate, setShowBulkCreate] = useState(false);
   const [bulkCreate, setBulkCreate] = useState<BulkCreateState>(EMPTY_BULK_CREATE_STATE);
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   useEffect(() => {
     if (selectedIndex <= mods.length - 1) return;
@@ -74,7 +76,24 @@ export default function ModWorkshop({
   }, [mods.length, selectedIndex]);
 
   const clampedSelectedIndex = Math.max(0, Math.min(selectedIndex, Math.max(0, mods.length - 1)));
+  const deferredSearch = search.trim().toLowerCase();
   const selectedMod = mods[clampedSelectedIndex] ?? null;
+  const selectedSyncedMod = useMemo(() => (selectedMod ? syncDerivedModFields(selectedMod) : null), [selectedMod]);
+  const selectedBudget = useMemo(() => (selectedSyncedMod ? buildModBudgetSummary(selectedSyncedMod) : null), [selectedSyncedMod]);
+
+  const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
+  const bulkBudget = useMemo(
+    () =>
+      calculateModBudgetSummary({
+        requiredLevel: parseNumber(clampLevelInput(bulkCreate.levelRequirement)),
+        rarity: parseNumber(bulkCreate.rarity),
+        stats: [],
+        abilities: bulkCreate.abilities.map((entry) => ({
+          budgetCost: parseNumber(entry.budgetCost),
+        })),
+      }),
+    [bulkCreate],
+  );
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
   const issueFlagsByIndex = useMemo(() => {
@@ -87,9 +106,10 @@ export default function ModWorkshop({
     }
     return map;
   }, [validation]);
+
   const filteredMods = useMemo(() => {
     return mods
-      .map((mod, index) => ({ mod, index }))
+      .map((mod, index) => ({ mod: syncDerivedModFields(mod), index }))
       .filter(({ mod }) => {
         if (!deferredSearch) return true;
         const target = `${mod.id} ${mod.name} ${mod.slot}`.toLowerCase();
@@ -101,18 +121,16 @@ export default function ModWorkshop({
         return issueFilter === "error" ? !!flags?.error : !!flags?.warning;
       });
   }, [deferredSearch, issueFilter, issueFlagsByIndex, mods]);
-  const selectedValidation = useMemo(() => {
-    return validation.filter((message) => message.draftIndex === clampedSelectedIndex);
-  }, [clampedSelectedIndex, validation]);
 
-  const errorDraftCount = useMemo(() => {
-    return Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length;
-  }, [issueFlagsByIndex]);
-  const warningDraftCount = useMemo(() => {
-    return Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length;
-  }, [issueFlagsByIndex]);
+  const selectedValidation = useMemo(() => validation.filter((message) => message.draftIndex === clampedSelectedIndex), [clampedSelectedIndex, validation]);
+  const selectedHasErrors = useMemo(
+    () => selectedValidation.some((message) => message.level === "error"),
+    [selectedValidation],
+  );
+  const anyValidationErrors = useMemo(() => validation.some((message) => message.level === "error"), [validation]);
+  const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
+  const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
   const statDefaults = useMemo(() => Object.fromEntries(MOD_STAT_DEFAULTS.map((entry) => [entry.key, entry.defaultValue])), []);
-  const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
 
   useEffect(() => {
     if (!filteredMods.length) return;
@@ -121,12 +139,13 @@ export default function ModWorkshop({
   }, [clampedSelectedIndex, filteredMods]);
 
   function setModAt(index: number, next: ModDraft) {
-    onChange(mods.map((mod, modIndex) => (modIndex === index ? next : mod)));
+    const synced = syncDerivedModFields(next);
+    onChange(mods.map((mod, modIndex) => (modIndex === index ? synced : mod)));
   }
 
   function updateSelected(updater: (draft: ModDraft) => ModDraft) {
-    if (!selectedMod) return;
-    setModAt(clampedSelectedIndex, updater(selectedMod));
+    if (!selectedSyncedMod) return;
+    setModAt(clampedSelectedIndex, updater(selectedSyncedMod));
   }
 
   function updateStat(statIndex: number, updater: (stat: ModStatDraft) => ModStatDraft) {
@@ -136,15 +155,29 @@ export default function ModWorkshop({
     }));
   }
 
+  function updateAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
+    updateSelected((draft) => ({
+      ...draft,
+      abilities: draft.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
+    }));
+  }
+
   function updateBulkCreate<K extends keyof BulkCreateState>(key: K, value: BulkCreateState[K]) {
     setBulkCreate((current) => ({ ...current, [key]: value }));
   }
 
+  function updateBulkAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
+    setBulkCreate((current) => ({
+      ...current,
+      abilities: current.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
+    }));
+  }
+
   function addMod() {
     const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
-    const previousId = selectedMod?.id.trim() || existingIds[existingIds.length - 1];
+    const previousId = selectedSyncedMod?.id.trim() || existingIds[existingIds.length - 1];
     const newDraft = createModDraft(existingIds, previousId);
-    const insertAt = selectedMod ? clampedSelectedIndex + 1 : mods.length;
+    const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
     const next = [...mods];
     next.splice(insertAt, 0, newDraft);
     onChange(next);
@@ -153,10 +186,10 @@ export default function ModWorkshop({
   }
 
   function duplicateSelectedMod() {
-    if (!selectedMod) return;
+    if (!selectedSyncedMod) return;
     const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
     const next = [...mods];
-    next.splice(clampedSelectedIndex + 1, 0, duplicateModDraft(selectedMod, existingIds));
+    next.splice(clampedSelectedIndex + 1, 0, duplicateModDraft(selectedSyncedMod, existingIds));
     onChange(next);
     setSelectedIndex(clampedSelectedIndex + 1);
     setStatus("Duplicated the selected mod draft.");
@@ -177,22 +210,23 @@ export default function ModWorkshop({
     }
 
     const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
-    const previousId = selectedMod?.id.trim() || existingIds[existingIds.length - 1];
+    const previousId = selectedSyncedMod?.id.trim() || existingIds[existingIds.length - 1];
     const template: BulkModTemplateDraft = {
       slot: bulkCreate.slot,
-      classRestriction: listFromCsv(bulkCreate.classRestriction),
+      classRestriction: bulkCreate.classRestriction ? [bulkCreate.classRestriction] : [],
       levelRequirement: bulkCreate.levelRequirement,
-      itemLevel: bulkCreate.itemLevel,
       rarity: bulkCreate.rarity,
       durability: bulkCreate.durability,
       sellPrice: bulkCreate.sellPrice,
-      abilities: listFromCsv(bulkCreate.abilities),
+      abilities: bulkCreate.abilities
+        .filter((ability) => ability.id.trim() || ability.budgetCost.trim())
+        .map((ability) => ({ ...ability })),
       icon: bulkCreate.icon,
       description: bulkCreate.description,
     };
 
     const created = createBulkModDrafts(bulkTitles, template, existingIds, previousId);
-    const insertAt = selectedMod ? clampedSelectedIndex + 1 : mods.length;
+    const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
     const next = [...mods];
     next.splice(insertAt, 0, ...created);
     onChange(next);
@@ -212,7 +246,7 @@ export default function ModWorkshop({
       const imported = normalizeImportedModCollection(parsed);
       if (imported.length) {
         startTransition(() => {
-          onChange(imported);
+          onChange(imported.map((mod) => syncDerivedModFields(mod)));
           setSelectedIndex(0);
         });
         setStatus(`Imported ${imported.length} mod draft(s) from ${file.name}.`);
@@ -227,24 +261,44 @@ export default function ModWorkshop({
   }
 
   function exportSelectedMod() {
-    if (!selectedMod) return;
-    downloadJson(exportModDraft(selectedMod), modFilename(selectedMod, clampedSelectedIndex));
+    if (!selectedSyncedMod) return;
+    if (selectedHasErrors) {
+      setStatus("Fix the selected mod's validation errors before exporting it.");
+      return;
+    }
+
+    downloadJson(exportModDraft(selectedSyncedMod), modFilename(selectedSyncedMod, clampedSelectedIndex));
     setStatus("Exported the selected mod JSON.");
   }
 
   function exportAllMods() {
+    if (anyValidationErrors) {
+      setStatus("Fix mod validation errors before exporting Mods.json.");
+      return;
+    }
+
     downloadJson(exportModsJson(mods), "Mods.json");
     setStatus("Exported the full Mods.json draft.");
   }
 
   async function copyAllModsJson() {
+    if (anyValidationErrors) {
+      setStatus("Fix mod validation errors before copying the full Mods.json payload.");
+      return;
+    }
+
     const didCopy = await copyText(JSON.stringify(exportModsJson(mods), null, 2));
     setStatus(didCopy ? "Copied the full Mods.json payload to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
   async function copySelectedJson() {
-    if (!selectedMod) return;
-    const didCopy = await copyText(JSON.stringify(exportModDraft(selectedMod), null, 2));
+    if (!selectedSyncedMod) return;
+    if (selectedHasErrors) {
+      setStatus("Fix the selected mod's validation errors before copying its JSON.");
+      return;
+    }
+
+    const didCopy = await copyText(JSON.stringify(exportModDraft(selectedSyncedMod), null, 2));
     setStatus(didCopy ? "Copied the selected mod JSON to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
@@ -283,7 +337,11 @@ export default function ModWorkshop({
             Import Mods.json
             <input className="hidden" type="file" accept=".json,application/json" onChange={importModsJson} />
           </label>
-          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={exportAllMods}>
+          <button
+            className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+            disabled={anyValidationErrors}
+            onClick={exportAllMods}
+          >
             Export Mods.json
           </button>
         </div>
@@ -321,27 +379,30 @@ export default function ModWorkshop({
         </div>
 
         <div className="text-xs text-white/50">
-          Errors = invalid values entered into fields. Warnings = blank required fields that still need to be filled.
+          Errors = invalid entered values or budget/range violations. Warnings = blank fields that still need to be filled.
         </div>
 
         {status ? <div className="text-sm text-accent">{status}</div> : null}
 
         <div className="max-h-[70vh] space-y-2 overflow-auto pr-1">
           {filteredMods.length ? (
-            filteredMods.map(({ mod, index }) => (
-              <button
-                key={`${mod.id || "mod"}-${index}`}
-                className={`w-full rounded border px-3 py-2 text-left transition ${
-                  index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
-                }`}
-                onClick={() => setSelectedIndex(index)}
-              >
-                <div className="truncate font-medium">{mod.name || "Untitled mod"}</div>
-                <div className="truncate text-xs text-white/60">
-                  {mod.id || "missing-id"} · {mod.slot || "missing-slot"}
-                </div>
-              </button>
-            ))
+            filteredMods.map(({ mod, index }) => {
+              const budget = buildModBudgetSummary(mod);
+              return (
+                <button
+                  key={`${mod.id || "mod"}-${index}`}
+                  className={`w-full rounded border px-3 py-2 text-left transition ${
+                    index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  }`}
+                  onClick={() => setSelectedIndex(index)}
+                >
+                  <div className="truncate font-medium">{mod.name || "Untitled mod"}</div>
+                  <div className="truncate text-xs text-white/60">
+                    {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                  </div>
+                </button>
+              );
+            })
           ) : (
             <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
               No mod drafts match the current search.
@@ -350,7 +411,7 @@ export default function ModWorkshop({
         </div>
       </div>
 
-      {!selectedMod && !showBulkCreate ? null : (
+      {!selectedSyncedMod && !showBulkCreate ? null : (
         <div className="space-y-6">
           {showBulkCreate ? (
             <div className="card space-y-4">
@@ -365,6 +426,8 @@ export default function ModWorkshop({
                   {bulkTitles.length} title(s)
                 </div>
               </div>
+
+              <BudgetSummaryCard title="Bulk Budget Preview" summary={bulkBudget} />
 
               <div>
                 <div className="label mb-2">Titles (one per line)</div>
@@ -388,16 +451,18 @@ export default function ModWorkshop({
                 />
                 <RarityField label="Rarity" value={bulkCreate.rarity} onChange={(value) => updateBulkCreate("rarity", value)} allowBlank />
                 <Field
-                  label="Level Requirement"
+                  label="Required Level"
                   value={bulkCreate.levelRequirement}
                   inputMode="numeric"
-                  onChange={(value) => updateBulkCreate("levelRequirement", value)}
+                  onChange={(value) => updateBulkCreate("levelRequirement", clampLevelInput(value))}
+                  helpText="Required level is clamped between 1 and 100."
                 />
                 <Field
-                  label="Item Level"
-                  value={bulkCreate.itemLevel}
-                  inputMode="numeric"
-                  onChange={(value) => updateBulkCreate("itemLevel", value)}
+                  label="Calculated Item Level"
+                  value={bulkBudget.itemLevel === undefined ? "" : String(bulkBudget.itemLevel)}
+                  readOnly
+                  helpText="Auto-calculated from required level and total budget spent."
+                  onChange={() => {}}
                 />
                 <Field
                   label="Durability"
@@ -414,18 +479,68 @@ export default function ModWorkshop({
                 <SelectField
                   label="Class Restriction"
                   value={bulkCreate.classRestriction}
-                  options={[
-                    { value: "", label: "Select class restriction" },
-                    ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
-                  ]}
+                  options={CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value }))}
                   onChange={(value) => updateBulkCreate("classRestriction", value)}
                 />
-                <Field
-                  label="Abilities (comma separated)"
-                  value={bulkCreate.abilities}
-                  onChange={(value) => updateBulkCreate("abilities", value)}
-                />
                 <Field label="Icon" value={bulkCreate.icon} onChange={(value) => updateBulkCreate("icon", value)} />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Shared Abilities</div>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Budget cost applies to every created draft.</div>
+                  </div>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={bulkCreate.abilities.length >= MOD_MAX_ABILITIES}
+                    onClick={() =>
+                      setBulkCreate((current) => ({
+                        ...current,
+                        abilities: [...current.abilities, createModAbilityDraft()],
+                      }))
+                    }
+                  >
+                    Add Ability
+                  </button>
+                </div>
+
+                {bulkCreate.abilities.length ? (
+                  <div className="space-y-3">
+                    {bulkCreate.abilities.map((ability, abilityIndex) => (
+                      <div key={`bulk-ability-${abilityIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
+                        <Field
+                          label={abilityIndex === 0 ? "Ability ID" : " "}
+                          value={ability.id}
+                          onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }))}
+                        />
+                        <Field
+                          label={abilityIndex === 0 ? "Budget Cost" : " "}
+                          value={ability.budgetCost}
+                          inputMode="numeric"
+                          onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
+                        />
+                        <div className="flex items-end">
+                          <button
+                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                            onClick={() =>
+                              setBulkCreate((current) => ({
+                                ...current,
+                                abilities: current.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                    No shared abilities configured.
+                  </div>
+                )}
               </div>
 
               <div>
@@ -441,222 +556,336 @@ export default function ModWorkshop({
                 <button className="btn" onClick={createBulkMods}>
                   {bulkTitles.length ? `Create ${bulkTitles.length} Mods` : "Create Mods"}
                 </button>
-                <button
-                  className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-                  onClick={() => setBulkCreate(EMPTY_BULK_CREATE_STATE)}
-                >
+                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setBulkCreate(EMPTY_BULK_CREATE_STATE)}>
                   Clear
                 </button>
               </div>
 
               <div className="text-xs text-white/50">
-                Blank shared fields stay blank on the generated mods and will surface as warnings until you fill them in.
+                Item level is generated from required level and budget spent. Blank shared fields stay blank on the generated mods and surface as warnings later.
               </div>
             </div>
           ) : null}
 
-          {!selectedMod ? null : (
-          <>
-          <div className="card space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Mod Editor</h2>
-                <div className="text-xs text-white/50">Selected draft #{clampedSelectedIndex + 1}</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={duplicateSelectedMod}>
-                  Duplicate
-                </button>
-                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copySelectedJson}>
-                  Copy JSON
-                </button>
-                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copyAllModsJson}>
-                  Copy All Mods JSON
-                </button>
-                <button className="btn" onClick={exportSelectedMod}>
-                  Export Selected
-                </button>
-                <button className="btn" onClick={exportAllMods}>
-                  Export Mods.json
-                </button>
-                <button className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30" onClick={removeSelectedMod}>
-                  Delete
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="Mod ID (Auto-generated)"
-                value={selectedMod.id}
-                readOnly
-                helpText={selectedMod.id ? `Auto-generated from the previous mod id.` : `Will be generated from the previous mod id.`}
-                onChange={() => {}}
-              />
-              <Field label="Name" value={selectedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
-              <SelectField
-                label="Slot"
-                value={selectedMod.slot}
-                options={[
-                  { value: "", label: "Select slot" },
-                  ...MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot })),
-                ]}
-                onChange={(value) => updateSelected((draft) => ({ ...draft, slot: value }))}
-              />
-              <RarityField
-                label="Rarity"
-                value={selectedMod.rarity}
-                onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }))}
-                allowBlank
-              />
-              <Field
-                label="Level Requirement"
-                value={selectedMod.levelRequirement}
-                inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, levelRequirement: value }))}
-              />
-              <Field
-                label="Item Level"
-                value={selectedMod.itemLevel}
-                inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, itemLevel: value }))}
-              />
-              <Field
-                label="Durability"
-                value={selectedMod.durability}
-                inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, durability: value }))}
-              />
-              <Field
-                label="Sell Price"
-                value={selectedMod.sellPrice}
-                inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, sellPrice: value }))}
-              />
-              <SelectField
-                label="Class Restriction"
-                value={selectedMod.classRestriction[0] ?? ""}
-                options={[
-                  { value: "", label: "Select class restriction" },
-                  ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
-                ]}
-                onChange={(value) =>
-                  updateSelected((draft) => ({
-                    ...draft,
-                    classRestriction: value ? [value] : [],
-                  }))
-                }
-              />
-              <Field
-                label="Abilities (comma separated)"
-                value={csvFromList(selectedMod.abilities)}
-                onChange={(value) => updateSelected((draft) => ({ ...draft, abilities: listFromCsv(value) }))}
-              />
-              <Field
-                label="Icon"
-                value={selectedMod.icon}
-                onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
-              />
-            </div>
-
-            <div>
-              <div className="label mb-2">Description</div>
-              <textarea
-                className="input min-h-24"
-                value={selectedMod.description}
-                onChange={(event) => updateSelected((draft) => ({ ...draft, description: event.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="card space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Stats</h2>
-                <div className="text-xs text-white/50">Stats export as a numeric object map when key and value are both valid.</div>
-              </div>
-              <button
-                className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-                onClick={() =>
-                  updateSelected((draft) => ({
-                    ...draft,
-                    stats: [...draft.stats, { key: "", value: "" }],
-                  }))
-                }
-              >
-                Add Stat
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {selectedMod.stats.map((entry, statIndex) => (
-                <div key={`${entry.key || "stat"}-${statIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
-                  <SelectField
-                    label={statIndex === 0 ? "Stat Key" : " "}
-                    value={entry.key}
-                    options={[
-                      { value: "", label: "Select stat" },
-                      ...MOD_STAT_DEFAULTS.map((stat) => ({
-                        value: stat.key,
-                        label: `${stat.key} (${stat.defaultValue})`,
-                      })),
-                    ]}
-                    onChange={(value) =>
-                      updateStat(statIndex, (current) => ({
-                        ...current,
-                        key: value,
-                        value: current.value.trim() ? current.value : statDefaults[value] ?? current.value,
-                      }))
-                    }
-                  />
-                  <Field
-                    label={statIndex === 0 ? "Value" : " "}
-                    value={entry.value}
-                    inputMode="numeric"
-                    onChange={(value) => updateStat(statIndex, (current) => ({ ...current, value }))}
-                  />
-                  <div className="flex items-end">
+          {!selectedSyncedMod ? null : (
+            <>
+              <div className="card space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">Mod Editor</h2>
+                    <div className="text-xs text-white/50">Selected draft #{clampedSelectedIndex + 1}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={duplicateSelectedMod}>
+                      Duplicate
+                    </button>
                     <button
-                      className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
-                      onClick={() =>
-                        updateSelected((draft) => ({
-                          ...draft,
-                          stats: draft.stats.filter((_, currentIndex) => currentIndex !== statIndex),
-                        }))
-                      }
+                      className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                      disabled={selectedHasErrors}
+                      onClick={copySelectedJson}
                     >
-                      Remove
+                      Copy JSON
+                    </button>
+                    <button
+                      className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                      disabled={anyValidationErrors}
+                      onClick={copyAllModsJson}
+                    >
+                      Copy All Mods JSON
+                    </button>
+                    <button className="btn disabled:cursor-default disabled:opacity-40" disabled={selectedHasErrors} onClick={exportSelectedMod}>
+                      Export Selected
+                    </button>
+                    <button className="btn disabled:cursor-default disabled:opacity-40" disabled={anyValidationErrors} onClick={exportAllMods}>
+                      Export Mods.json
+                    </button>
+                    <button className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30" onClick={removeSelectedMod}>
+                      Delete
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            <div>
-              <div className="label mb-2">Mod extra JSON (merged at export)</div>
-              <textarea
-                className="input min-h-32 font-mono text-sm"
-                value={selectedMod.extraJson}
-                onChange={(event) => updateSelected((draft) => ({ ...draft, extraJson: event.target.value }))}
-                placeholder='{"drop_table": "rare_mods"}'
-              />
-            </div>
-          </div>
+                <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} />
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
-            <div className="card">
-              <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
-              <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
-                {JSON.stringify(exportModDraft(selectedMod), null, 2)}
-              </pre>
-            </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field
+                    label="Mod ID (Auto-generated)"
+                    value={selectedSyncedMod.id}
+                    readOnly
+                    helpText={selectedSyncedMod.id ? "Auto-generated from the previous mod id." : "Will be generated from the previous mod id."}
+                    onChange={() => {}}
+                  />
+                  <Field label="Name" value={selectedSyncedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
+                  <SelectField
+                    label="Slot"
+                    value={selectedSyncedMod.slot}
+                    options={[
+                      { value: "", label: "Select slot" },
+                      ...MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot })),
+                    ]}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, slot: value }))}
+                  />
+                  <RarityField
+                    label="Rarity"
+                    value={selectedSyncedMod.rarity}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }))}
+                    allowBlank
+                  />
+                  <Field
+                    label="Required Level"
+                    value={selectedSyncedMod.levelRequirement}
+                    inputMode="numeric"
+                    helpText="Required level is clamped between 1 and 100."
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, levelRequirement: clampLevelInput(value) }))}
+                  />
+                  <Field
+                    label="Calculated Item Level"
+                    value={selectedBudget?.itemLevel === undefined ? "" : String(selectedBudget.itemLevel)}
+                    readOnly
+                    helpText="Auto-calculated from required level and total budget spent."
+                    onChange={() => {}}
+                  />
+                  <Field
+                    label="Durability"
+                    value={selectedSyncedMod.durability}
+                    inputMode="numeric"
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, durability: value }))}
+                  />
+                  <Field
+                    label="Sell Price"
+                    value={selectedSyncedMod.sellPrice}
+                    inputMode="numeric"
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, sellPrice: value }))}
+                  />
+                  <SelectField
+                    label="Class Restriction"
+                    value={selectedSyncedMod.classRestriction[0] ?? ""}
+                    options={[
+                      { value: "", label: "Select class restriction" },
+                      ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
+                    ]}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, classRestriction: value ? [value] : [] }))}
+                  />
+                  <Field label="Icon" value={selectedSyncedMod.icon} onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))} />
+                </div>
 
-            <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
-          </div>
-          </>
-        )}
+                <div>
+                  <div className="label mb-2">Description</div>
+                  <textarea
+                    className="input min-h-24"
+                    value={selectedSyncedMod.description}
+                    onChange={(event) => updateSelected((draft) => ({ ...draft, description: event.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="card space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">Stats</h2>
+                    <div className="text-xs text-white/50">
+                      Up to {MOD_MAX_STATS} stats. Each stat spends budget based on required level, stat family, and its per-level maximum.
+                    </div>
+                  </div>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={selectedSyncedMod.stats.length >= MOD_MAX_STATS}
+                    onClick={() =>
+                      updateSelected((draft) => ({
+                        ...draft,
+                        stats: [...draft.stats, { key: "", value: "" }],
+                      }))
+                    }
+                  >
+                    Add Stat
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {selectedSyncedMod.stats.map((entry, statIndex) => {
+                    const levelRequirement = parseNumber(selectedSyncedMod.levelRequirement);
+                    const maxAtLevel = levelRequirement !== undefined ? getModStatMaxAtRequiredLevel(entry.key, levelRequirement) : undefined;
+                    return (
+                      <div key={`${entry.key || "stat"}-${statIndex}`} className="space-y-2">
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
+                          <SelectField
+                            label={statIndex === 0 ? "Stat Key" : " "}
+                            value={entry.key}
+                            options={buildStatOptions(entry.key)}
+                            onChange={(value) =>
+                              updateStat(statIndex, (current) => ({
+                                ...current,
+                                key: value,
+                                value: current.value.trim() ? current.value : statDefaults[value] ?? current.value,
+                              }))
+                            }
+                          />
+                          <Field
+                            label={statIndex === 0 ? "Value" : " "}
+                            value={entry.value}
+                            inputMode="numeric"
+                            onChange={(value) => updateStat(statIndex, (current) => ({ ...current, value }))}
+                          />
+                          <div className="flex items-end">
+                            <button
+                              className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                              onClick={() =>
+                                updateSelected((draft) => ({
+                                  ...draft,
+                                  stats: draft.stats.filter((_, currentIndex) => currentIndex !== statIndex),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                        {entry.key.trim() ? (
+                          <div className="text-xs text-white/50">
+                            {maxAtLevel !== undefined ? `Level cap: ${maxAtLevel}` : "Set required level to calculate the per-level stat cap."}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="card space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">Abilities</h2>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Each ability spends its configured budget cost.</div>
+                  </div>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={selectedSyncedMod.abilities.length >= MOD_MAX_ABILITIES}
+                    onClick={() =>
+                      updateSelected((draft) => ({
+                        ...draft,
+                        abilities: [...draft.abilities, createModAbilityDraft()],
+                      }))
+                    }
+                  >
+                    Add Ability
+                  </button>
+                </div>
+
+                {selectedSyncedMod.abilities.length ? (
+                  <div className="space-y-3">
+                    {selectedSyncedMod.abilities.map((ability, abilityIndex) => (
+                      <div key={`${ability.id || "ability"}-${abilityIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
+                        <Field
+                          label={abilityIndex === 0 ? "Ability ID" : " "}
+                          value={ability.id}
+                          onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, id: value }))}
+                        />
+                        <Field
+                          label={abilityIndex === 0 ? "Budget Cost" : " "}
+                          value={ability.budgetCost}
+                          inputMode="numeric"
+                          onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
+                        />
+                        <div className="flex items-end">
+                          <button
+                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                            onClick={() =>
+                              updateSelected((draft) => ({
+                                ...draft,
+                                abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                    No abilities set on this mod.
+                  </div>
+                )}
+
+                <div className="text-xs text-white/50">
+                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array.
+                </div>
+              </div>
+
+              <div className="card space-y-4">
+                <div>
+                  <div className="label mb-2">Mod extra JSON (merged at export)</div>
+                  <textarea
+                    className="input min-h-32 font-mono text-sm"
+                    value={selectedSyncedMod.extraJson}
+                    onChange={(event) => updateSelected((draft) => ({ ...draft, extraJson: event.target.value }))}
+                    placeholder='{"drop_table": "rare_mods"}'
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
+                <div className="card">
+                  <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
+                  <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
+                    {JSON.stringify(exportModDraft(selectedSyncedMod), null, 2)}
+                  </pre>
+                </div>
+
+                <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
+              </div>
+            </>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function BudgetSummaryCard({
+  title,
+  summary,
+}: {
+  title: string;
+  summary: ReturnType<typeof calculateModBudgetSummary> | null;
+}) {
+  return (
+    <div className="rounded border border-white/10 bg-black/20 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {summary?.rarity !== undefined && Number.isFinite(summary.rarity) ? (
+          <div className="text-xs font-medium" style={{ color: RARITY_COLOR[summary.rarity] || "#FFFFFF" }}>
+            {RARITY_LABEL[summary.rarity] ?? `Rarity ${summary.rarity}`}
+          </div>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Metric label="Required Level" value={summary?.requiredLevel ?? "—"} />
+        <Metric label="Budget Cap" value={formatBudget(summary?.budgetCap)} />
+        <Metric label="Budget Spent" value={formatBudget(summary?.totalBudgetSpent)} />
+        <Metric label="Budget Remaining" value={formatBudget(summary?.budgetRemaining)} highlight={summary?.budgetRemaining !== undefined && summary.budgetRemaining < 0} />
+        <Metric label="Stat Budget" value={formatBudget(summary?.totalStatBudget)} />
+        <Metric label="Ability Budget" value={formatBudget(summary?.totalAbilityBudget)} />
+        <Metric label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string | number;
+  highlight?: boolean;
+}) {
+  return (
+    <div className={`rounded border px-3 py-2 ${highlight ? "border-red-400/40 bg-red-500/10 text-red-100" : "border-white/10 bg-black/10"}`}>
+      <div className="label">{label}</div>
+      <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
 }
@@ -785,6 +1014,24 @@ function RarityField({
       </select>
     </label>
   );
+}
+
+function buildStatOptions(currentKey: string) {
+  const options = MOD_STAT_DEFAULTS.map((stat) => ({
+    value: stat.key,
+    label: `${stat.key} (${stat.defaultValue})`,
+  }));
+
+  if (currentKey.trim() && !options.some((option) => option.value === currentKey)) {
+    options.unshift({ value: currentKey, label: `${currentKey} (custom)` });
+  }
+
+  return [{ value: "", label: "Select stat" }, ...options];
+}
+
+function formatBudget(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return value.toFixed(2);
 }
 
 function downloadJson(value: unknown, filename: string) {
