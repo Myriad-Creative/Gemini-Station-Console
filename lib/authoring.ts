@@ -399,7 +399,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     id: nextGeneratedModId(existingIds, previousId),
     name: "",
     slot: "",
-    classRestriction: [],
+    classRestriction: ["None"],
     levelRequirement: "",
     itemLevel: "",
     rarity: "0",
@@ -1092,10 +1092,6 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
 
     if (!mod.icon.trim()) {
       messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Icon is blank." });
-    }
-
-    if (!mod.description.trim()) {
-      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Description is blank." });
     }
 
     try {

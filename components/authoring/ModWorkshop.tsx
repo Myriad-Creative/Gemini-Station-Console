@@ -45,7 +45,7 @@ const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   itemLevel: "",
   durability: "",
   sellPrice: "",
-  classRestriction: "",
+  classRestriction: "None",
   abilities: "",
   icon: "",
   description: "",
