@@ -3,20 +3,53 @@
 import { ChangeEvent, HTMLAttributes, startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import {
+  BulkModTemplateDraft,
   ModDraft,
   ModStatDraft,
   ValidationMessage,
+  createBulkModDrafts,
   createModDraft,
   csvFromList,
   duplicateModDraft,
   exportModDraft,
   exportModsJson,
   listFromCsv,
+  listFromLines,
   modFilename,
   normalizeImportedModCollection,
   validateModDrafts,
 } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
+
+type IssueFilter = "all" | "error" | "warning";
+
+type BulkCreateState = {
+  titles: string;
+  slot: string;
+  rarity: string;
+  levelRequirement: string;
+  itemLevel: string;
+  durability: string;
+  sellPrice: string;
+  classRestriction: string;
+  abilities: string;
+  icon: string;
+  description: string;
+};
+
+const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
+  titles: "",
+  slot: "",
+  rarity: "",
+  levelRequirement: "",
+  itemLevel: "",
+  durability: "",
+  sellPrice: "",
+  classRestriction: "",
+  abilities: "",
+  icon: "",
+  description: "",
+};
 
 export default function ModWorkshop({
   mods,
@@ -30,6 +63,9 @@ export default function ModWorkshop({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
+  const [showBulkCreate, setShowBulkCreate] = useState(false);
+  const [bulkCreate, setBulkCreate] = useState<BulkCreateState>(EMPTY_BULK_CREATE_STATE);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   useEffect(() => {
@@ -41,6 +77,16 @@ export default function ModWorkshop({
   const selectedMod = mods[clampedSelectedIndex] ?? null;
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
+  const issueFlagsByIndex = useMemo(() => {
+    const map = new Map<number, { error: boolean; warning: boolean }>();
+    for (const message of validation) {
+      if (message.draftIndex === undefined) continue;
+      const current = map.get(message.draftIndex) ?? { error: false, warning: false };
+      current[message.level] = true;
+      map.set(message.draftIndex, current);
+    }
+    return map;
+  }, [validation]);
   const filteredMods = useMemo(() => {
     return mods
       .map((mod, index) => ({ mod, index }))
@@ -48,15 +94,31 @@ export default function ModWorkshop({
         if (!deferredSearch) return true;
         const target = `${mod.id} ${mod.name} ${mod.slot}`.toLowerCase();
         return target.includes(deferredSearch);
+      })
+      .filter(({ index }) => {
+        if (issueFilter === "all") return true;
+        const flags = issueFlagsByIndex.get(index);
+        return issueFilter === "error" ? !!flags?.error : !!flags?.warning;
       });
-  }, [deferredSearch, mods]);
+  }, [deferredSearch, issueFilter, issueFlagsByIndex, mods]);
   const selectedValidation = useMemo(() => {
     return validation.filter((message) => message.draftIndex === clampedSelectedIndex);
   }, [clampedSelectedIndex, validation]);
 
-  const errorCount = validation.filter((message) => message.level === "error").length;
-  const warningCount = validation.length - errorCount;
+  const errorDraftCount = useMemo(() => {
+    return Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length;
+  }, [issueFlagsByIndex]);
+  const warningDraftCount = useMemo(() => {
+    return Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length;
+  }, [issueFlagsByIndex]);
   const statDefaults = useMemo(() => Object.fromEntries(MOD_STAT_DEFAULTS.map((entry) => [entry.key, entry.defaultValue])), []);
+  const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
+
+  useEffect(() => {
+    if (!filteredMods.length) return;
+    if (filteredMods.some(({ index }) => index === clampedSelectedIndex)) return;
+    setSelectedIndex(filteredMods[0].index);
+  }, [clampedSelectedIndex, filteredMods]);
 
   function setModAt(index: number, next: ModDraft) {
     onChange(mods.map((mod, modIndex) => (modIndex === index ? next : mod)));
@@ -72,6 +134,10 @@ export default function ModWorkshop({
       ...draft,
       stats: draft.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
     }));
+  }
+
+  function updateBulkCreate<K extends keyof BulkCreateState>(key: K, value: BulkCreateState[K]) {
+    setBulkCreate((current) => ({ ...current, [key]: value }));
   }
 
   function addMod() {
@@ -101,6 +167,38 @@ export default function ModWorkshop({
     onChange(next.length ? next : [createModDraft()]);
     setSelectedIndex(Math.max(0, clampedSelectedIndex - 1));
     setStatus("Deleted the selected mod draft.");
+  }
+
+  function createBulkMods() {
+    if (!bulkTitles.length) {
+      setStatus("Paste at least one mod title before creating bulk mods.");
+      setShowBulkCreate(true);
+      return;
+    }
+
+    const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
+    const previousId = selectedMod?.id.trim() || existingIds[existingIds.length - 1];
+    const template: BulkModTemplateDraft = {
+      slot: bulkCreate.slot,
+      classRestriction: listFromCsv(bulkCreate.classRestriction),
+      levelRequirement: bulkCreate.levelRequirement,
+      itemLevel: bulkCreate.itemLevel,
+      rarity: bulkCreate.rarity,
+      durability: bulkCreate.durability,
+      sellPrice: bulkCreate.sellPrice,
+      abilities: listFromCsv(bulkCreate.abilities),
+      icon: bulkCreate.icon,
+      description: bulkCreate.description,
+    };
+
+    const created = createBulkModDrafts(bulkTitles, template, existingIds, previousId);
+    const insertAt = selectedMod ? clampedSelectedIndex + 1 : mods.length;
+    const next = [...mods];
+    next.splice(insertAt, 0, ...created);
+    onChange(next);
+    setSelectedIndex(insertAt);
+    setBulkCreate((current) => ({ ...current, titles: "" }));
+    setStatus(`Created ${created.length} mod draft(s) from the bulk title list.`);
   }
 
   async function importModsJson(event: ChangeEvent<HTMLInputElement>) {
@@ -160,9 +258,17 @@ export default function ModWorkshop({
               {mods.length} draft(s) · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
             </div>
           </div>
-          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
-            New
-          </button>
+          <div className="flex gap-2">
+            <button
+              className={`rounded px-3 py-2 text-sm transition ${showBulkCreate ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
+              onClick={() => setShowBulkCreate((current) => !current)}
+            >
+              {showBulkCreate ? "Hide Bulk" : "Bulk Create"}
+            </button>
+            <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
+              New
+            </button>
+          </div>
         </div>
 
         <input
@@ -183,14 +289,39 @@ export default function ModWorkshop({
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-100">
+          <button
+            className={`rounded border px-3 py-2 text-left transition ${
+              issueFilter === "error"
+                ? "border-red-300/80 bg-red-500/20 text-red-50"
+                : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+            }`}
+            onClick={() => setIssueFilter("error")}
+          >
             <div className="label text-red-100/80">Errors</div>
-            <div className="mt-1 text-lg font-semibold">{errorCount}</div>
-          </div>
-          <div className="rounded border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-yellow-100">
+            <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
+          </button>
+          <button
+            className={`rounded border px-3 py-2 text-left transition ${
+              issueFilter === "warning"
+                ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
+                : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+            }`}
+            onClick={() => setIssueFilter("warning")}
+          >
             <div className="label text-yellow-100/80">Warnings</div>
-            <div className="mt-1 text-lg font-semibold">{warningCount}</div>
-          </div>
+            <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
+          </button>
+          <button
+            className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+            disabled={issueFilter === "all"}
+            onClick={() => setIssueFilter("all")}
+          >
+            Reset Filter
+          </button>
+        </div>
+
+        <div className="text-xs text-white/50">
+          Errors = invalid values entered into fields. Warnings = blank required fields that still need to be filled.
         </div>
 
         {status ? <div className="text-sm text-accent">{status}</div> : null}
@@ -219,8 +350,109 @@ export default function ModWorkshop({
         </div>
       </div>
 
-      {!selectedMod ? null : (
+      {!selectedMod && !showBulkCreate ? null : (
         <div className="space-y-6">
+          {showBulkCreate ? (
+            <div className="card space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Bulk Create Mods</h2>
+                  <div className="text-xs text-white/50">
+                    Paste one title per line. Shared fields below will be copied to every new draft.
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
+                  {bulkTitles.length} title(s)
+                </div>
+              </div>
+
+              <div>
+                <div className="label mb-2">Titles (one per line)</div>
+                <textarea
+                  className="input min-h-40"
+                  value={bulkCreate.titles}
+                  onChange={(event) => updateBulkCreate("titles", event.target.value)}
+                  placeholder={"Basic Armor Panel\nIon Booster\nAssault Core"}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <SelectField
+                  label="Slot"
+                  value={bulkCreate.slot}
+                  options={[
+                    { value: "", label: "Leave blank" },
+                    ...MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot })),
+                  ]}
+                  onChange={(value) => updateBulkCreate("slot", value)}
+                />
+                <RarityField label="Rarity" value={bulkCreate.rarity} onChange={(value) => updateBulkCreate("rarity", value)} allowBlank />
+                <Field
+                  label="Level Requirement"
+                  value={bulkCreate.levelRequirement}
+                  inputMode="numeric"
+                  onChange={(value) => updateBulkCreate("levelRequirement", value)}
+                />
+                <Field
+                  label="Item Level"
+                  value={bulkCreate.itemLevel}
+                  inputMode="numeric"
+                  onChange={(value) => updateBulkCreate("itemLevel", value)}
+                />
+                <Field
+                  label="Durability"
+                  value={bulkCreate.durability}
+                  inputMode="numeric"
+                  onChange={(value) => updateBulkCreate("durability", value)}
+                />
+                <Field
+                  label="Sell Price"
+                  value={bulkCreate.sellPrice}
+                  inputMode="numeric"
+                  onChange={(value) => updateBulkCreate("sellPrice", value)}
+                />
+                <Field
+                  label="Class Restriction(s)"
+                  value={bulkCreate.classRestriction}
+                  onChange={(value) => updateBulkCreate("classRestriction", value)}
+                />
+                <Field
+                  label="Abilities (comma separated)"
+                  value={bulkCreate.abilities}
+                  onChange={(value) => updateBulkCreate("abilities", value)}
+                />
+                <Field label="Icon" value={bulkCreate.icon} onChange={(value) => updateBulkCreate("icon", value)} />
+              </div>
+
+              <div>
+                <div className="label mb-2">Description</div>
+                <textarea
+                  className="input min-h-24"
+                  value={bulkCreate.description}
+                  onChange={(event) => updateBulkCreate("description", event.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button className="btn" onClick={createBulkMods}>
+                  {bulkTitles.length ? `Create ${bulkTitles.length} Mods` : "Create Mods"}
+                </button>
+                <button
+                  className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                  onClick={() => setBulkCreate(EMPTY_BULK_CREATE_STATE)}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="text-xs text-white/50">
+                Blank shared fields stay blank on the generated mods and will surface as warnings until you fill them in.
+              </div>
+            </div>
+          ) : null}
+
+          {!selectedMod ? null : (
+          <>
           <div className="card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -261,13 +493,17 @@ export default function ModWorkshop({
               <SelectField
                 label="Slot"
                 value={selectedMod.slot}
-                options={MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot }))}
+                options={[
+                  { value: "", label: "Select slot" },
+                  ...MOD_SLOT_OPTIONS.map((slot) => ({ value: slot, label: slot })),
+                ]}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, slot: value }))}
               />
               <RarityField
                 label="Rarity"
                 value={selectedMod.rarity}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }))}
+                allowBlank
               />
               <Field
                 label="Level Requirement"
@@ -404,6 +640,8 @@ export default function ModWorkshop({
 
             <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
           </div>
+          </>
+          )}
         </div>
       )}
     </div>
@@ -502,10 +740,12 @@ function RarityField({
   label,
   value,
   onChange,
+  allowBlank = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  allowBlank?: boolean;
 }) {
   const rarityNumber = Number(value);
   const selectedColor = Number.isFinite(rarityNumber) ? RARITY_COLOR[rarityNumber] || "#FFFFFF" : "#FFFFFF";
@@ -519,6 +759,11 @@ function RarityField({
         style={{ color: selectedColor }}
         onChange={(event) => onChange(event.target.value)}
       >
+        {allowBlank ? (
+          <option value="" style={{ color: "#FFFFFF" }}>
+            Select rarity
+          </option>
+        ) : null}
         {Object.entries(RARITY_LABEL).map(([rarityValue, rarityLabel]) => (
           <option key={rarityValue} value={rarityValue} style={{ color: RARITY_COLOR[Number(rarityValue)] || "#FFFFFF" }}>
             {rarityValue} · {rarityLabel}

@@ -74,6 +74,19 @@ export interface ModDraft {
   extraJson: string;
 }
 
+export interface BulkModTemplateDraft {
+  slot: string;
+  classRestriction: string[];
+  levelRequirement: string;
+  itemLevel: string;
+  rarity: string;
+  durability: string;
+  sellPrice: string;
+  abilities: string[];
+  icon: string;
+  description: string;
+}
+
 type JsonObject = Record<string, unknown>;
 
 export const MISSION_STORAGE_KEY = "gemini.console.authoring.missions.v1";
@@ -212,6 +225,13 @@ export function uid(prefix: string) {
 export function listFromCsv(input: string): string[] {
   return input
     .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function listFromLines(input: string): string[] {
+  return input
+    .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean);
 }
@@ -427,6 +447,40 @@ export function duplicateModDraft(draft: ModDraft, existingIds: string[] = []): 
     id: nextGeneratedModId(existingIds, draft.id),
     name: draft.name ? `${draft.name} Copy` : "",
   };
+}
+
+export function createBulkModDrafts(
+  titles: string[],
+  template: BulkModTemplateDraft,
+  existingIds: string[] = [],
+  previousId?: string,
+): ModDraft[] {
+  const knownIds = [...existingIds];
+  let previous = previousId;
+
+  return titles.map((title) => {
+    const draft = createModDraft(knownIds, previous);
+    const nextDraft: ModDraft = {
+      ...draft,
+      name: title.trim(),
+      slot: template.slot.trim(),
+      classRestriction: [...template.classRestriction],
+      levelRequirement: template.levelRequirement.trim(),
+      itemLevel: template.itemLevel.trim(),
+      rarity: template.rarity.trim(),
+      durability: template.durability.trim(),
+      sellPrice: template.sellPrice.trim(),
+      stats: [],
+      abilities: [...template.abilities],
+      icon: template.icon.trim(),
+      description: template.description,
+      extraJson: "",
+    };
+
+    knownIds.push(nextDraft.id);
+    previous = nextDraft.id;
+    return nextDraft;
+  });
 }
 
 export function normalizeImportedMission(raw: unknown): MissionDraft {
@@ -953,20 +1007,22 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
   for (const [draftIndex, mod] of mods.entries()) {
     const id = mod.id.trim();
     if (!id) {
-      messages.push({ level: "error", scope: "mods", draftIndex, message: "Mod id is required." });
+      messages.push({ level: "warning", scope: "mods", draftIndex, message: "Mod id is blank." });
     } else {
       idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     }
 
     if (!mod.name.trim()) {
-      messages.push({ level: "error", scope: "mods", draftIndex, itemId: id || undefined, message: "Mod name is required." });
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Mod name is blank." });
     }
 
     if (!mod.slot.trim()) {
-      messages.push({ level: "error", scope: "mods", draftIndex, itemId: id || undefined, message: "Mod slot is required." });
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Mod slot is blank." });
     }
 
-    if (parseNumber(mod.levelRequirement) === undefined) {
+    if (!mod.levelRequirement.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Level requirement is blank." });
+    } else if (parseNumber(mod.levelRequirement) === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -976,7 +1032,21 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       });
     }
 
-    if (parseNumber(mod.rarity) === undefined) {
+    if (!mod.itemLevel.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Item level is blank." });
+    } else if (parseNumber(mod.itemLevel) === undefined) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "Item level must be numeric.",
+      });
+    }
+
+    if (!mod.rarity.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Rarity is blank." });
+    } else if (parseNumber(mod.rarity) === undefined) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -984,6 +1054,48 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         itemId: id || undefined,
         message: "Rarity must be numeric.",
       });
+    }
+
+    if (!mod.durability.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Durability is blank." });
+    } else if (parseNumber(mod.durability) === undefined) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "Durability must be numeric.",
+      });
+    }
+
+    if (!mod.sellPrice.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Sell price is blank." });
+    } else if (parseNumber(mod.sellPrice) === undefined) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "Sell price must be numeric.",
+      });
+    }
+
+    if (!mod.classRestriction.length) {
+      messages.push({
+        level: "warning",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "Class restriction is blank.",
+      });
+    }
+
+    if (!mod.icon.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Icon is blank." });
+    }
+
+    if (!mod.description.trim()) {
+      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Description is blank." });
     }
 
     try {
@@ -1001,12 +1113,67 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
     }
 
     const statKeys = new Set<string>();
-    for (const stat of mod.stats) {
+    if (!mod.stats.length) {
+      messages.push({
+        level: "warning",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "No stat entries are set.",
+      });
+    }
+
+    for (const [statIndex, stat] of mod.stats.entries()) {
       const key = stat.key.trim();
-      if (!key) continue;
-      if (statKeys.has(key)) {
+      const value = stat.value.trim();
+
+      if (!key && !value) {
         messages.push({
           level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Stat row ${statIndex + 1} is blank.`,
+        });
+        continue;
+      }
+
+      if (!key) {
+        messages.push({
+          level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Stat row ${statIndex + 1} is missing a stat key.`,
+        });
+        continue;
+      }
+
+      if (!value) {
+        messages.push({
+          level: "warning",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Stat "${key}" is missing a value.`,
+        });
+        continue;
+      }
+
+      if (parseNumber(value) === undefined) {
+        messages.push({
+          level: "error",
+          scope: "mods",
+          draftIndex,
+          itemId: id || undefined,
+          message: `Stat "${key}" must have a numeric value.`,
+        });
+        continue;
+      }
+
+      if (statKeys.has(key)) {
+        messages.push({
+          level: "error",
           scope: "mods",
           draftIndex,
           itemId: id || undefined,
