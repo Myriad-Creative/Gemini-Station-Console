@@ -45,6 +45,7 @@ type BulkCreateState = {
   durability: string;
   sellPrice: string;
   classRestriction: string;
+  stats: ModStatDraft[];
   abilities: ModAbilityDraft[];
   icon: string;
   description: string;
@@ -58,6 +59,7 @@ const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   durability: "",
   sellPrice: "",
   classRestriction: "None",
+  stats: [],
   abilities: [],
   icon: "",
   description: "",
@@ -100,7 +102,10 @@ export default function ModWorkshop({
       calculateModBudgetSummary({
         requiredLevel: parseNumber(clampLevelInput(bulkCreate.levelRequirement)),
         rarity: parseNumber(bulkCreate.rarity),
-        stats: [],
+        stats: bulkCreate.stats.map((entry) => ({
+          key: entry.key.trim(),
+          value: parseNumber(entry.value),
+        })),
         abilities: bulkCreate.abilities.map((entry) => ({
           id: entry.id.trim(),
           budgetCost: parseNumber(entry.budgetCost),
@@ -240,6 +245,13 @@ export default function ModWorkshop({
     }));
   }
 
+  function updateBulkStat(statIndex: number, updater: (stat: ModStatDraft) => ModStatDraft) {
+    setBulkCreate((current) => ({
+      ...current,
+      stats: current.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
+    }));
+  }
+
   function addMod() {
     const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
     const previousId = selectedSyncedMod?.id.trim() || existingIds[existingIds.length - 1];
@@ -285,6 +297,9 @@ export default function ModWorkshop({
       rarity: bulkCreate.rarity,
       durability: bulkCreate.durability,
       sellPrice: bulkCreate.sellPrice,
+      stats: bulkCreate.stats
+        .filter((stat) => stat.key.trim() || stat.value.trim())
+        .map((stat) => ({ ...stat })),
       abilities: bulkCreate.abilities
         .filter((ability) => ability.id.trim() || ability.budgetCost.trim())
         .map((ability) => ({ ...ability })),
@@ -614,13 +629,73 @@ export default function ModWorkshop({
                 <Field label="Icon" value={bulkCreate.icon} onChange={(value) => updateBulkCreate("icon", value)} />
               </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium">Shared Abilities</div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Shared Stats</div>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_STATS} stat rows. These values are copied into every created draft.</div>
+                  </div>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={bulkCreate.stats.length >= MOD_MAX_STATS}
+                    onClick={() =>
+                      setBulkCreate((current) => ({
+                        ...current,
+                        stats: [...current.stats, { key: "", value: "" }],
+                      }))
+                    }
+                  >
+                    Add Stat
+                  </button>
+                </div>
+
+                {bulkCreate.stats.length ? (
+                  <div className="space-y-3">
+                    {bulkCreate.stats.map((stat, statIndex) => (
+                      <div key={`bulk-stat-${statIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
+                        <SelectField
+                          label={statIndex === 0 ? "Stat Key" : " "}
+                          value={stat.key}
+                          options={buildStatOptions(stat.key)}
+                          onChange={(value) => updateBulkStat(statIndex, (current) => ({ ...current, key: value }))}
+                        />
+                        <Field
+                          label={statIndex === 0 ? "Value" : " "}
+                          value={stat.value}
+                          inputMode="numeric"
+                          step={getModStatBudgetConfig(stat.key)?.roundStep ?? 1}
+                          onChange={(value) => updateBulkStat(statIndex, (current) => ({ ...current, value }))}
+                        />
+                        <div className="flex items-end">
+                          <button
+                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                            onClick={() =>
+                              setBulkCreate((current) => ({
+                                ...current,
+                                stats: current.stats.filter((_, currentIndex) => currentIndex !== statIndex),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                    No shared stats configured.
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Shared Abilities</div>
                     <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created draft.</div>
                     <div className="text-xs text-white/50">Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.</div>
-                    </div>
+                  </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={bulkCreate.abilities.length >= MOD_MAX_ABILITIES}

@@ -102,6 +102,7 @@ export interface BulkModTemplateDraft {
   rarity: string;
   durability: string;
   sellPrice: string;
+  stats: ModStatDraft[];
   abilities: ModAbilityDraft[];
   icon: string;
   description: string;
@@ -684,7 +685,7 @@ export function createBulkModDrafts(
       rarity: template.rarity.trim(),
       durability: template.durability.trim(),
       sellPrice: "",
-      stats: [],
+      stats: template.stats.map((stat) => ({ ...stat })),
       abilities: template.abilities.map((ability) => ({ ...ability })),
       icon: template.icon.trim(),
       description: template.description,
