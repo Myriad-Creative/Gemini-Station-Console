@@ -419,6 +419,8 @@ export default function ModWorkshop({
             {filteredMods.length ? (
               filteredMods.map(({ mod, index }) => {
                 const budget = buildModBudgetSummary(mod);
+                const rarityValue = parseNumber(mod.rarity);
+                const rarityColor = rarityValue !== undefined ? RARITY_COLOR[rarityValue] || "#FFFFFF" : "#FFFFFF";
                 return (
                   <button
                     key={`${mod.id || "mod"}-${index}`}
@@ -427,7 +429,9 @@ export default function ModWorkshop({
                     }`}
                     onClick={() => setSelectedIndex(index)}
                   >
-                    <div className="truncate font-medium">{mod.name || "Untitled mod"}</div>
+                    <div className="truncate font-medium" style={{ color: rarityColor }}>
+                      {mod.name || "Untitled mod"}
+                    </div>
                     <div className="truncate text-xs text-white/60">
                       {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
                     </div>
