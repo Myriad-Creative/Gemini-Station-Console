@@ -196,7 +196,7 @@ export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number
 
 export function getModAbilityBaseSlotCost(id?: string) {
   const normalizedId = id?.trim();
-  if (!normalizedId) return 0;
+  if (!normalizedId) return MOD_BASE_ABILITY_SLOT_COST;
   return MOD_ABILITY_BUDGET_COST_OVERRIDES[normalizedId] ?? MOD_BASE_ABILITY_SLOT_COST;
 }
 
@@ -213,18 +213,15 @@ export function calculateModBudgetSummary(input: {
   const baseStatMax = getModBaseStatMaxAtRequiredLevel(requiredLevel);
   const supportedStatCounts = getModSupportedStatCounts(input.rarity);
   const rarityCapacityMultiplier = getModRarityCapacityMultiplier(input.rarity);
-  const keyedStats = input.stats
-    .map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }))
-    .filter((entry) => entry.key);
-  const activeStatCount = keyedStats.length;
+  const statRows = input.stats.map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }));
+  const keyedStats = statRows.filter((entry) => entry.key);
+  const activeStatCount = statRows.length;
   const slotProfile = getModSlotProfile(input.rarity, activeStatCount);
   const slotProfileLabel = slotProfile ? formatProfile(slotProfile) : undefined;
   const slotProfileTotal = slotProfile ? sumProfile(slotProfile) : undefined;
 
-  const abilities = input.abilities.flatMap<ModBudgetAbilityResult>((entry) => {
+  const abilities = input.abilities.map<ModBudgetAbilityResult>((entry) => {
     const id = entry.id?.trim() ?? "";
-    if (!id) return [];
-
     const baseSlotCost = getModAbilityBaseSlotCost(id);
     const extraSlotCost =
       entry.budgetCost !== undefined && Number.isFinite(entry.budgetCost) ? entry.budgetCost : 0;
@@ -233,19 +230,17 @@ export function calculateModBudgetSummary(input: {
     const extraBudgetCost = baseStatMax !== undefined ? roundBudget(baseStatMax * extraSlotCost) : 0;
     const budgetCost = roundBudget(baseBudgetCost + extraBudgetCost);
 
-    return [
-      {
-        id,
-        baseSlotCost,
-        extraSlotCost,
-        slotCost,
-        baseBudgetCost,
-        extraBudgetCost,
-        budgetCost,
-        powerScore: budgetCost,
-        budgetSpent: budgetCost,
-      },
-    ];
+    return {
+      id,
+      baseSlotCost,
+      extraSlotCost,
+      slotCost,
+      baseBudgetCost,
+      extraBudgetCost,
+      budgetCost,
+      powerScore: budgetCost,
+      budgetSpent: budgetCost,
+    };
   });
 
   const abilitySlotCostTotal = roundBudget(abilities.reduce((sum, ability) => sum + ability.slotCost, 0));
@@ -258,7 +253,7 @@ export function calculateModBudgetSummary(input: {
 
   const statMeta = new Map<number, { slotIndex: number; slotMultiplier?: number; adjustedSlotMultiplier?: number }>();
   let slotIndex = 0;
-  for (const stat of keyedStats) {
+  for (const stat of statRows) {
     const slotMultiplier = slotProfile?.[slotIndex];
     statMeta.set(stat.index, {
       slotIndex,
