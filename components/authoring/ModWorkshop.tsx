@@ -156,23 +156,32 @@ export default function ModWorkshop({
 
   function updateSelected(
     updater: (draft: ModDraft) => ModDraft,
-    options: { autoBalance?: boolean; fillBlankStatValues?: boolean } = {},
+    options: { autoBalance?: boolean; fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
   ) {
     if (!selectedSyncedMod) return;
     const nextDraft = updater(selectedSyncedMod);
-    const preparedDraft = options.autoBalance ? autoBalanceModDraft(nextDraft, { fillBlankStatValues: options.fillBlankStatValues }) : nextDraft;
+    const preparedDraft = options.autoBalance
+      ? autoBalanceModDraft(nextDraft, {
+          fillBlankStatValues: options.fillBlankStatValues,
+          syncAllStatValuesToMax: options.syncAllStatValuesToMax,
+        })
+      : nextDraft;
     setModAt(clampedSelectedIndex, preparedDraft);
   }
 
   function updateStat(
     statIndex: number,
     updater: (stat: ModStatDraft) => ModStatDraft,
-    options: { fillBlankStatValues?: boolean } = {},
+    options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
   ) {
     updateSelected((draft) => ({
       ...draft,
       stats: draft.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
-    }), { autoBalance: true, fillBlankStatValues: options.fillBlankStatValues });
+    }), {
+      autoBalance: true,
+      fillBlankStatValues: options.fillBlankStatValues,
+      syncAllStatValuesToMax: options.syncAllStatValuesToMax,
+    });
   }
 
   function updateAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
@@ -649,7 +658,7 @@ export default function ModWorkshop({
                   <RarityField
                     label="Rarity"
                     value={selectedSyncedMod.rarity}
-                    onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }), { autoBalance: true })}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }), { autoBalance: true, syncAllStatValuesToMax: true })}
                     allowBlank
                   />
                   <Field
@@ -657,7 +666,12 @@ export default function ModWorkshop({
                     value={selectedSyncedMod.levelRequirement}
                     inputMode="numeric"
                     helpText="Required level is clamped between 1 and 100."
-                    onChange={(value) => updateSelected((draft) => ({ ...draft, levelRequirement: clampLevelInput(value) }), { autoBalance: true })}
+                    onChange={(value) =>
+                      updateSelected(
+                        (draft) => ({ ...draft, levelRequirement: clampLevelInput(value) }),
+                        { autoBalance: true, syncAllStatValuesToMax: true },
+                      )
+                    }
                   />
                   <Field
                     label="Calculated Item Level"
@@ -716,7 +730,7 @@ export default function ModWorkshop({
                       updateSelected((draft) => ({
                         ...draft,
                         stats: [...draft.stats, { key: "", value: "" }],
-                      }), { autoBalance: true })
+                      }), { autoBalance: true, syncAllStatValuesToMax: true })
                     }
                   >
                     Add Stat
@@ -746,7 +760,7 @@ export default function ModWorkshop({
                               updateStat(statIndex, (current) => ({
                                 ...current,
                                 key: value,
-                              }), { fillBlankStatValues: true })
+                              }), { fillBlankStatValues: true, syncAllStatValuesToMax: true })
                             }
                           />
                           <Field
@@ -762,7 +776,7 @@ export default function ModWorkshop({
                                 updateSelected((draft) => ({
                                   ...draft,
                                   stats: draft.stats.filter((_, currentIndex) => currentIndex !== statIndex),
-                                }), { autoBalance: true })
+                                }), { autoBalance: true, syncAllStatValuesToMax: true })
                               }
                             >
                               Remove
@@ -798,7 +812,7 @@ export default function ModWorkshop({
                       updateSelected((draft) => ({
                         ...draft,
                         abilities: [...draft.abilities, createModAbilityDraft()],
-                      }), { autoBalance: true })
+                      }), { autoBalance: true, syncAllStatValuesToMax: true })
                     }
                   >
                     Add Ability
@@ -812,13 +826,23 @@ export default function ModWorkshop({
                         <Field
                           label={abilityIndex === 0 ? "Ability ID" : " "}
                           value={ability.id}
-                          onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, id: value }))}
+                          onChange={(value) => updateSelected((draft) => ({
+                            ...draft,
+                            abilities: draft.abilities.map((currentAbility, currentIndex) =>
+                              currentIndex === abilityIndex ? { ...currentAbility, id: value } : currentAbility,
+                            ),
+                          }), { autoBalance: true, syncAllStatValuesToMax: true })}
                         />
                         <Field
                           label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
-                          onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
+                          onChange={(value) => updateSelected((draft) => ({
+                            ...draft,
+                            abilities: draft.abilities.map((currentAbility, currentIndex) =>
+                              currentIndex === abilityIndex ? { ...currentAbility, budgetCost: value } : currentAbility,
+                            ),
+                          }), { autoBalance: true, syncAllStatValuesToMax: true })}
                         />
                         <div className="flex items-end">
                           <button
@@ -827,7 +851,7 @@ export default function ModWorkshop({
                               updateSelected((draft) => ({
                                 ...draft,
                                 abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                              }), { autoBalance: true })
+                              }), { autoBalance: true, syncAllStatValuesToMax: true })
                             }
                           >
                             Remove
@@ -1071,7 +1095,7 @@ function RarityField({
 function buildStatOptions(currentKey: string) {
   const options = ALL_STATS.map((stat) => ({
     value: stat,
-    label: `${stat} (base max = level)`,
+    label: stat,
   }));
 
   if (currentKey.trim() && !options.some((option) => option.value === currentKey)) {

@@ -299,7 +299,10 @@ export function buildModBudgetSummary(mod: ModDraft) {
   });
 }
 
-export function autoBalanceModDraft(mod: ModDraft, options: { fillBlankStatValues?: boolean } = {}) {
+export function autoBalanceModDraft(
+  mod: ModDraft,
+  options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
+) {
   const budget = buildModBudgetSummary(mod);
   let activeStatIndex = 0;
 
@@ -312,6 +315,13 @@ export function autoBalanceModDraft(mod: ModDraft, options: { fillBlankStatValue
     if (!statBudget || statBudget.key !== key) return stat;
 
     const numericValue = parseNumber(stat.value);
+    if (options.syncAllStatValuesToMax && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
+      return {
+        ...stat,
+        value: formatDraftNumber(statBudget.effectiveMaxValue),
+      };
+    }
+
     if (!stat.value.trim() && options.fillBlankStatValues && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
       return {
         ...stat,
