@@ -79,6 +79,9 @@ export interface ModDraft {
   name: string;
   slot: string;
   classRestriction: string[];
+  isQuestReward: boolean;
+  isDungeonDrop: boolean;
+  isBossDrop: boolean;
   levelRequirement: string;
   itemLevel: string;
   rarity: string;
@@ -212,6 +215,17 @@ function parseScalarString(value: string): string | number | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   return /^-?\d+(?:\.\d+)?$/.test(trimmed) ? Number(trimmed) : trimmed;
+}
+
+function parseBooleanFlag(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  if (typeof value === "number") return value !== 0;
+  return false;
 }
 
 function looksLikeMission(value: JsonObject) {
@@ -543,6 +557,9 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     name: "",
     slot: "",
     classRestriction: ["None"],
+    isQuestReward: false,
+    isDungeonDrop: false,
+    isBossDrop: false,
     levelRequirement: "",
     itemLevel: "",
     rarity: "0",
@@ -583,6 +600,9 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
     classRestriction: stringList(source.classRestriction).length
       ? stringList(source.classRestriction)
       : stringList(source.class_restriction),
+    isQuestReward: parseBooleanFlag(source.isQuestReward ?? source.is_quest_reward),
+    isDungeonDrop: parseBooleanFlag(source.isDungeonDrop ?? source.is_dungeon_drop),
+    isBossDrop: parseBooleanFlag(source.isBossDrop ?? source.is_boss_drop),
     levelRequirement: numberString(source.levelRequirement ?? source.level_requirement),
     itemLevel: numberString(source.itemLevel ?? source.item_level),
     rarity: numberString(source.rarity ?? 0),
@@ -648,6 +668,9 @@ export function createBulkModDrafts(
       name: title.trim(),
       slot: template.slot.trim(),
       classRestriction: [...template.classRestriction],
+      isQuestReward: draft.isQuestReward,
+      isDungeonDrop: draft.isDungeonDrop,
+      isBossDrop: draft.isBossDrop,
       levelRequirement: template.levelRequirement.trim(),
       itemLevel: "",
       rarity: template.rarity.trim(),
@@ -807,6 +830,12 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     "mod_slot",
     "class_restriction",
     "classRestriction",
+    "is_quest_reward",
+    "isQuestReward",
+    "is_dungeon_drop",
+    "isDungeonDrop",
+    "is_boss_drop",
+    "isBossDrop",
     "level_requirement",
     "levelRequirement",
     "item_level",
@@ -830,6 +859,9 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     classRestriction: stringList(source.class_restriction).length
       ? stringList(source.class_restriction)
       : stringList(source.classRestriction),
+    isQuestReward: parseBooleanFlag(source.is_quest_reward ?? source.isQuestReward),
+    isDungeonDrop: parseBooleanFlag(source.is_dungeon_drop ?? source.isDungeonDrop),
+    isBossDrop: parseBooleanFlag(source.is_boss_drop ?? source.isBossDrop),
     levelRequirement: numberString(source.level_requirement ?? source.levelRequirement),
     itemLevel: numberString(source.item_level ?? source.itemLevel),
     rarity: numberString(source.rarity ?? 0),
@@ -948,6 +980,9 @@ export function exportModDraft(mod: ModDraft) {
       if (!values.length) return undefined;
       return values.length === 1 ? values[0] : values;
     })(),
+    is_quest_reward: syncedMod.isQuestReward,
+    is_dungeon_drop: syncedMod.isDungeonDrop,
+    is_boss_drop: syncedMod.isBossDrop,
     level_requirement: parseNumber(syncedMod.levelRequirement),
     item_level: parseNumber(syncedMod.itemLevel),
     rarity: parseNumber(syncedMod.rarity) ?? 0,

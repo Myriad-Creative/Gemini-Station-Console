@@ -415,7 +415,7 @@ export default function ModWorkshop({
 
           {status ? <div className="text-sm text-accent">{status}</div> : null}
 
-          <div className="h-[29rem] space-y-2 overflow-auto pr-1">
+          <div className="h-[21rem] space-y-2 overflow-auto pr-1">
             {filteredMods.length ? (
               filteredMods.map(({ mod, index }) => {
                 const budget = buildModBudgetSummary(mod);
@@ -442,9 +442,9 @@ export default function ModWorkshop({
           </div>
         </div>
 
-        {selectedSyncedMod ? <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact /> : null}
-
         {selectedSyncedMod ? <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." /> : null}
+
+        {selectedSyncedMod ? <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact /> : null}
       </div>
 
       {!selectedSyncedMod && !showBulkCreate ? null : (
@@ -647,6 +647,7 @@ export default function ModWorkshop({
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Name" value={selectedSyncedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
                   <Field
                     label="Mod ID (Auto-generated)"
                     value={selectedSyncedMod.id}
@@ -654,7 +655,6 @@ export default function ModWorkshop({
                     helpText={selectedSyncedMod.id ? "Auto-generated from the previous mod id." : "Will be generated from the previous mod id."}
                     onChange={() => {}}
                   />
-                  <Field label="Name" value={selectedSyncedMod.name} onChange={(value) => updateSelected((draft) => ({ ...draft, name: value }))} />
                   <SelectField
                     label="Slot"
                     value={selectedSyncedMod.slot}
@@ -714,6 +714,24 @@ export default function ModWorkshop({
                     onChange={(value) => updateSelected((draft) => ({ ...draft, classRestriction: value ? [value] : [] }))}
                   />
                   <Field label="Icon" value={selectedSyncedMod.icon} onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))} />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <CheckboxField
+                    label="Quest Reward"
+                    checked={selectedSyncedMod.isQuestReward}
+                    onChange={(checked) => updateSelected((draft) => ({ ...draft, isQuestReward: checked }))}
+                  />
+                  <CheckboxField
+                    label="Dungeon Reward"
+                    checked={selectedSyncedMod.isDungeonDrop}
+                    onChange={(checked) => updateSelected((draft) => ({ ...draft, isDungeonDrop: checked }))}
+                  />
+                  <CheckboxField
+                    label="Boss Drop"
+                    checked={selectedSyncedMod.isBossDrop}
+                    onChange={(checked) => updateSelected((draft) => ({ ...draft, isBossDrop: checked }))}
+                  />
                 </div>
 
                 <div>
@@ -1074,6 +1092,25 @@ function SelectField({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="rounded border border-white/10 bg-black/10 px-3 py-3">
+      <div className="flex items-center gap-3">
+        <input className="h-4 w-4" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span className="text-sm font-medium text-white">{label}</span>
+      </div>
     </label>
   );
 }
