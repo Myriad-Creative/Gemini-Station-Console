@@ -442,6 +442,8 @@ export default function ModWorkshop({
           </div>
         </div>
 
+        {selectedSyncedMod ? <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact /> : null}
+
         {selectedSyncedMod ? <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." /> : null}
       </div>
 
@@ -643,8 +645,6 @@ export default function ModWorkshop({
                     </button>
                   </div>
                 </div>
-
-                <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} />
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field
@@ -915,12 +915,14 @@ export default function ModWorkshop({
 function BudgetSummaryCard({
   title,
   summary,
+  compact = false,
 }: {
   title: string;
   summary: ReturnType<typeof calculateModBudgetSummary> | null;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded border border-white/10 bg-black/20 p-4">
+    <div className={`rounded border border-white/10 bg-black/20 ${compact ? "p-3" : "p-4"}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {summary?.rarity !== undefined && Number.isFinite(summary.rarity) ? (
@@ -940,20 +942,25 @@ function BudgetSummaryCard({
           Profile: {summary?.slotProfileLabel ?? "No active profile"}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Metric label="Required Level" value={summary?.requiredLevel ?? "—"} />
-        <Metric label="Base Stat Max" value={formatBudget(summary?.baseStatMax)} />
-        <Metric label="Rarity Capacity" value={formatBudget(summary?.rarityCapacityMultiplier)} />
-        <Metric label="Target Budget" value={formatBudget(summary?.targetScore)} />
-        <Metric label="Power Used" value={formatBudget(summary?.totalBudgetSpent)} />
-        <Metric label="Budget Remaining" value={formatBudget(summary?.budgetRemaining)} highlight={summary?.budgetRemaining !== undefined && summary.budgetRemaining < 0} />
-        <Metric label="Stat Power" value={formatBudget(summary?.totalStatBudget)} />
-        <Metric label="Ability Power" value={formatBudget(summary?.totalAbilityBudget)} />
-        <Metric label="Ability Slot Cost" value={formatBudget(summary?.abilitySlotCostTotal)} />
-        <Metric label="Stat Capacity Left" value={formatBudget(summary?.statCapacityRemainingMultiplier)} />
-        <Metric label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
+      <div className={`grid gap-3 ${compact ? "grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-3"}`}>
+        <Metric compact={compact} label="Required Level" value={summary?.requiredLevel ?? "—"} />
+        <Metric compact={compact} label="Base Stat Max" value={formatBudget(summary?.baseStatMax)} />
+        <Metric compact={compact} label="Rarity Capacity" value={formatBudget(summary?.rarityCapacityMultiplier)} />
+        <Metric compact={compact} label="Target Budget" value={formatBudget(summary?.targetScore)} />
+        <Metric compact={compact} label="Power Used" value={formatBudget(summary?.totalBudgetSpent)} />
+        <Metric
+          compact={compact}
+          label="Budget Remaining"
+          value={formatBudget(summary?.budgetRemaining)}
+          highlight={summary?.budgetRemaining !== undefined && summary.budgetRemaining < 0}
+        />
+        <Metric compact={compact} label="Stat Power" value={formatBudget(summary?.totalStatBudget)} />
+        <Metric compact={compact} label="Ability Power" value={formatBudget(summary?.totalAbilityBudget)} />
+        <Metric compact={compact} label="Ability Slot Cost" value={formatBudget(summary?.abilitySlotCostTotal)} />
+        <Metric compact={compact} label="Stat Capacity Left" value={formatBudget(summary?.statCapacityRemainingMultiplier)} />
+        <Metric compact={compact} label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
       </div>
-      <div className="mt-3 text-xs text-white/50">
+      <div className={`mt-3 text-xs text-white/50 ${compact ? "leading-5" : ""}`}>
         Full single-stat max is currently the required level. Slot profiles scale that max up or down, and each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity before any extra slot cost.
       </div>
     </div>
@@ -964,15 +971,17 @@ function Metric({
   label,
   value,
   highlight = false,
+  compact = false,
 }: {
   label: string;
   value: string | number;
   highlight?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <div className={`rounded border px-3 py-2 ${highlight ? "border-red-400/40 bg-red-500/10 text-red-100" : "border-white/10 bg-black/10"}`}>
+    <div className={`rounded border ${compact ? "px-2 py-2" : "px-3 py-2"} ${highlight ? "border-red-400/40 bg-red-500/10 text-red-100" : "border-white/10 bg-black/10"}`}>
       <div className="label">{label}</div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
+      <div className={`mt-1 font-semibold ${compact ? "text-base" : "text-lg"}`}>{value}</div>
     </div>
   );
 }
