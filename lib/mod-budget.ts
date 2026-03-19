@@ -26,6 +26,7 @@ export interface ModBudgetStatResult {
   slotMultiplier?: number;
   adjustedSlotMultiplier?: number;
   effectiveMaxValue?: number;
+  currentMaxValue?: number;
   normalizedUsage: number;
   powerScore: number;
   budgetSpent: number;
@@ -76,7 +77,10 @@ export const MOD_BASE_ABILITY_BUDGET_COST = MOD_BASE_ABILITY_SLOT_COST;
 export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
 
 export const MOD_RARITY_SLOT_PROFILES: Record<number, number[][]> = {
-  0: [[1.0]],
+  0: [
+    [1.0],
+    [0.5, 0.5],
+  ],
   1: [[1.0, 0.4]],
   2: [
     [1.1, 0.7],
@@ -291,6 +295,7 @@ export function calculateModBudgetSummary(input: {
         slotMultiplier: meta.slotMultiplier,
         adjustedSlotMultiplier: meta.adjustedSlotMultiplier,
         effectiveMaxValue,
+        currentMaxValue: undefined,
         normalizedUsage,
         powerScore,
         budgetSpent: powerScore,
@@ -307,6 +312,21 @@ export function calculateModBudgetSummary(input: {
       : undefined;
   const budgetRemaining = targetScore !== undefined ? roundBudget(targetScore - totalBudgetSpent) : undefined;
   const itemLevel = requiredLevel !== undefined ? Math.round(totalBudgetSpent) : undefined;
+  const statBudgetCap = targetScore !== undefined ? roundBudget(Math.max(0, targetScore - totalAbilityBudget)) : undefined;
+  const statsWithCurrentMax = stats.map((stat) => {
+    const config = getModStatBudgetConfig(stat.key);
+    if (!config || statBudgetCap === undefined || baseStatMax === undefined || baseStatMax <= 0) {
+      return stat;
+    }
+
+    const remainingBudgetForThisStat = roundBudget(Math.max(0, statBudgetCap - (totalStatBudget - stat.powerScore)));
+    const currentMaxValue = roundToStep((stat.baseMaxAtLevel * remainingBudgetForThisStat) / baseStatMax, config.roundStep ?? 0.1);
+
+    return {
+      ...stat,
+      currentMaxValue,
+    };
+  });
 
   return {
     requiredLevel,
@@ -328,7 +348,7 @@ export function calculateModBudgetSummary(input: {
     budgetRemaining,
     itemLevel,
     isOverBudget: targetScore !== undefined ? totalBudgetSpent > targetScore : false,
-    stats,
+    stats: statsWithCurrentMax,
     abilities,
   };
 }

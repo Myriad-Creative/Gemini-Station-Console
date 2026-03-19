@@ -795,7 +795,8 @@ export default function ModWorkshop({
                             {maxAtLevel !== undefined ? `Base level max: ${maxAtLevel}.` : "Set required level to calculate the per-level stat max."}{" "}
                             {slotMultiplier !== undefined ? `Slot ${slotIndex + 1} profile share: ${slotMultiplier.toFixed(2)}.` : ""}
                             {statSummary?.adjustedSlotMultiplier !== undefined ? ` Current share after abilities: ${statSummary.adjustedSlotMultiplier.toFixed(2)}.` : ""}
-                            {statSummary?.effectiveMaxValue !== undefined ? ` Current max: ${statSummary.effectiveMaxValue}.` : ""}
+                            {statSummary?.effectiveMaxValue !== undefined ? ` Default synced max: ${statSummary.effectiveMaxValue}.` : ""}
+                            {statSummary?.currentMaxValue !== undefined ? ` Current max: ${statSummary.currentMaxValue}.` : ""}
                           </div>
                         ) : null}
                       </div>
@@ -1026,7 +1027,9 @@ function Field({
       <div className="label mb-2">{label.trim() ? label : "\u00a0"}</div>
       <input
         className={`input ${readOnly ? "cursor-default text-white/70" : ""}`}
+        type={inputMode === "numeric" ? "number" : "text"}
         value={value}
+        step={inputMode === "numeric" ? "any" : undefined}
         inputMode={inputMode}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}

@@ -338,10 +338,11 @@ export function autoBalanceModDraft(
       };
     }
 
-    if (numericValue !== undefined && statBudget.effectiveMaxValue !== undefined && numericValue > statBudget.effectiveMaxValue) {
+    const clampMax = statBudget.currentMaxValue ?? statBudget.effectiveMaxValue;
+    if (numericValue !== undefined && clampMax !== undefined && numericValue > clampMax) {
       return {
         ...stat,
-        value: formatDraftNumber(statBudget.effectiveMaxValue),
+        value: formatDraftNumber(clampMax),
       };
     }
 
@@ -1320,7 +1321,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       if (levelRequirement !== undefined) {
         const numericValue = parseNumber(value);
         const effectiveBudgetStat = budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
-        const effectiveMaxValue = effectiveBudgetStat?.effectiveMaxValue;
+        const effectiveMaxValue = effectiveBudgetStat?.currentMaxValue ?? effectiveBudgetStat?.effectiveMaxValue;
         const maxAtLevel = effectiveMaxValue ?? getModStatMaxAtRequiredLevel(key, levelRequirement);
         if (maxAtLevel !== undefined && numericValue !== undefined && numericValue > maxAtLevel) {
           messages.push({

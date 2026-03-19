@@ -55,7 +55,7 @@ function loadDrafts<T>(key: string, fallback: T): T {
 }
 
 export default function AuthoringWorkbench() {
-  const [tab, setTab] = useState<"missions" | "mods">("missions");
+  const [tab, setTab] = useState<"missions" | "mods">("mods");
   const [missions, setMissions] = useState<MissionDraft[]>([createMissionDraft()]);
   const [mods, setMods] = useState<ModDraft[]>([createModDraft()]);
   const [existingMissions, setExistingMissions] = useState<ExistingMissionRow[]>([]);
