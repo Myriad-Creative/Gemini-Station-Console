@@ -273,7 +273,7 @@ export function clampLevelInput(input: string) {
   return String(clampModRequiredLevel(parsed));
 }
 
-export function createModAbilityDraft(id = "", budgetCost = "0"): ModAbilityDraft {
+export function createModAbilityDraft(id = "", budgetCost = ""): ModAbilityDraft {
   return { id, budgetCost };
 }
 
@@ -286,6 +286,7 @@ export function buildModBudgetSummary(mod: ModDraft) {
       value: parseNumber(entry.value),
     })),
     abilities: mod.abilities.map((entry) => ({
+      id: entry.id.trim(),
       budgetCost: parseNumber(entry.budgetCost),
     })),
   });
@@ -656,10 +657,10 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
           const ability = asObject(entry);
           return createModAbilityDraft(
             String(ability.id ?? ability.ability_id ?? ability.key ?? ""),
-            numberString(ability.budget_cost ?? ability.budgetCost ?? 0),
+            numberString(ability.budget_cost ?? ability.budgetCost ?? ""),
           );
         }
-        return createModAbilityDraft(String(entry ?? ""), "0");
+        return createModAbilityDraft(String(entry ?? ""), "");
       })
     : [];
 
@@ -1316,27 +1317,31 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
           itemId: id || undefined,
           message: `Ability row ${abilityIndex + 1} is missing an ability id.`,
         });
-      }
-
-      if (!budgetCost) {
-        messages.push({
-          level: "warning",
-          scope: "mods",
-          draftIndex,
-          itemId: id || undefined,
-          message: `Ability "${abilityId || abilityIndex + 1}" is missing a budget cost.`,
-        });
         continue;
       }
 
-      if (parseNumber(budgetCost) === undefined) {
+      if (budgetCost && parseNumber(budgetCost) === undefined) {
         messages.push({
           level: "error",
           scope: "mods",
           draftIndex,
           itemId: id || undefined,
-          message: `Ability "${abilityId || abilityIndex + 1}" must have a numeric budget cost.`,
+          message: `Ability "${abilityId}" must have a numeric extra budget cost.`,
         });
+        continue;
+      }
+
+      if (budgetCost) {
+        const numericBudgetCost = parseNumber(budgetCost);
+        if (numericBudgetCost !== undefined && numericBudgetCost < 0) {
+          messages.push({
+            level: "error",
+            scope: "mods",
+            draftIndex,
+            itemId: id || undefined,
+            message: `Ability "${abilityId}" cannot have a negative extra budget cost.`,
+          });
+        }
       }
     }
 

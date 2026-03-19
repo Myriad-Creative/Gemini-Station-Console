@@ -24,7 +24,13 @@ import {
   validateModDrafts,
 } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
-import { MOD_MAX_ABILITIES, MOD_MAX_STATS, calculateModBudgetSummary, getModStatMaxAtRequiredLevel } from "@lib/mod-budget";
+import {
+  MOD_BASE_ABILITY_BUDGET_COST,
+  MOD_MAX_ABILITIES,
+  MOD_MAX_STATS,
+  calculateModBudgetSummary,
+  getModStatMaxAtRequiredLevel,
+} from "@lib/mod-budget";
 
 type IssueFilter = "all" | "error" | "warning";
 
@@ -89,6 +95,7 @@ export default function ModWorkshop({
         rarity: parseNumber(bulkCreate.rarity),
         stats: [],
         abilities: bulkCreate.abilities.map((entry) => ({
+          id: entry.id.trim(),
           budgetCost: parseNumber(entry.budgetCost),
         })),
       }),
@@ -490,6 +497,7 @@ export default function ModWorkshop({
                   <div>
                     <div className="text-sm font-medium">Shared Abilities</div>
                     <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Budget cost applies to every created draft.</div>
+                    <div className="text-xs text-white/50">Each ability has a base budget cost of {MOD_BASE_ABILITY_BUDGET_COST}, plus any extra cost you enter.</div>
                   </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
@@ -515,7 +523,7 @@ export default function ModWorkshop({
                           onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }))}
                         />
                         <Field
-                          label={abilityIndex === 0 ? "Budget Cost" : " "}
+                          label={abilityIndex === 0 ? "Extra Budget Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
                           onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
@@ -684,7 +692,7 @@ export default function ModWorkshop({
                   <div>
                     <h2 className="text-lg font-semibold">Stats</h2>
                     <div className="text-xs text-white/50">
-                      Up to {MOD_MAX_STATS} stats. Each stat spends budget based on required level, stat family, and its per-level maximum.
+                      Up to {MOD_MAX_STATS} stats. Each stat spends budget from its actual value relative to the level-based max table.
                     </div>
                   </div>
                   <button
@@ -742,7 +750,9 @@ export default function ModWorkshop({
                         </div>
                         {entry.key.trim() ? (
                           <div className="text-xs text-white/50">
-                            {maxAtLevel !== undefined ? `Level cap: ${maxAtLevel}` : "Set required level to calculate the per-level stat cap."}
+                            {maxAtLevel !== undefined
+                              ? `Level cap: ${maxAtLevel}. Higher values spend more budget; a max roll spends the full normalized amount.`
+                              : "Set required level to calculate the per-level stat cap."}
                           </div>
                         ) : null}
                       </div>
@@ -755,7 +765,9 @@ export default function ModWorkshop({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold">Abilities</h2>
-                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Each ability spends its configured budget cost.</div>
+                    <div className="text-xs text-white/50">
+                      Up to {MOD_MAX_ABILITIES} abilities. Each ability always spends a base budget cost of {MOD_BASE_ABILITY_BUDGET_COST}, plus any extra cost you enter.
+                    </div>
                   </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
@@ -781,7 +793,7 @@ export default function ModWorkshop({
                           onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, id: value }))}
                         />
                         <Field
-                          label={abilityIndex === 0 ? "Budget Cost" : " "}
+                          label={abilityIndex === 0 ? "Extra Budget Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
                           onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
@@ -809,7 +821,7 @@ export default function ModWorkshop({
                 )}
 
                 <div className="text-xs text-white/50">
-                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array.
+                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array, but every ability now spends at least {MOD_BASE_ABILITY_BUDGET_COST} budget.
                 </div>
               </div>
 

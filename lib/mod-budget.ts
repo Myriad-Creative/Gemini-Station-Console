@@ -13,6 +13,7 @@ export interface ModBudgetStatInput {
 }
 
 export interface ModBudgetAbilityInput {
+  id?: string;
   budgetCost?: number;
 }
 
@@ -28,6 +29,9 @@ export interface ModBudgetStatResult {
 }
 
 export interface ModBudgetAbilityResult {
+  id: string;
+  baseBudgetCost: number;
+  extraBudgetCost: number;
   budgetCost: number;
   budgetSpent: number;
 }
@@ -50,6 +54,8 @@ export const MOD_REQUIRED_LEVEL_MIN = 1;
 export const MOD_REQUIRED_LEVEL_MAX = 100;
 export const MOD_MAX_STATS = 4;
 export const MOD_MAX_ABILITIES = 2;
+export const MOD_BASE_ABILITY_BUDGET_COST = 10;
+export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
 
 export const MOD_RARITY_BUDGET_CAPS: Record<number, number> = {
   0: 100,
@@ -113,6 +119,12 @@ export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number
   return roundBudget((config.level100Max * clampedLevel) / MOD_REQUIRED_LEVEL_MAX);
 }
 
+export function getModAbilityBaseBudgetCost(id?: string) {
+  const normalizedId = id?.trim();
+  if (!normalizedId) return 0;
+  return MOD_ABILITY_BUDGET_COST_OVERRIDES[normalizedId] ?? MOD_BASE_ABILITY_BUDGET_COST;
+}
+
 export function calculateModBudgetSummary(input: {
   requiredLevel?: number;
   rarity?: number;
@@ -154,8 +166,23 @@ export function calculateModBudgetSummary(input: {
   });
 
   const abilities = input.abilities.flatMap<ModBudgetAbilityResult>((entry) => {
-    if (entry.budgetCost === undefined || !Number.isFinite(entry.budgetCost)) return [];
-    return [{ budgetCost: entry.budgetCost, budgetSpent: roundBudget(entry.budgetCost) }];
+    const id = entry.id?.trim() ?? "";
+    if (!id) return [];
+
+    const baseBudgetCost = getModAbilityBaseBudgetCost(id);
+    const extraBudgetCost =
+      entry.budgetCost !== undefined && Number.isFinite(entry.budgetCost) ? entry.budgetCost : 0;
+    const budgetSpent = roundBudget(baseBudgetCost + extraBudgetCost);
+
+    return [
+      {
+        id,
+        baseBudgetCost,
+        extraBudgetCost,
+        budgetCost: budgetSpent,
+        budgetSpent,
+      },
+    ];
   });
 
   const totalStatBudget = roundBudget(stats.reduce((sum, entry) => sum + entry.budgetSpent, 0));
