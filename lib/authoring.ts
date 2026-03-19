@@ -79,6 +79,7 @@ export interface ModDraft {
   name: string;
   slot: string;
   classRestriction: string[];
+  statsCapOverride: boolean;
   isQuestReward: boolean;
   isDungeonDrop: boolean;
   isBossDrop: boolean;
@@ -365,7 +366,7 @@ export function autoBalanceModDraft(
     if (!statBudget || statBudget.key !== key) return stat;
 
     const numericValue = parseNumber(stat.value);
-    if (options.syncAllStatValuesToMax && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
+    if (!mod.statsCapOverride && options.syncAllStatValuesToMax && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
       return {
         ...stat,
         value: formatDraftNumber(statBudget.effectiveMaxValue),
@@ -377,6 +378,10 @@ export function autoBalanceModDraft(
         ...stat,
         value: formatDraftNumber(statBudget.effectiveMaxValue),
       };
+    }
+
+    if (mod.statsCapOverride) {
+      return stat;
     }
 
     const clampMax = statBudget.currentMaxValue ?? statBudget.effectiveMaxValue;
@@ -557,6 +562,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     name: "",
     slot: "",
     classRestriction: ["None"],
+    statsCapOverride: false,
     isQuestReward: false,
     isDungeonDrop: false,
     isBossDrop: false,
@@ -600,6 +606,7 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
     classRestriction: stringList(source.classRestriction).length
       ? stringList(source.classRestriction)
       : stringList(source.class_restriction),
+    statsCapOverride: parseBooleanFlag(source.statsCapOverride ?? source.stats_cap_override),
     isQuestReward: parseBooleanFlag(source.isQuestReward ?? source.is_quest_reward),
     isDungeonDrop: parseBooleanFlag(source.isDungeonDrop ?? source.is_dungeon_drop),
     isBossDrop: parseBooleanFlag(source.isBossDrop ?? source.is_boss_drop),
@@ -668,6 +675,7 @@ export function createBulkModDrafts(
       name: title.trim(),
       slot: template.slot.trim(),
       classRestriction: [...template.classRestriction],
+      statsCapOverride: draft.statsCapOverride,
       isQuestReward: draft.isQuestReward,
       isDungeonDrop: draft.isDungeonDrop,
       isBossDrop: draft.isBossDrop,
@@ -830,6 +838,8 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     "mod_slot",
     "class_restriction",
     "classRestriction",
+    "stats_cap_override",
+    "statsCapOverride",
     "is_quest_reward",
     "isQuestReward",
     "is_dungeon_drop",
@@ -859,6 +869,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     classRestriction: stringList(source.class_restriction).length
       ? stringList(source.class_restriction)
       : stringList(source.classRestriction),
+    statsCapOverride: parseBooleanFlag(source.stats_cap_override ?? source.statsCapOverride),
     isQuestReward: parseBooleanFlag(source.is_quest_reward ?? source.isQuestReward),
     isDungeonDrop: parseBooleanFlag(source.is_dungeon_drop ?? source.isDungeonDrop),
     isBossDrop: parseBooleanFlag(source.is_boss_drop ?? source.isBossDrop),
@@ -980,6 +991,7 @@ export function exportModDraft(mod: ModDraft) {
       if (!values.length) return undefined;
       return values.length === 1 ? values[0] : values;
     })(),
+    stats_cap_override: syncedMod.statsCapOverride,
     is_quest_reward: syncedMod.isQuestReward,
     is_dungeon_drop: syncedMod.isDungeonDrop,
     is_boss_drop: syncedMod.isBossDrop,
@@ -1423,7 +1435,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         continue;
       }
 
-      if (levelRequirement !== undefined) {
+      if (!syncedMod.statsCapOverride && levelRequirement !== undefined) {
         const numericValue = parseNumber(value);
         const effectiveBudgetStat = budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
         const effectiveMaxValue = effectiveBudgetStat?.currentMaxValue ?? effectiveBudgetStat?.effectiveMaxValue;
@@ -1530,7 +1542,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       }
     }
 
-    if (rarity !== undefined && budget.targetScore !== undefined && budget.isOverBudget) {
+    if (!syncedMod.statsCapOverride && rarity !== undefined && budget.targetScore !== undefined && budget.isOverBudget) {
       messages.push({
         level: "error",
         scope: "mods",

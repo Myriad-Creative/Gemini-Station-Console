@@ -806,7 +806,12 @@ export default function ModWorkshop({
                   <Field label="Icon" value={selectedSyncedMod.icon} onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))} />
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <CheckboxField
+                    label="Stats Cap Override"
+                    checked={selectedSyncedMod.statsCapOverride}
+                    onChange={(checked) => updateSelected((draft) => ({ ...draft, statsCapOverride: checked }))}
+                  />
                   <CheckboxField
                     label="Quest Reward"
                     checked={selectedSyncedMod.isQuestReward}
