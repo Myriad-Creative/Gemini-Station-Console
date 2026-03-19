@@ -138,6 +138,10 @@ export default function ModWorkshop({
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
   const statDefaults = useMemo(() => Object.fromEntries(MOD_STAT_DEFAULTS.map((entry) => [entry.key, entry.defaultValue])), []);
+  const selectedMaxStats = useMemo(
+    () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
+    [selectedBudget],
+  );
 
   useEffect(() => {
     if (!filteredMods.length) return;
@@ -692,12 +696,14 @@ export default function ModWorkshop({
                   <div>
                     <h2 className="text-lg font-semibold">Stats</h2>
                     <div className="text-xs text-white/50">
-                      Up to {MOD_MAX_STATS} stats. Each stat spends budget from its actual value relative to the level-based max table.
+                      This rarity supports {selectedBudget?.supportedStatCounts.length ? selectedBudget.supportedStatCounts.join(" or ") : MOD_MAX_STATS} stat
+                      {selectedBudget?.supportedStatCounts.length === 1 ? "" : "s"}.
+                      Each stat spends power from its actual value times its weighted cost.
                     </div>
                   </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-                    disabled={selectedSyncedMod.stats.length >= MOD_MAX_STATS}
+                    disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
                     onClick={() =>
                       updateSelected((draft) => ({
                         ...draft,
@@ -713,6 +719,14 @@ export default function ModWorkshop({
                   {selectedSyncedMod.stats.map((entry, statIndex) => {
                     const levelRequirement = parseNumber(selectedSyncedMod.levelRequirement);
                     const maxAtLevel = levelRequirement !== undefined ? getModStatMaxAtRequiredLevel(entry.key, levelRequirement) : undefined;
+                    const slotIndex = entry.key.trim()
+                      ? selectedSyncedMod.stats.slice(0, statIndex + 1).filter((stat) => stat.key.trim()).length - 1
+                      : -1;
+                    const statSummary =
+                      slotIndex >= 0
+                        ? selectedBudget?.stats.find((stat) => stat.slotIndex === slotIndex && stat.key === entry.key.trim())
+                        : undefined;
+                    const slotMultiplier = slotIndex >= 0 ? selectedBudget?.slotProfile?.[slotIndex] : undefined;
                     return (
                       <div key={`${entry.key || "stat"}-${statIndex}`} className="space-y-2">
                         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
@@ -750,9 +764,10 @@ export default function ModWorkshop({
                         </div>
                         {entry.key.trim() ? (
                           <div className="text-xs text-white/50">
-                            {maxAtLevel !== undefined
-                              ? `Level cap: ${maxAtLevel}. Higher values spend more budget; a max roll spends the full normalized amount.`
-                              : "Set required level to calculate the per-level stat cap."}
+                            {maxAtLevel !== undefined ? `Level cap: ${maxAtLevel}.` : "Set required level to calculate the per-level stat cap."}{" "}
+                            {slotMultiplier !== undefined ? `Slot ${slotIndex + 1} multiplier: ${slotMultiplier.toFixed(2)}.` : ""}
+                            {statSummary?.effectiveWeight !== undefined ? ` Weighted cost: ${statSummary.effectiveWeight.toFixed(2)}.` : ""}
+                            {statSummary?.suggestedValue !== undefined ? ` Suggested value: ${statSummary.suggestedValue}.` : ""}
                           </div>
                         ) : null}
                       </div>
@@ -872,15 +887,36 @@ function BudgetSummaryCard({
           </div>
         ) : null}
       </div>
+      <div className="mb-3 flex flex-wrap gap-2 text-xs text-white/60">
+        <div className="rounded border border-white/10 bg-black/10 px-2 py-1">
+          Allowed stats: {summary?.supportedStatCounts.length ? summary.supportedStatCounts.join(" or ") : "—"}
+        </div>
+        <div className="rounded border border-white/10 bg-black/10 px-2 py-1">
+          Active stats: {summary?.activeStatCount ?? 0}
+        </div>
+        <div className="rounded border border-white/10 bg-black/10 px-2 py-1">
+          Profile: {summary?.slotProfileLabel ?? "No active profile"}
+        </div>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric label="Required Level" value={summary?.requiredLevel ?? "—"} />
-        <Metric label="Budget Cap" value={formatBudget(summary?.budgetCap)} />
-        <Metric label="Budget Spent" value={formatBudget(summary?.totalBudgetSpent)} />
+        <Metric label="Base Value" value={formatBudget(summary?.baseValue)} />
+        <Metric
+          label="Roll Quality"
+          value={summary?.rollQuality !== undefined ? `${summary.rollQuality.toFixed(2)}x` : "—"}
+        />
+        <Metric label="Target Score" value={formatBudget(summary?.targetScore)} />
+        <Metric label="Power Score" value={formatBudget(summary?.totalBudgetSpent)} />
         <Metric label="Budget Remaining" value={formatBudget(summary?.budgetRemaining)} highlight={summary?.budgetRemaining !== undefined && summary.budgetRemaining < 0} />
-        <Metric label="Stat Budget" value={formatBudget(summary?.totalStatBudget)} />
-        <Metric label="Ability Budget" value={formatBudget(summary?.totalAbilityBudget)} />
+        <Metric label="Stat Power" value={formatBudget(summary?.totalStatBudget)} />
+        <Metric label="Ability Power" value={formatBudget(summary?.totalAbilityBudget)} />
         <Metric label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
       </div>
+      {summary?.rollQualityRange ? (
+        <div className="mt-3 text-xs text-white/50">
+          Rarity roll band: {summary.rollQualityRange.min.toFixed(2)}x to {summary.rollQualityRange.max.toFixed(2)}x
+        </div>
+      ) : null}
     </div>
   );
 }

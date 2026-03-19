@@ -5,6 +5,7 @@ import {
   MOD_REQUIRED_LEVEL_MIN,
   calculateModBudgetSummary,
   clampModRequiredLevel,
+  getModSupportedStatCounts,
   getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
 } from "@lib/mod-budget";
@@ -1081,6 +1082,8 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
     const levelRequirement = parseNumber(syncedMod.levelRequirement);
     const rarity = parseNumber(syncedMod.rarity);
     const budget = buildModBudgetSummary(syncedMod);
+    const supportedStatCounts = rarity !== undefined ? getModSupportedStatCounts(rarity) : [];
+    const activeStatCount = budget.activeStatCount;
 
     if (!id) {
       messages.push({ level: "warning", scope: "mods", draftIndex, message: "Mod id is blank." });
@@ -1284,6 +1287,24 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       statKeys.add(key);
     }
 
+    if (!activeStatCount) {
+      messages.push({
+        level: "warning",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: "No stat entries are set.",
+      });
+    } else if (supportedStatCounts.length && !supportedStatCounts.includes(activeStatCount)) {
+      messages.push({
+        level: "error",
+        scope: "mods",
+        draftIndex,
+        itemId: id || undefined,
+        message: `This rarity supports ${supportedStatCounts.join(" or ")} stat${supportedStatCounts.length > 1 ? "s" : ""}, but ${activeStatCount} ${activeStatCount === 1 ? "is" : "are"} currently configured.`,
+      });
+    }
+
     if (syncedMod.abilities.length > MOD_MAX_ABILITIES) {
       messages.push({
         level: "error",
@@ -1345,13 +1366,13 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       }
     }
 
-    if (rarity !== undefined && budget.budgetCap > 0 && budget.isOverBudget) {
+    if (rarity !== undefined && budget.targetScore !== undefined && budget.isOverBudget) {
       messages.push({
         level: "error",
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: `Budget cap exceeded: ${budget.totalBudgetSpent} spent against ${budget.budgetCap}.`,
+        message: `Power score exceeded the rarity target: ${budget.totalBudgetSpent} spent against ${budget.targetScore}.`,
       });
     }
   }
