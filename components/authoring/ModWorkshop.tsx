@@ -126,8 +126,7 @@ export default function ModWorkshop({
       .map((mod, index) => ({ mod: syncDerivedModFields(mod), index }))
       .filter(({ mod }) => {
         if (!deferredSearch) return true;
-        const target = `${mod.id} ${mod.name} ${mod.slot}`.toLowerCase();
-        return target.includes(deferredSearch);
+        return mod.name.toLowerCase().includes(deferredSearch);
       })
       .filter(({ index }) => {
         if (issueFilter === "all") return true;
@@ -339,111 +338,111 @@ export default function ModWorkshop({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
-      <div className="card h-fit space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Mod Library</h2>
-            <div className="text-xs text-white/50">
-              {mods.length} draft(s) · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+      <div className="space-y-6">
+        <div className="card h-fit space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Mod Library</h2>
+              <div className="text-xs text-white/50">
+                {mods.length} draft(s) · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className={`rounded px-3 py-2 text-sm transition ${showBulkCreate ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
+                onClick={() => setShowBulkCreate((current) => !current)}
+              >
+                {showBulkCreate ? "Hide Bulk" : "Bulk Create"}
+              </button>
+              <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
+                New
+              </button>
             </div>
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex flex-wrap gap-2">
+            <label className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
+              Import Mods.json
+              <input className="hidden" type="file" accept=".json,application/json" onChange={importModsJson} />
+            </label>
             <button
-              className={`rounded px-3 py-2 text-sm transition ${showBulkCreate ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
-              onClick={() => setShowBulkCreate((current) => !current)}
+              className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+              disabled={anyValidationErrors}
+              onClick={exportAllMods}
             >
-              {showBulkCreate ? "Hide Bulk" : "Bulk Create"}
+              Export Mods.json
             </button>
-            <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
-              New
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <button
+              className={`rounded border px-3 py-2 text-left transition ${
+                issueFilter === "error"
+                  ? "border-red-300/80 bg-red-500/20 text-red-50"
+                  : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+              }`}
+              onClick={() => setIssueFilter("error")}
+            >
+              <div className="label text-red-100/80">Errors</div>
+              <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
             </button>
+            <button
+              className={`rounded border px-3 py-2 text-left transition ${
+                issueFilter === "warning"
+                  ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
+                  : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+              }`}
+              onClick={() => setIssueFilter("warning")}
+            >
+              <div className="label text-yellow-100/80">Warnings</div>
+              <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
+            </button>
+            <button
+              className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+              disabled={issueFilter === "all"}
+              onClick={() => setIssueFilter("all")}
+            >
+              Reset Filter
+            </button>
+          </div>
+
+          <input
+            className="input"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search filtered mods by name"
+          />
+
+          {status ? <div className="text-sm text-accent">{status}</div> : null}
+
+          <div className="h-[29rem] space-y-2 overflow-auto pr-1">
+            {filteredMods.length ? (
+              filteredMods.map(({ mod, index }) => {
+                const budget = buildModBudgetSummary(mod);
+                return (
+                  <button
+                    key={`${mod.id || "mod"}-${index}`}
+                    className={`w-full rounded border px-3 py-2 text-left transition ${
+                      index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                    }`}
+                    onClick={() => setSelectedIndex(index)}
+                  >
+                    <div className="truncate font-medium">{mod.name || "Untitled mod"}</div>
+                    <div className="truncate text-xs text-white/60">
+                      {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                No mod drafts match the current filters.
+              </div>
+            )}
           </div>
         </div>
 
-        <input
-          className="input"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search mod id, name, or slot"
-        />
-
-        <div className="flex flex-wrap gap-2">
-          <label className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
-            Import Mods.json
-            <input className="hidden" type="file" accept=".json,application/json" onChange={importModsJson} />
-          </label>
-          <button
-            className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-            disabled={anyValidationErrors}
-            onClick={exportAllMods}
-          >
-            Export Mods.json
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <button
-            className={`rounded border px-3 py-2 text-left transition ${
-              issueFilter === "error"
-                ? "border-red-300/80 bg-red-500/20 text-red-50"
-                : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
-            }`}
-            onClick={() => setIssueFilter("error")}
-          >
-            <div className="label text-red-100/80">Errors</div>
-            <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
-          </button>
-          <button
-            className={`rounded border px-3 py-2 text-left transition ${
-              issueFilter === "warning"
-                ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
-                : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
-            }`}
-            onClick={() => setIssueFilter("warning")}
-          >
-            <div className="label text-yellow-100/80">Warnings</div>
-            <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
-          </button>
-          <button
-            className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-            disabled={issueFilter === "all"}
-            onClick={() => setIssueFilter("all")}
-          >
-            Reset Filter
-          </button>
-        </div>
-
-        <div className="text-xs text-white/50">
-          Errors = invalid entered values or budget/range violations. Warnings = blank fields that still need to be filled.
-        </div>
-
-        {status ? <div className="text-sm text-accent">{status}</div> : null}
-
-        <div className="max-h-[70vh] space-y-2 overflow-auto pr-1">
-          {filteredMods.length ? (
-            filteredMods.map(({ mod, index }) => {
-              const budget = buildModBudgetSummary(mod);
-              return (
-                <button
-                  key={`${mod.id || "mod"}-${index}`}
-                  className={`w-full rounded border px-3 py-2 text-left transition ${
-                    index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
-                  }`}
-                  onClick={() => setSelectedIndex(index)}
-                >
-                  <div className="truncate font-medium">{mod.name || "Untitled mod"}</div>
-                  <div className="truncate text-xs text-white/60">
-                    {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
-                  </div>
-                </button>
-              );
-            })
-          ) : (
-            <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
-              No mod drafts match the current search.
-            </div>
-          )}
-        </div>
+        {selectedSyncedMod ? <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." /> : null}
       </div>
 
       {!selectedSyncedMod && !showBulkCreate ? null : (
@@ -899,15 +898,11 @@ export default function ModWorkshop({
                 </div>
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
-                <div className="card">
-                  <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
-                  <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
-                    {JSON.stringify(exportModDraft(selectedSyncedMod), null, 2)}
-                  </pre>
-                </div>
-
-                <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
+              <div className="card">
+                <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
+                <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
+                  {JSON.stringify(exportModDraft(selectedSyncedMod), null, 2)}
+                </pre>
               </div>
             </>
           )}
