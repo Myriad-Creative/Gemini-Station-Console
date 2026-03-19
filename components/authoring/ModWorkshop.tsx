@@ -65,6 +65,75 @@ const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   description: "",
 };
 
+function formatDraftNumber(value: number) {
+  if (!Number.isFinite(value)) return "";
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return Number.isInteger(normalized) ? String(normalized) : String(Number(normalized.toFixed(2)));
+}
+
+function calculateBulkCreateBudget(state: BulkCreateState) {
+  return calculateModBudgetSummary({
+    requiredLevel: parseNumber(clampLevelInput(state.levelRequirement)),
+    rarity: parseNumber(state.rarity),
+    stats: state.stats.map((entry) => ({
+      key: entry.key.trim(),
+      value: parseNumber(entry.value),
+    })),
+    abilities: state.abilities.map((entry) => ({
+      id: entry.id.trim(),
+      budgetCost: parseNumber(entry.budgetCost),
+    })),
+  });
+}
+
+function autoBalanceBulkCreateState(
+  state: BulkCreateState,
+  options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
+) {
+  const budget = calculateBulkCreateBudget(state);
+  let activeStatIndex = 0;
+
+  const nextStats = state.stats.map((stat) => {
+    const key = stat.key.trim();
+    if (!key) return stat;
+
+    const statBudget = budget.stats[activeStatIndex];
+    activeStatIndex += 1;
+    if (!statBudget || statBudget.key !== key) return stat;
+
+    const numericValue = parseNumber(stat.value);
+    if (options.syncAllStatValuesToMax && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
+      return {
+        ...stat,
+        value: formatDraftNumber(statBudget.effectiveMaxValue),
+      };
+    }
+
+    if (!stat.value.trim() && options.fillBlankStatValues && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
+      return {
+        ...stat,
+        value: formatDraftNumber(statBudget.effectiveMaxValue),
+      };
+    }
+
+    const clampMax = statBudget.currentMaxValue ?? statBudget.effectiveMaxValue;
+    if (numericValue !== undefined && clampMax !== undefined && numericValue > clampMax) {
+      return {
+        ...stat,
+        value: formatDraftNumber(clampMax),
+      };
+    }
+
+    return stat;
+  });
+
+  return {
+    ...state,
+    levelRequirement: state.levelRequirement.trim() ? clampLevelInput(state.levelRequirement).trim() : "",
+    stats: nextStats,
+  };
+}
+
 export default function ModWorkshop({
   mods,
   onChange,
@@ -97,22 +166,7 @@ export default function ModWorkshop({
   const selectedBudget = useMemo(() => (selectedSyncedMod ? buildModBudgetSummary(selectedSyncedMod) : null), [selectedSyncedMod]);
 
   const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
-  const bulkBudget = useMemo(
-    () =>
-      calculateModBudgetSummary({
-        requiredLevel: parseNumber(clampLevelInput(bulkCreate.levelRequirement)),
-        rarity: parseNumber(bulkCreate.rarity),
-        stats: bulkCreate.stats.map((entry) => ({
-          key: entry.key.trim(),
-          value: parseNumber(entry.value),
-        })),
-        abilities: bulkCreate.abilities.map((entry) => ({
-          id: entry.id.trim(),
-          budgetCost: parseNumber(entry.budgetCost),
-        })),
-      }),
-    [bulkCreate],
-  );
+  const bulkBudget = useMemo(() => calculateBulkCreateBudget(bulkCreate), [bulkCreate]);
   const bulkSellPrice = useMemo(
     () => calculateDerivedSellPrice(bulkCreate.levelRequirement, bulkCreate.rarity),
     [bulkCreate.levelRequirement, bulkCreate.rarity],
@@ -234,21 +288,37 @@ export default function ModWorkshop({
     }), { autoBalance: true });
   }
 
-  function updateBulkCreate<K extends keyof BulkCreateState>(key: K, value: BulkCreateState[K]) {
-    setBulkCreate((current) => ({ ...current, [key]: value }));
+  function updateBulkCreate<K extends keyof BulkCreateState>(
+    key: K,
+    value: BulkCreateState[K],
+    options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
+  ) {
+    setBulkCreate((current) => autoBalanceBulkCreateState({ ...current, [key]: value }, options));
   }
 
-  function updateBulkAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
+  function updateBulkAbility(
+    abilityIndex: number,
+    updater: (ability: ModAbilityDraft) => ModAbilityDraft,
+    options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
+  ) {
     setBulkCreate((current) => ({
-      ...current,
-      abilities: current.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
+      ...autoBalanceBulkCreateState({
+        ...current,
+        abilities: current.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
+      }, options),
     }));
   }
 
-  function updateBulkStat(statIndex: number, updater: (stat: ModStatDraft) => ModStatDraft) {
+  function updateBulkStat(
+    statIndex: number,
+    updater: (stat: ModStatDraft) => ModStatDraft,
+    options: { fillBlankStatValues?: boolean; syncAllStatValuesToMax?: boolean } = {},
+  ) {
     setBulkCreate((current) => ({
-      ...current,
-      stats: current.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
+      ...autoBalanceBulkCreateState({
+        ...current,
+        stats: current.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
+      }, options),
     }));
   }
 
@@ -590,13 +660,18 @@ export default function ModWorkshop({
                   ]}
                   onChange={(value) => updateBulkCreate("slot", value)}
                 />
-                <RarityField label="Rarity" value={bulkCreate.rarity} onChange={(value) => updateBulkCreate("rarity", value)} allowBlank />
+                <RarityField
+                  label="Rarity"
+                  value={bulkCreate.rarity}
+                  onChange={(value) => updateBulkCreate("rarity", value, { syncAllStatValuesToMax: true })}
+                  allowBlank
+                />
                 <Field
                   label="Required Level"
                   value={bulkCreate.levelRequirement}
                   inputMode="numeric"
                   step={1}
-                  onChange={(value) => updateBulkCreate("levelRequirement", clampLevelInput(value))}
+                  onChange={(value) => updateBulkCreate("levelRequirement", clampLevelInput(value), { syncAllStatValuesToMax: true })}
                   helpText="Required level is clamped between 1 and 100."
                 />
                 <Field
@@ -639,10 +714,15 @@ export default function ModWorkshop({
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={bulkCreate.stats.length >= MOD_MAX_STATS}
                     onClick={() =>
-                      setBulkCreate((current) => ({
-                        ...current,
-                        stats: [...current.stats, { key: "", value: "" }],
-                      }))
+                      setBulkCreate((current) =>
+                        autoBalanceBulkCreateState(
+                          {
+                            ...current,
+                            stats: [...current.stats, { key: "", value: "" }],
+                          },
+                          { syncAllStatValuesToMax: true },
+                        ),
+                      )
                     }
                   >
                     Add Stat
@@ -657,7 +737,12 @@ export default function ModWorkshop({
                           label={statIndex === 0 ? "Stat Key" : " "}
                           value={stat.key}
                           options={buildStatOptions(stat.key)}
-                          onChange={(value) => updateBulkStat(statIndex, (current) => ({ ...current, key: value }))}
+                          onChange={(value) =>
+                            updateBulkStat(statIndex, (current) => ({ ...current, key: value }), {
+                              fillBlankStatValues: true,
+                              syncAllStatValuesToMax: true,
+                            })
+                          }
                         />
                         <Field
                           label={statIndex === 0 ? "Value" : " "}
@@ -670,10 +755,15 @@ export default function ModWorkshop({
                           <button
                             className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
                             onClick={() =>
-                              setBulkCreate((current) => ({
-                                ...current,
-                                stats: current.stats.filter((_, currentIndex) => currentIndex !== statIndex),
-                              }))
+                              setBulkCreate((current) =>
+                                autoBalanceBulkCreateState(
+                                  {
+                                    ...current,
+                                    stats: current.stats.filter((_, currentIndex) => currentIndex !== statIndex),
+                                  },
+                                  { syncAllStatValuesToMax: true },
+                                ),
+                              )
                             }
                           >
                             Remove
@@ -700,10 +790,15 @@ export default function ModWorkshop({
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={bulkCreate.abilities.length >= MOD_MAX_ABILITIES}
                     onClick={() =>
-                      setBulkCreate((current) => ({
-                        ...current,
-                        abilities: [...current.abilities, createModAbilityDraft()],
-                      }))
+                      setBulkCreate((current) =>
+                        autoBalanceBulkCreateState(
+                          {
+                            ...current,
+                            abilities: [...current.abilities, createModAbilityDraft()],
+                          },
+                          { syncAllStatValuesToMax: true },
+                        ),
+                      )
                     }
                   >
                     Add Ability
@@ -717,23 +812,36 @@ export default function ModWorkshop({
                         <Field
                           label={abilityIndex === 0 ? "Ability ID" : " "}
                           value={ability.id}
-                          onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }))}
+                          onChange={(value) =>
+                            updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }), {
+                              syncAllStatValuesToMax: true,
+                            })
+                          }
                         />
                         <Field
                           label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
                           step={0.01}
-                          onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
+                          onChange={(value) =>
+                            updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }), {
+                              syncAllStatValuesToMax: true,
+                            })
+                          }
                         />
                         <div className="flex items-end">
                           <button
                             className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
                             onClick={() =>
-                              setBulkCreate((current) => ({
-                                ...current,
-                                abilities: current.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                              }))
+                              setBulkCreate((current) =>
+                                autoBalanceBulkCreateState(
+                                  {
+                                    ...current,
+                                    abilities: current.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                                  },
+                                  { syncAllStatValuesToMax: true },
+                                ),
+                              )
                             }
                           >
                             Remove
