@@ -76,6 +76,10 @@ export default function ModWorkshop({
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
+  const [rarityFilter, setRarityFilter] = useState("");
+  const [slotFilter, setSlotFilter] = useState("");
+  const [levelMinFilter, setLevelMinFilter] = useState("");
+  const [levelMaxFilter, setLevelMaxFilter] = useState("");
   const [showBulkCreate, setShowBulkCreate] = useState(false);
   const [bulkCreate, setBulkCreate] = useState<BulkCreateState>(EMPTY_BULK_CREATE_STATE);
 
@@ -128,12 +132,31 @@ export default function ModWorkshop({
         if (!deferredSearch) return true;
         return mod.name.toLowerCase().includes(deferredSearch);
       })
+      .filter(({ mod }) => {
+        if (!rarityFilter) return true;
+        return mod.rarity.trim() === rarityFilter;
+      })
+      .filter(({ mod }) => {
+        if (!slotFilter) return true;
+        return mod.slot.trim() === slotFilter;
+      })
+      .filter(({ mod }) => {
+        const levelRequirement = parseNumber(mod.levelRequirement);
+        const min = parseNumber(levelMinFilter);
+        const max = parseNumber(levelMaxFilter);
+
+        if (min === undefined && max === undefined) return true;
+        if (levelRequirement === undefined) return false;
+        if (min !== undefined && levelRequirement < min) return false;
+        if (max !== undefined && levelRequirement > max) return false;
+        return true;
+      })
       .filter(({ index }) => {
         if (issueFilter === "all") return true;
         const flags = issueFlagsByIndex.get(index);
         return issueFilter === "error" ? !!flags?.error : !!flags?.warning;
       });
-  }, [deferredSearch, issueFilter, issueFlagsByIndex, mods]);
+  }, [deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
 
   const selectedValidation = useMemo(() => validation.filter((message) => message.draftIndex === clampedSelectedIndex), [clampedSelectedIndex, validation]);
   const selectedHasErrors = useMemo(
@@ -147,12 +170,22 @@ export default function ModWorkshop({
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
   );
+  const hasActiveFilters = Boolean(issueFilter !== "all" || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter);
 
   useEffect(() => {
     if (!filteredMods.length) return;
     if (filteredMods.some(({ index }) => index === clampedSelectedIndex)) return;
     setSelectedIndex(filteredMods[0].index);
   }, [clampedSelectedIndex, filteredMods]);
+
+  function resetFilters() {
+    setIssueFilter("all");
+    setSearch("");
+    setRarityFilter("");
+    setSlotFilter("");
+    setLevelMinFilter("");
+    setLevelMaxFilter("");
+  }
 
   function setModAt(index: number, next: ModDraft) {
     const synced = syncDerivedModFields(next);
@@ -344,7 +377,7 @@ export default function ModWorkshop({
             <div>
               <h2 className="text-lg font-semibold">Mod Library</h2>
               <div className="text-xs text-white/50">
-                {mods.length} draft(s) · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+                {mods.length} draft(s) · {filteredMods.length} filtered · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
               </div>
             </div>
             <div className="flex gap-2">
@@ -399,8 +432,8 @@ export default function ModWorkshop({
             </button>
             <button
               className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-              disabled={issueFilter === "all"}
-              onClick={() => setIssueFilter("all")}
+              disabled={!hasActiveFilters}
+              onClick={resetFilters}
             >
               Reset Filter
             </button>
@@ -412,6 +445,59 @@ export default function ModWorkshop({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search filtered mods by name"
           />
+
+          <div className="grid grid-cols-2 gap-2">
+            <label>
+              <div className="label mb-2">Rarity</div>
+              <select className="select w-full" value={rarityFilter} onChange={(event) => setRarityFilter(event.target.value)}>
+                <option value="">All rarities</option>
+                {Object.entries(RARITY_LABEL).map(([rarityValue, rarityLabel]) => (
+                  <option key={`filter-rarity-${rarityValue}`} value={rarityValue}>
+                    {rarityLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <div className="label mb-2">Mod Type</div>
+              <select className="select w-full" value={slotFilter} onChange={(event) => setSlotFilter(event.target.value)}>
+                <option value="">All types</option>
+                {MOD_SLOT_OPTIONS.map((slot) => (
+                  <option key={`filter-slot-${slot}`} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <div className="label mb-2">Level Min</div>
+              <input
+                className="input"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                value={levelMinFilter}
+                onChange={(event) => setLevelMinFilter(event.target.value.trim() ? clampLevelInput(event.target.value) : "")}
+                placeholder="1"
+              />
+            </label>
+            <label>
+              <div className="label mb-2">Level Max</div>
+              <input
+                className="input"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                value={levelMaxFilter}
+                onChange={(event) => setLevelMaxFilter(event.target.value.trim() ? clampLevelInput(event.target.value) : "")}
+                placeholder="100"
+              />
+            </label>
+          </div>
+
+          <div className="text-xs text-white/50">
+            Showing {filteredMods.length} result{filteredMods.length === 1 ? "" : "s"}.
+          </div>
 
           {status ? <div className="text-sm text-accent">{status}</div> : null}
 
