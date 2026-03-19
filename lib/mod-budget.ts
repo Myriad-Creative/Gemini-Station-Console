@@ -319,12 +319,12 @@ export function calculateModBudgetSummary(input: {
       : undefined;
   const budgetRemaining = targetScore !== undefined ? roundBudget(targetScore - totalBudgetSpent) : undefined;
   const itemLevel =
-    requiredLevel !== undefined && input.rarity !== undefined && Number.isFinite(input.rarity)
+    requiredLevel !== undefined && input.rarity !== undefined && Number.isFinite(input.rarity) && baseStatMax !== undefined
       ? Math.round(
           requiredLevel +
             (MOD_RARITY_ITEM_LEVEL_BASE[input.rarity] ?? 0) +
             totalStatBudget +
-            input.abilities.filter((ability) => ability.id?.trim()).length * 10,
+            input.abilities.filter((ability) => ability.id?.trim()).length * baseStatMax,
         )
       : undefined;
   const statBudgetCap = targetScore !== undefined ? roundBudget(Math.max(0, targetScore - totalAbilityBudget)) : undefined;
