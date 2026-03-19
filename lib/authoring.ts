@@ -160,34 +160,31 @@ function prettyExtraJson(value: JsonObject) {
   return Object.keys(value).length ? JSON.stringify(value, null, 2) : "";
 }
 
-function normalizeStoredExtraJson(value: unknown) {
+function extractExtraJsonObject(value: unknown): JsonObject | null {
   if (typeof value === "string") {
-    let current = value.trim();
+    const trimmed = value.trim();
+    if (!trimmed) return {};
 
-    for (let index = 0; index < 8 && current; index += 1) {
-      try {
-        const parsed = JSON.parse(current);
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          !Array.isArray(parsed) &&
-          Object.keys(parsed as JsonObject).length === 1 &&
-          typeof (parsed as JsonObject).extraJson === "string"
-        ) {
-          current = String((parsed as JsonObject).extraJson).trim();
-          continue;
-        }
-      } catch {
-        break;
-      }
-
-      break;
+    try {
+      return extractExtraJsonObject(JSON.parse(trimmed));
+    } catch {
+      return null;
     }
-
-    return current;
   }
 
-  return prettyExtraJson(asObject(value));
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as JsonObject;
+  const nested = "extraJson" in source ? extractExtraJsonObject(source.extraJson) ?? {} : {};
+  const current = stripKeys(source, ["extraJson"]);
+  return { ...nested, ...current };
+}
+
+function normalizeStoredExtraJson(value: unknown) {
+  const extracted = extractExtraJsonObject(value);
+  if (extracted) {
+    return prettyExtraJson(extracted);
+  }
+  return typeof value === "string" ? value.trim() : prettyExtraJson(asObject(value));
 }
 
 function stripKeys(value: JsonObject, keys: string[]) {
@@ -394,6 +391,7 @@ export function syncDerivedModFields(mod: ModDraft): ModDraft {
     levelRequirement: normalizedLevelRequirement,
     itemLevel: budget.itemLevel === undefined ? "" : String(budget.itemLevel),
     sellPrice: derivedSellPrice === undefined ? "" : String(derivedSellPrice),
+    extraJson: normalizeStoredExtraJson(mod.extraJson),
   };
 }
 
@@ -800,6 +798,31 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
       })
     : [];
 
+  const importedExtra = extractExtraJsonObject(source.extraJson) ?? {};
+  const sourceExtra = stripKeys(source, [
+    "id",
+    "key",
+    "name",
+    "slot",
+    "mod_slot",
+    "class_restriction",
+    "classRestriction",
+    "level_requirement",
+    "levelRequirement",
+    "item_level",
+    "itemLevel",
+    "rarity",
+    "durability",
+    "sell_price",
+    "sellPrice",
+    "stats",
+    "abilities",
+    "icon",
+    "description",
+    "desc",
+    "extraJson",
+  ]);
+
   return syncDerivedModFields({
     id: String(source.id ?? source.key ?? ""),
     name: String(source.name ?? source.id ?? source.key ?? ""),
@@ -816,30 +839,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     abilities: abilitiesSource,
     icon: String(source.icon ?? ""),
     description: String(source.description ?? source.desc ?? ""),
-    extraJson: prettyExtraJson(
-      stripKeys(source, [
-        "id",
-        "key",
-        "name",
-        "slot",
-        "mod_slot",
-        "class_restriction",
-        "classRestriction",
-        "level_requirement",
-        "levelRequirement",
-        "item_level",
-        "itemLevel",
-        "rarity",
-        "durability",
-        "sell_price",
-        "sellPrice",
-        "stats",
-        "abilities",
-        "icon",
-        "description",
-        "desc",
-      ]),
-    ),
+    extraJson: prettyExtraJson({ ...importedExtra, ...sourceExtra }),
   });
 }
 

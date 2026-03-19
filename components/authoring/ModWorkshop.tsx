@@ -31,6 +31,7 @@ import {
   MOD_MAX_ABILITIES,
   MOD_MAX_STATS,
   calculateModBudgetSummary,
+  getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
 } from "@lib/mod-budget";
 
@@ -488,6 +489,7 @@ export default function ModWorkshop({
                   label="Required Level"
                   value={bulkCreate.levelRequirement}
                   inputMode="numeric"
+                  step={1}
                   onChange={(value) => updateBulkCreate("levelRequirement", clampLevelInput(value))}
                   helpText="Required level is clamped between 1 and 100."
                 />
@@ -502,6 +504,7 @@ export default function ModWorkshop({
                   label="Durability"
                   value={bulkCreate.durability}
                   inputMode="numeric"
+                  step={1}
                   onChange={(value) => updateBulkCreate("durability", value)}
                 />
                 <Field
@@ -554,6 +557,7 @@ export default function ModWorkshop({
                           label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
+                          step={0.01}
                           onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
                         />
                         <div className="flex items-end">
@@ -671,6 +675,7 @@ export default function ModWorkshop({
                     label="Required Level"
                     value={selectedSyncedMod.levelRequirement}
                     inputMode="numeric"
+                    step={1}
                     helpText="Required level is clamped between 1 and 100."
                     onChange={(value) =>
                       updateSelected(
@@ -690,6 +695,7 @@ export default function ModWorkshop({
                     label="Durability"
                     value={selectedSyncedMod.durability}
                     inputMode="numeric"
+                    step={1}
                     onChange={(value) => updateSelected((draft) => ({ ...draft, durability: value }))}
                   />
                   <Field
@@ -774,6 +780,7 @@ export default function ModWorkshop({
                             label={statIndex === 0 ? "Value" : " "}
                             value={entry.value}
                             inputMode="numeric"
+                            step={getModStatBudgetConfig(entry.key)?.roundStep ?? 1}
                             onChange={(value) => updateStat(statIndex, (current) => ({ ...current, value }))}
                           />
                           <div className="flex items-end">
@@ -845,6 +852,7 @@ export default function ModWorkshop({
                           label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
+                          step={0.01}
                           onChange={(value) => updateSelected((draft) => ({
                             ...draft,
                             abilities: draft.abilities.map((currentAbility, currentIndex) =>
@@ -1012,6 +1020,7 @@ function Field({
   value,
   onChange,
   inputMode,
+  step,
   readOnly,
   helpText,
 }: {
@@ -1019,6 +1028,7 @@ function Field({
   value: string;
   onChange: (value: string) => void;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
+  step?: number | string;
   readOnly?: boolean;
   helpText?: string;
 }) {
@@ -1029,7 +1039,7 @@ function Field({
         className={`input ${readOnly ? "cursor-default text-white/70" : ""}`}
         type={inputMode === "numeric" ? "number" : "text"}
         value={value}
-        step={inputMode === "numeric" ? "any" : undefined}
+        step={inputMode === "numeric" ? step ?? 1 : undefined}
         inputMode={inputMode}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
