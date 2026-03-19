@@ -107,8 +107,8 @@ export const MOD_RARITY_SLOT_PROFILES: Record<number, number[][]> = {
 // every stat uses the required level as its full single-slot max until a real
 // tuning table is supplied.
 export const MOD_STAT_BUDGET_CONFIG: Record<string, ModStatBudgetConfig> = {
-  armor: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
-  shields: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
+  armor: { family: "general", level1Max: 10, level100Max: 1000, roundStep: 1 },
+  shields: { family: "general", level1Max: 10, level100Max: 1000, roundStep: 1 },
   power: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
   evasion: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
   targeting: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
@@ -323,7 +323,7 @@ export function calculateModBudgetSummary(input: {
       ? Math.round(
           requiredLevel +
             (MOD_RARITY_ITEM_LEVEL_BASE[input.rarity] ?? 0) +
-            stats.reduce((sum, stat) => sum + stat.value, 0) +
+            totalStatBudget +
             input.abilities.filter((ability) => ability.id?.trim()).length * 10,
         )
       : undefined;
