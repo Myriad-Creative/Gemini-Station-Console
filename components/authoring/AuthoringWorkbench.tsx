@@ -4,6 +4,7 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
 import ModWorkshop from "@components/authoring/ModWorkshop";
 import {
+  hydrateStoredModDraft,
   MISSION_STORAGE_KEY,
   MOD_STORAGE_KEY,
   MissionDraft,
@@ -68,7 +69,7 @@ export default function AuthoringWorkbench() {
     const storedMods = loadDrafts<ModDraft[]>(MOD_STORAGE_KEY, []);
 
     setMissions(storedMissions.length ? storedMissions : [createMissionDraft()]);
-    setMods(storedMods.length ? storedMods.map((mod) => normalizeImportedMod(mod)) : [createModDraft()]);
+    setMods(storedMods.length ? storedMods.map((mod) => hydrateStoredModDraft(mod)) : [createModDraft()]);
     setHydrated(true);
   }, []);
 

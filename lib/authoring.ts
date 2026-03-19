@@ -160,6 +160,36 @@ function prettyExtraJson(value: JsonObject) {
   return Object.keys(value).length ? JSON.stringify(value, null, 2) : "";
 }
 
+function normalizeStoredExtraJson(value: unknown) {
+  if (typeof value === "string") {
+    let current = value.trim();
+
+    for (let index = 0; index < 8 && current; index += 1) {
+      try {
+        const parsed = JSON.parse(current);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          Object.keys(parsed as JsonObject).length === 1 &&
+          typeof (parsed as JsonObject).extraJson === "string"
+        ) {
+          current = String((parsed as JsonObject).extraJson).trim();
+          continue;
+        }
+      } catch {
+        break;
+      }
+
+      break;
+    }
+
+    return current;
+  }
+
+  return prettyExtraJson(asObject(value));
+}
+
 function stripKeys(value: JsonObject, keys: string[]) {
   const hidden = new Set(keys);
   const out: JsonObject = {};
@@ -525,6 +555,46 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     icon: "",
     description: "",
     extraJson: "",
+  });
+}
+
+export function hydrateStoredModDraft(raw: unknown): ModDraft {
+  const source = asObject(raw);
+
+  const stats = Array.isArray(source.stats)
+    ? (source.stats as unknown[]).map((entry) => {
+        const stat = asObject(entry);
+        return {
+          key: String(stat.key ?? ""),
+          value: numberString(stat.value),
+        };
+      })
+    : [];
+
+  const abilities = Array.isArray(source.abilities)
+    ? (source.abilities as unknown[]).map((entry) => {
+        const ability = asObject(entry);
+        return createModAbilityDraft(String(ability.id ?? ""), numberString(ability.budgetCost ?? ability.budget_cost ?? ""));
+      })
+    : [];
+
+  return syncDerivedModFields({
+    id: String(source.id ?? ""),
+    name: String(source.name ?? ""),
+    slot: String(source.slot ?? ""),
+    classRestriction: stringList(source.classRestriction).length
+      ? stringList(source.classRestriction)
+      : stringList(source.class_restriction),
+    levelRequirement: numberString(source.levelRequirement ?? source.level_requirement),
+    itemLevel: numberString(source.itemLevel ?? source.item_level),
+    rarity: numberString(source.rarity ?? 0),
+    durability: numberString(source.durability),
+    sellPrice: numberString(source.sellPrice ?? source.sell_price),
+    stats,
+    abilities,
+    icon: String(source.icon ?? ""),
+    description: String(source.description ?? ""),
+    extraJson: normalizeStoredExtraJson(source.extraJson),
   });
 }
 
