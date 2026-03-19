@@ -497,7 +497,7 @@ export default function ModWorkshop({
                   label="Calculated Item Level"
                   value={bulkBudget.itemLevel === undefined ? "" : String(bulkBudget.itemLevel)}
                   readOnly
-                  helpText="Auto-calculated from required level and total budget spent."
+                  helpText="Auto-calculated from rarity base, required level, stat values, and abilities."
                   onChange={() => {}}
                 />
                 <Field
@@ -602,7 +602,7 @@ export default function ModWorkshop({
               </div>
 
               <div className="text-xs text-white/50">
-                Item level is generated from required level and budget spent. Blank shared fields stay blank on the generated mods and surface as warnings later.
+                Item level is generated from rarity base, required level, stat values, and abilities. Blank shared fields stay blank on the generated mods and surface as warnings later.
               </div>
             </div>
           ) : null}
@@ -688,7 +688,7 @@ export default function ModWorkshop({
                     label="Calculated Item Level"
                     value={selectedBudget?.itemLevel === undefined ? "" : String(selectedBudget.itemLevel)}
                     readOnly
-                    helpText="Auto-calculated from required level and total budget spent."
+                    helpText="Auto-calculated from rarity base, required level, stat values, and abilities."
                     onChange={() => {}}
                   />
                   <Field

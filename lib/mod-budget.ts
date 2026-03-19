@@ -75,6 +75,13 @@ export const MOD_MAX_ABILITIES = 2;
 export const MOD_BASE_ABILITY_SLOT_COST = 0.5;
 export const MOD_BASE_ABILITY_BUDGET_COST = MOD_BASE_ABILITY_SLOT_COST;
 export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
+export const MOD_RARITY_ITEM_LEVEL_BASE: Record<number, number> = {
+  0: 0,
+  1: 100,
+  2: 200,
+  3: 300,
+  4: 400,
+};
 
 export const MOD_RARITY_SLOT_PROFILES: Record<number, number[][]> = {
   0: [
@@ -311,7 +318,15 @@ export function calculateModBudgetSummary(input: {
       ? roundBudget(baseStatMax * rarityCapacityMultiplier)
       : undefined;
   const budgetRemaining = targetScore !== undefined ? roundBudget(targetScore - totalBudgetSpent) : undefined;
-  const itemLevel = requiredLevel !== undefined ? Math.round(totalBudgetSpent) : undefined;
+  const itemLevel =
+    requiredLevel !== undefined && input.rarity !== undefined && Number.isFinite(input.rarity)
+      ? Math.round(
+          requiredLevel +
+            (MOD_RARITY_ITEM_LEVEL_BASE[input.rarity] ?? 0) +
+            stats.reduce((sum, stat) => sum + stat.value, 0) +
+            input.abilities.filter((ability) => ability.id?.trim()).length * 10,
+        )
+      : undefined;
   const statBudgetCap = targetScore !== undefined ? roundBudget(Math.max(0, targetScore - totalAbilityBudget)) : undefined;
   const statsWithCurrentMax = stats.map((stat) => {
     const config = getModStatBudgetConfig(stat.key);
