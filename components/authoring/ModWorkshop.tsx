@@ -1,8 +1,9 @@
 "use client";
 
 import { ChangeEvent, HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
-import { CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, MOD_STAT_DEFAULTS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import {
+  autoBalanceModDraft,
   BulkModTemplateDraft,
   ModAbilityDraft,
   ModDraft,
@@ -25,7 +26,7 @@ import {
 } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
 import {
-  MOD_BASE_ABILITY_BUDGET_COST,
+  MOD_BASE_ABILITY_SLOT_COST,
   MOD_MAX_ABILITIES,
   MOD_MAX_STATS,
   calculateModBudgetSummary,
@@ -137,7 +138,6 @@ export default function ModWorkshop({
   const anyValidationErrors = useMemo(() => validation.some((message) => message.level === "error"), [validation]);
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
-  const statDefaults = useMemo(() => Object.fromEntries(MOD_STAT_DEFAULTS.map((entry) => [entry.key, entry.defaultValue])), []);
   const selectedMaxStats = useMemo(
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
@@ -154,23 +154,32 @@ export default function ModWorkshop({
     onChange(mods.map((mod, modIndex) => (modIndex === index ? synced : mod)));
   }
 
-  function updateSelected(updater: (draft: ModDraft) => ModDraft) {
+  function updateSelected(
+    updater: (draft: ModDraft) => ModDraft,
+    options: { autoBalance?: boolean; fillBlankStatValues?: boolean } = {},
+  ) {
     if (!selectedSyncedMod) return;
-    setModAt(clampedSelectedIndex, updater(selectedSyncedMod));
+    const nextDraft = updater(selectedSyncedMod);
+    const preparedDraft = options.autoBalance ? autoBalanceModDraft(nextDraft, { fillBlankStatValues: options.fillBlankStatValues }) : nextDraft;
+    setModAt(clampedSelectedIndex, preparedDraft);
   }
 
-  function updateStat(statIndex: number, updater: (stat: ModStatDraft) => ModStatDraft) {
+  function updateStat(
+    statIndex: number,
+    updater: (stat: ModStatDraft) => ModStatDraft,
+    options: { fillBlankStatValues?: boolean } = {},
+  ) {
     updateSelected((draft) => ({
       ...draft,
       stats: draft.stats.map((stat, currentIndex) => (currentIndex === statIndex ? updater(stat) : stat)),
-    }));
+    }), { autoBalance: true, fillBlankStatValues: options.fillBlankStatValues });
   }
 
   function updateAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
     updateSelected((draft) => ({
       ...draft,
       abilities: draft.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
-    }));
+    }), { autoBalance: true });
   }
 
   function updateBulkCreate<K extends keyof BulkCreateState>(key: K, value: BulkCreateState[K]) {
@@ -496,13 +505,13 @@ export default function ModWorkshop({
                 <Field label="Icon" value={bulkCreate.icon} onChange={(value) => updateBulkCreate("icon", value)} />
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium">Shared Abilities</div>
-                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Budget cost applies to every created draft.</div>
-                    <div className="text-xs text-white/50">Each ability has a base budget cost of {MOD_BASE_ABILITY_BUDGET_COST}, plus any extra cost you enter.</div>
-                  </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium">Shared Abilities</div>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created draft.</div>
+                    <div className="text-xs text-white/50">Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.</div>
+                    </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={bulkCreate.abilities.length >= MOD_MAX_ABILITIES}
@@ -527,7 +536,7 @@ export default function ModWorkshop({
                           onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }))}
                         />
                         <Field
-                          label={abilityIndex === 0 ? "Extra Budget Cost" : " "}
+                          label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
                           onChange={(value) => updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
@@ -640,7 +649,7 @@ export default function ModWorkshop({
                   <RarityField
                     label="Rarity"
                     value={selectedSyncedMod.rarity}
-                    onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }))}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, rarity: value }), { autoBalance: true })}
                     allowBlank
                   />
                   <Field
@@ -648,7 +657,7 @@ export default function ModWorkshop({
                     value={selectedSyncedMod.levelRequirement}
                     inputMode="numeric"
                     helpText="Required level is clamped between 1 and 100."
-                    onChange={(value) => updateSelected((draft) => ({ ...draft, levelRequirement: clampLevelInput(value) }))}
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, levelRequirement: clampLevelInput(value) }), { autoBalance: true })}
                   />
                   <Field
                     label="Calculated Item Level"
@@ -696,9 +705,8 @@ export default function ModWorkshop({
                   <div>
                     <h2 className="text-lg font-semibold">Stats</h2>
                     <div className="text-xs text-white/50">
-                      This rarity supports {selectedBudget?.supportedStatCounts.length ? selectedBudget.supportedStatCounts.join(" or ") : MOD_MAX_STATS} stat
-                      {selectedBudget?.supportedStatCounts.length === 1 ? "" : "s"}.
-                      Each stat spends power from its actual value times its weighted cost.
+                      This rarity supports up to {selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS} stats.
+                      Fewer stats are valid. Abilities consume slot capacity and lower the live stat caps automatically.
                     </div>
                   </div>
                   <button
@@ -708,7 +716,7 @@ export default function ModWorkshop({
                       updateSelected((draft) => ({
                         ...draft,
                         stats: [...draft.stats, { key: "", value: "" }],
-                      }))
+                      }), { autoBalance: true })
                     }
                   >
                     Add Stat
@@ -738,8 +746,7 @@ export default function ModWorkshop({
                               updateStat(statIndex, (current) => ({
                                 ...current,
                                 key: value,
-                                value: current.value.trim() ? current.value : statDefaults[value] ?? current.value,
-                              }))
+                              }), { fillBlankStatValues: true })
                             }
                           />
                           <Field
@@ -755,7 +762,7 @@ export default function ModWorkshop({
                                 updateSelected((draft) => ({
                                   ...draft,
                                   stats: draft.stats.filter((_, currentIndex) => currentIndex !== statIndex),
-                                }))
+                                }), { autoBalance: true })
                               }
                             >
                               Remove
@@ -764,10 +771,10 @@ export default function ModWorkshop({
                         </div>
                         {entry.key.trim() ? (
                           <div className="text-xs text-white/50">
-                            {maxAtLevel !== undefined ? `Level cap: ${maxAtLevel}.` : "Set required level to calculate the per-level stat cap."}{" "}
-                            {slotMultiplier !== undefined ? `Slot ${slotIndex + 1} multiplier: ${slotMultiplier.toFixed(2)}.` : ""}
-                            {statSummary?.effectiveWeight !== undefined ? ` Weighted cost: ${statSummary.effectiveWeight.toFixed(2)}.` : ""}
-                            {statSummary?.suggestedValue !== undefined ? ` Suggested value: ${statSummary.suggestedValue}.` : ""}
+                            {maxAtLevel !== undefined ? `Base level max: ${maxAtLevel}.` : "Set required level to calculate the per-level stat max."}{" "}
+                            {slotMultiplier !== undefined ? `Slot ${slotIndex + 1} profile share: ${slotMultiplier.toFixed(2)}.` : ""}
+                            {statSummary?.adjustedSlotMultiplier !== undefined ? ` Current share after abilities: ${statSummary.adjustedSlotMultiplier.toFixed(2)}.` : ""}
+                            {statSummary?.effectiveMaxValue !== undefined ? ` Current max: ${statSummary.effectiveMaxValue}.` : ""}
                           </div>
                         ) : null}
                       </div>
@@ -781,7 +788,7 @@ export default function ModWorkshop({
                   <div>
                     <h2 className="text-lg font-semibold">Abilities</h2>
                     <div className="text-xs text-white/50">
-                      Up to {MOD_MAX_ABILITIES} abilities. Each ability always spends a base budget cost of {MOD_BASE_ABILITY_BUDGET_COST}, plus any extra cost you enter.
+                      Up to {MOD_MAX_ABILITIES} abilities. Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.
                     </div>
                   </div>
                   <button
@@ -791,7 +798,7 @@ export default function ModWorkshop({
                       updateSelected((draft) => ({
                         ...draft,
                         abilities: [...draft.abilities, createModAbilityDraft()],
-                      }))
+                      }), { autoBalance: true })
                     }
                   >
                     Add Ability
@@ -808,7 +815,7 @@ export default function ModWorkshop({
                           onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, id: value }))}
                         />
                         <Field
-                          label={abilityIndex === 0 ? "Extra Budget Cost" : " "}
+                          label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
                           value={ability.budgetCost}
                           inputMode="numeric"
                           onChange={(value) => updateAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }))}
@@ -820,7 +827,7 @@ export default function ModWorkshop({
                               updateSelected((draft) => ({
                                 ...draft,
                                 abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                              }))
+                              }), { autoBalance: true })
                             }
                           >
                             Remove
@@ -836,7 +843,7 @@ export default function ModWorkshop({
                 )}
 
                 <div className="text-xs text-white/50">
-                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array, but every ability now spends at least {MOD_BASE_ABILITY_BUDGET_COST} budget.
+                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array, but every ability now consumes at least {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity.
                 </div>
               </div>
 
@@ -889,7 +896,7 @@ function BudgetSummaryCard({
       </div>
       <div className="mb-3 flex flex-wrap gap-2 text-xs text-white/60">
         <div className="rounded border border-white/10 bg-black/10 px-2 py-1">
-          Allowed stats: {summary?.supportedStatCounts.length ? summary.supportedStatCounts.join(" or ") : "—"}
+          Supports up to {summary?.supportedStatCounts.length ? Math.max(...summary.supportedStatCounts) : "—"} stats
         </div>
         <div className="rounded border border-white/10 bg-black/10 px-2 py-1">
           Active stats: {summary?.activeStatCount ?? 0}
@@ -900,23 +907,20 @@ function BudgetSummaryCard({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric label="Required Level" value={summary?.requiredLevel ?? "—"} />
-        <Metric label="Base Value" value={formatBudget(summary?.baseValue)} />
-        <Metric
-          label="Roll Quality"
-          value={summary?.rollQuality !== undefined ? `${summary.rollQuality.toFixed(2)}x` : "—"}
-        />
-        <Metric label="Target Score" value={formatBudget(summary?.targetScore)} />
-        <Metric label="Power Score" value={formatBudget(summary?.totalBudgetSpent)} />
+        <Metric label="Base Stat Max" value={formatBudget(summary?.baseStatMax)} />
+        <Metric label="Rarity Capacity" value={formatBudget(summary?.rarityCapacityMultiplier)} />
+        <Metric label="Target Budget" value={formatBudget(summary?.targetScore)} />
+        <Metric label="Power Used" value={formatBudget(summary?.totalBudgetSpent)} />
         <Metric label="Budget Remaining" value={formatBudget(summary?.budgetRemaining)} highlight={summary?.budgetRemaining !== undefined && summary.budgetRemaining < 0} />
         <Metric label="Stat Power" value={formatBudget(summary?.totalStatBudget)} />
         <Metric label="Ability Power" value={formatBudget(summary?.totalAbilityBudget)} />
+        <Metric label="Ability Slot Cost" value={formatBudget(summary?.abilitySlotCostTotal)} />
+        <Metric label="Stat Capacity Left" value={formatBudget(summary?.statCapacityRemainingMultiplier)} />
         <Metric label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
       </div>
-      {summary?.rollQualityRange ? (
-        <div className="mt-3 text-xs text-white/50">
-          Rarity roll band: {summary.rollQualityRange.min.toFixed(2)}x to {summary.rollQualityRange.max.toFixed(2)}x
-        </div>
-      ) : null}
+      <div className="mt-3 text-xs text-white/50">
+        Full single-stat max is currently the required level. Slot profiles scale that max up or down, and each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity before any extra slot cost.
+      </div>
     </div>
   );
 }
@@ -1065,9 +1069,9 @@ function RarityField({
 }
 
 function buildStatOptions(currentKey: string) {
-  const options = MOD_STAT_DEFAULTS.map((stat) => ({
-    value: stat.key,
-    label: `${stat.key} (${stat.defaultValue})`,
+  const options = ALL_STATS.map((stat) => ({
+    value: stat,
+    label: `${stat} (base max = level)`,
   }));
 
   if (currentKey.trim() && !options.some((option) => option.value === currentKey)) {

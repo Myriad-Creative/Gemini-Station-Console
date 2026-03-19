@@ -34,9 +34,4 @@ export const CLASS_RESTRICTION_OPTIONS = [
   "Miner"
 ] as const;
 
-export const MOD_STAT_DEFAULTS = Object.entries(MOD_STAT_BUDGET_CONFIG).map(([key, value]) => ({
-  key,
-  defaultValue: value.defaultDraftValue.toFixed(1),
-})) as ReadonlyArray<{ key: string; defaultValue: string }>;
-
-export const ALL_STATS: string[] = MOD_STAT_DEFAULTS.map((entry) => entry.key);
+export const ALL_STATS: string[] = Object.keys(MOD_STAT_BUDGET_CONFIG);

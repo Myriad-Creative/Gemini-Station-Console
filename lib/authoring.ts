@@ -262,6 +262,12 @@ export function numberString(input: unknown) {
   return String(input);
 }
 
+function formatDraftNumber(value: number) {
+  if (!Number.isFinite(value)) return "";
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return Number.isInteger(normalized) ? String(normalized) : String(Number(normalized.toFixed(2)));
+}
+
 export function parseNumber(input: string) {
   if (!input.trim()) return undefined;
   const value = Number(input);
@@ -290,6 +296,42 @@ export function buildModBudgetSummary(mod: ModDraft) {
       id: entry.id.trim(),
       budgetCost: parseNumber(entry.budgetCost),
     })),
+  });
+}
+
+export function autoBalanceModDraft(mod: ModDraft, options: { fillBlankStatValues?: boolean } = {}) {
+  const budget = buildModBudgetSummary(mod);
+  let activeStatIndex = 0;
+
+  const nextStats = mod.stats.map((stat) => {
+    const key = stat.key.trim();
+    if (!key) return stat;
+
+    const statBudget = budget.stats[activeStatIndex];
+    activeStatIndex += 1;
+    if (!statBudget || statBudget.key !== key) return stat;
+
+    const numericValue = parseNumber(stat.value);
+    if (!stat.value.trim() && options.fillBlankStatValues && statBudget.effectiveMaxValue !== undefined && statBudget.effectiveMaxValue > 0) {
+      return {
+        ...stat,
+        value: formatDraftNumber(statBudget.effectiveMaxValue),
+      };
+    }
+
+    if (numericValue !== undefined && statBudget.effectiveMaxValue !== undefined && numericValue > statBudget.effectiveMaxValue) {
+      return {
+        ...stat,
+        value: formatDraftNumber(statBudget.effectiveMaxValue),
+      };
+    }
+
+    return stat;
+  });
+
+  return syncDerivedModFields({
+    ...mod,
+    stats: nextStats,
   });
 }
 
@@ -455,7 +497,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     rarity: "0",
     durability: "",
     sellPrice: "",
-    stats: [{ key: "power", value: "" }],
+    stats: [],
     abilities: [],
     icon: "",
     description: "",
@@ -677,7 +719,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     rarity: numberString(source.rarity ?? 0),
     durability: numberString(source.durability),
     sellPrice: numberString(source.sell_price ?? source.sellPrice),
-    stats: statsSource.length ? statsSource : [{ key: "power", value: "" }],
+    stats: statsSource,
     abilities: abilitiesSource,
     icon: String(source.icon ?? ""),
     description: String(source.description ?? source.desc ?? ""),
@@ -1192,6 +1234,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
     }
 
     const statKeys = new Set<string>();
+    let activeValidationStatIndex = 0;
     if (syncedMod.stats.length > MOD_MAX_STATS) {
       messages.push({
         level: "error",
@@ -1228,6 +1271,9 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         continue;
       }
 
+      const currentSlotIndex = activeValidationStatIndex;
+      activeValidationStatIndex += 1;
+
       if (!value) {
         messages.push({
           level: "warning",
@@ -1262,15 +1308,17 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       }
 
       if (levelRequirement !== undefined) {
-        const maxAtLevel = getModStatMaxAtRequiredLevel(key, levelRequirement);
         const numericValue = parseNumber(value);
+        const effectiveBudgetStat = budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
+        const effectiveMaxValue = effectiveBudgetStat?.effectiveMaxValue;
+        const maxAtLevel = effectiveMaxValue ?? getModStatMaxAtRequiredLevel(key, levelRequirement);
         if (maxAtLevel !== undefined && numericValue !== undefined && numericValue > maxAtLevel) {
           messages.push({
             level: "error",
             scope: "mods",
             draftIndex,
             itemId: id || undefined,
-            message: `Stat "${key}" exceeds its level-${levelRequirement} max of ${maxAtLevel}.`,
+            message: `Stat "${key}" exceeds its current max of ${maxAtLevel}.`,
           });
         }
       }
@@ -1287,21 +1335,21 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       statKeys.add(key);
     }
 
-    if (!activeStatCount) {
+    if (!activeStatCount && !syncedMod.abilities.some((ability) => ability.id.trim())) {
       messages.push({
         level: "warning",
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: "No stat entries are set.",
+        message: "Add at least one stat or ability.",
       });
-    } else if (supportedStatCounts.length && !supportedStatCounts.includes(activeStatCount)) {
+    } else if (supportedStatCounts.length && activeStatCount > Math.max(...supportedStatCounts)) {
       messages.push({
         level: "error",
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: `This rarity supports ${supportedStatCounts.join(" or ")} stat${supportedStatCounts.length > 1 ? "s" : ""}, but ${activeStatCount} ${activeStatCount === 1 ? "is" : "are"} currently configured.`,
+        message: `This rarity supports up to ${Math.max(...supportedStatCounts)} stats, but ${activeStatCount} are currently configured.`,
       });
     }
 
@@ -1347,7 +1395,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
           scope: "mods",
           draftIndex,
           itemId: id || undefined,
-          message: `Ability "${abilityId}" must have a numeric extra budget cost.`,
+          message: `Ability "${abilityId}" must have a numeric extra slot cost.`,
         });
         continue;
       }
@@ -1372,7 +1420,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         scope: "mods",
         draftIndex,
         itemId: id || undefined,
-        message: `Power score exceeded the rarity target: ${budget.totalBudgetSpent} spent against ${budget.targetScore}.`,
+        message: `Budget exceeded the rarity cap: ${budget.totalBudgetSpent} spent against ${budget.targetScore}.`,
       });
     }
   }

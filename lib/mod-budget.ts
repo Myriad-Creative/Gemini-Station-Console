@@ -1,22 +1,9 @@
 export type ModStatFamily = "general" | "exotic" | "extraExotic";
 
-export interface ModBenchmarkCurveConfig {
-  minValue: number;
-  maxValue: number;
-  exponent: number;
-}
-
-export interface ModRollQualityRange {
-  min: number;
-  max: number;
-}
-
 export interface ModStatBudgetConfig {
   family: ModStatFamily;
-  defaultDraftValue: number;
   level1Max: number;
   level100Max: number;
-  weight: number;
   roundStep?: number;
 }
 
@@ -34,19 +21,21 @@ export interface ModBudgetStatResult {
   key: string;
   value: number;
   family: ModStatFamily;
-  weight: number;
-  familyTaxMultiplier: number;
-  effectiveWeight: number;
-  maxAtLevel: number;
+  baseMaxAtLevel: number;
   slotIndex: number;
   slotMultiplier?: number;
-  suggestedValue?: number;
+  adjustedSlotMultiplier?: number;
+  effectiveMaxValue?: number;
+  normalizedUsage: number;
   powerScore: number;
   budgetSpent: number;
 }
 
 export interface ModBudgetAbilityResult {
   id: string;
+  baseSlotCost: number;
+  extraSlotCost: number;
+  slotCost: number;
   baseBudgetCost: number;
   extraBudgetCost: number;
   budgetCost: number;
@@ -57,13 +46,15 @@ export interface ModBudgetAbilityResult {
 export interface ModBudgetSummary {
   requiredLevel?: number;
   rarity?: number;
-  baseValue?: number;
-  rollQuality?: number;
-  rollQualityRange?: ModRollQualityRange;
+  baseStatMax?: number;
   supportedStatCounts: number[];
   activeStatCount: number;
   slotProfile?: number[];
   slotProfileLabel?: string;
+  slotProfileTotal?: number;
+  rarityCapacityMultiplier?: number;
+  abilitySlotCostTotal: number;
+  statCapacityRemainingMultiplier?: number;
   targetScore?: number;
   budgetCap: number;
   totalStatBudget: number;
@@ -80,14 +71,9 @@ export const MOD_REQUIRED_LEVEL_MIN = 1;
 export const MOD_REQUIRED_LEVEL_MAX = 100;
 export const MOD_MAX_STATS = 5;
 export const MOD_MAX_ABILITIES = 2;
-export const MOD_BASE_ABILITY_BUDGET_COST = 10;
+export const MOD_BASE_ABILITY_SLOT_COST = 0.5;
+export const MOD_BASE_ABILITY_BUDGET_COST = MOD_BASE_ABILITY_SLOT_COST;
 export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
-
-export const MOD_BENCHMARK_CURVE: ModBenchmarkCurveConfig = {
-  minValue: 1,
-  maxValue: 100,
-  exponent: 1.1,
-};
 
 export const MOD_RARITY_SLOT_PROFILES: Record<number, number[][]> = {
   0: [[1.0]],
@@ -106,39 +92,28 @@ export const MOD_RARITY_SLOT_PROFILES: Record<number, number[][]> = {
   ],
 };
 
-export const MOD_RARITY_ROLL_QUALITY_RANGES: Record<number, ModRollQualityRange> = {
-  0: { min: 0.9, max: 1.0 },
-  1: { min: 0.95, max: 1.03 },
-  2: { min: 0.98, max: 1.06 },
-  3: { min: 1.0, max: 1.1 },
-  4: { min: 1.03, max: 1.15 },
-};
-
-export const MOD_FAMILY_TAX_MULTIPLIERS = [1.0, 1.15, 1.3, 1.45, 1.6] as const;
-
-// Placeholder balance table until the exact live tuning table is available.
-// Assumption for this first pass:
-// - most stats scale from 1 at level 1 to 100 at level 100
-// - armor and shields scale from 10 at level 1 to 1000 at level 100
+// Current placeholder table:
+// every stat uses the required level as its full single-slot max until a real
+// tuning table is supplied.
 export const MOD_STAT_BUDGET_CONFIG: Record<string, ModStatBudgetConfig> = {
-  armor: { family: "general", defaultDraftValue: 100.0, level1Max: 10, level100Max: 1000, weight: 0.1, roundStep: 1 },
-  shields: { family: "general", defaultDraftValue: 100.0, level1Max: 10, level100Max: 1000, weight: 0.1, roundStep: 1 },
-  power: { family: "general", defaultDraftValue: 20.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  evasion: { family: "general", defaultDraftValue: 5.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  targeting: { family: "general", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  hacking: { family: "general", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  sensors: { family: "general", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  salvage_bonus: { family: "general", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  speed: { family: "general", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.0, roundStep: 0.1 },
-  energy_regen_rate: { family: "exotic", defaultDraftValue: 5.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  shield_regen: { family: "exotic", defaultDraftValue: 1.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  threat_generation: { family: "exotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  stealth: { family: "exotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  heat_resistance: { family: "exotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  overclock: { family: "exotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.35, roundStep: 0.1 },
-  damage_reflect: { family: "extraExotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.75, roundStep: 0.1 },
-  damage_reduction: { family: "extraExotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.75, roundStep: 0.1 },
-  armor_regen: { family: "extraExotic", defaultDraftValue: 0.0, level1Max: 1, level100Max: 100, weight: 1.75, roundStep: 0.1 },
+  armor: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  shields: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  power: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  evasion: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  targeting: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  hacking: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  sensors: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  salvage_bonus: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  speed: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  energy_regen_rate: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  shield_regen: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  threat_generation: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  stealth: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  heat_resistance: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  overclock: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  damage_reflect: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  damage_reduction: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
+  armor_regen: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 0.1 },
 };
 
 export function clampModRequiredLevel(level: number) {
@@ -149,35 +124,28 @@ function roundBudget(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function scaleBetween(minValue: number, maxValue: number, level: number, exponent = MOD_BENCHMARK_CURVE.exponent) {
-  const clampedLevel = clampModRequiredLevel(level);
-  const t = (clampedLevel - MOD_REQUIRED_LEVEL_MIN) / (MOD_REQUIRED_LEVEL_MAX - MOD_REQUIRED_LEVEL_MIN);
-  return minValue + (maxValue - minValue) * t ** exponent;
-}
-
 function roundToStep(value: number, step = 0.1) {
   if (!Number.isFinite(value) || step <= 0) return value;
   return Math.round(value / step) * step;
+}
+
+function scaleBetween(minValue: number, maxValue: number, level: number) {
+  const clampedLevel = clampModRequiredLevel(level);
+  const t = (clampedLevel - MOD_REQUIRED_LEVEL_MIN) / (MOD_REQUIRED_LEVEL_MAX - MOD_REQUIRED_LEVEL_MIN);
+  return minValue + (maxValue - minValue) * t;
 }
 
 function formatProfile(profile: number[]) {
   return profile.map((value) => value.toFixed(2)).join(" / ");
 }
 
-export function getModBenchmarkValueAtRequiredLevel(requiredLevel?: number) {
+function sumProfile(profile: number[]) {
+  return roundBudget(profile.reduce((sum, value) => sum + value, 0));
+}
+
+export function getModBaseStatMaxAtRequiredLevel(requiredLevel?: number) {
   if (requiredLevel === undefined || !Number.isFinite(requiredLevel)) return undefined;
-  return roundBudget(scaleBetween(MOD_BENCHMARK_CURVE.minValue, MOD_BENCHMARK_CURVE.maxValue, requiredLevel));
-}
-
-export function getModRarityRollQualityRange(rarity?: number) {
-  if (rarity === undefined || !Number.isFinite(rarity)) return undefined;
-  return MOD_RARITY_ROLL_QUALITY_RANGES[rarity];
-}
-
-export function getModRarityRollQuality(rarity?: number) {
-  const range = getModRarityRollQualityRange(rarity);
-  if (!range) return undefined;
-  return roundBudget((range.min + range.max) / 2);
+  return roundBudget(clampModRequiredLevel(requiredLevel));
 }
 
 export function getModSlotProfiles(rarity?: number) {
@@ -195,9 +163,25 @@ export function getModMaxStatsForRarity(rarity?: number) {
   return Math.max(...supportedCounts);
 }
 
+export function getModRarityCapacityMultiplier(rarity?: number) {
+  const profiles = getModSlotProfiles(rarity);
+  if (!profiles.length) return undefined;
+  return Math.max(...profiles.map((profile) => sumProfile(profile)));
+}
+
 export function getModSlotProfile(rarity?: number, statCount?: number) {
   if (!statCount) return undefined;
-  return getModSlotProfiles(rarity).find((profile) => profile.length === statCount);
+  const profiles = getModSlotProfiles(rarity);
+  const exact = profiles.find((profile) => profile.length === statCount);
+  if (exact) return exact;
+
+  const partialCandidates = profiles
+    .filter((profile) => profile.length >= statCount)
+    .map((profile) => profile.slice(0, statCount));
+
+  if (!partialCandidates.length) return undefined;
+
+  return partialCandidates.sort((left, right) => sumProfile(right) - sumProfile(left))[0];
 }
 
 export function getModStatBudgetConfig(key: string) {
@@ -210,16 +194,10 @@ export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number
   return roundBudget(scaleBetween(config.level1Max, config.level100Max, requiredLevel));
 }
 
-export function getModAbilityBaseBudgetCost(id?: string) {
+export function getModAbilityBaseSlotCost(id?: string) {
   const normalizedId = id?.trim();
   if (!normalizedId) return 0;
-  return MOD_ABILITY_BUDGET_COST_OVERRIDES[normalizedId] ?? MOD_BASE_ABILITY_BUDGET_COST;
-}
-
-export function getModFamilyTaxMultiplier(familyIndex: number) {
-  if (familyIndex < MOD_FAMILY_TAX_MULTIPLIERS.length) return MOD_FAMILY_TAX_MULTIPLIERS[familyIndex];
-  const lastValue = MOD_FAMILY_TAX_MULTIPLIERS[MOD_FAMILY_TAX_MULTIPLIERS.length - 1];
-  return roundBudget(lastValue + 0.15 * (familyIndex - (MOD_FAMILY_TAX_MULTIPLIERS.length - 1)));
+  return MOD_ABILITY_BUDGET_COST_OVERRIDES[normalizedId] ?? MOD_BASE_ABILITY_SLOT_COST;
 }
 
 export function calculateModBudgetSummary(input: {
@@ -232,34 +210,60 @@ export function calculateModBudgetSummary(input: {
     input.requiredLevel !== undefined && Number.isFinite(input.requiredLevel)
       ? clampModRequiredLevel(input.requiredLevel)
       : undefined;
-  const baseValue = getModBenchmarkValueAtRequiredLevel(requiredLevel);
-  const rollQuality = getModRarityRollQuality(input.rarity);
-  const rollQualityRange = getModRarityRollQualityRange(input.rarity);
+  const baseStatMax = getModBaseStatMaxAtRequiredLevel(requiredLevel);
   const supportedStatCounts = getModSupportedStatCounts(input.rarity);
+  const rarityCapacityMultiplier = getModRarityCapacityMultiplier(input.rarity);
   const keyedStats = input.stats
     .map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }))
     .filter((entry) => entry.key);
   const activeStatCount = keyedStats.length;
   const slotProfile = getModSlotProfile(input.rarity, activeStatCount);
   const slotProfileLabel = slotProfile ? formatProfile(slotProfile) : undefined;
-  const targetScore =
-    baseValue !== undefined && rollQuality !== undefined && slotProfile
-      ? roundBudget(baseValue * rollQuality * slotProfile.reduce((sum, value) => sum + value, 0))
+  const slotProfileTotal = slotProfile ? sumProfile(slotProfile) : undefined;
+
+  const abilities = input.abilities.flatMap<ModBudgetAbilityResult>((entry) => {
+    const id = entry.id?.trim() ?? "";
+    if (!id) return [];
+
+    const baseSlotCost = getModAbilityBaseSlotCost(id);
+    const extraSlotCost =
+      entry.budgetCost !== undefined && Number.isFinite(entry.budgetCost) ? entry.budgetCost : 0;
+    const slotCost = roundBudget(baseSlotCost + extraSlotCost);
+    const baseBudgetCost = baseStatMax !== undefined ? roundBudget(baseStatMax * baseSlotCost) : 0;
+    const extraBudgetCost = baseStatMax !== undefined ? roundBudget(baseStatMax * extraSlotCost) : 0;
+    const budgetCost = roundBudget(baseBudgetCost + extraBudgetCost);
+
+    return [
+      {
+        id,
+        baseSlotCost,
+        extraSlotCost,
+        slotCost,
+        baseBudgetCost,
+        extraBudgetCost,
+        budgetCost,
+        powerScore: budgetCost,
+        budgetSpent: budgetCost,
+      },
+    ];
+  });
+
+  const abilitySlotCostTotal = roundBudget(abilities.reduce((sum, ability) => sum + ability.slotCost, 0));
+  const statCapacityRemainingMultiplier =
+    rarityCapacityMultiplier !== undefined ? roundBudget(Math.max(0, rarityCapacityMultiplier - abilitySlotCostTotal)) : undefined;
+  const statScale =
+    slotProfileTotal !== undefined && statCapacityRemainingMultiplier !== undefined && slotProfileTotal > 0
+      ? Math.min(1, statCapacityRemainingMultiplier / slotProfileTotal)
       : undefined;
 
-  const familyCounts = new Map<ModStatFamily, number>();
-  const statMeta = new Map<number, { slotIndex: number; slotMultiplier?: number; familyTaxMultiplier: number }>();
+  const statMeta = new Map<number, { slotIndex: number; slotMultiplier?: number; adjustedSlotMultiplier?: number }>();
   let slotIndex = 0;
   for (const stat of keyedStats) {
-    const config = getModStatBudgetConfig(stat.key);
-    const familyIndex = config ? (familyCounts.get(config.family) ?? 0) : 0;
-    if (config) {
-      familyCounts.set(config.family, familyIndex + 1);
-    }
+    const slotMultiplier = slotProfile?.[slotIndex];
     statMeta.set(stat.index, {
       slotIndex,
-      slotMultiplier: slotProfile?.[slotIndex],
-      familyTaxMultiplier: getModFamilyTaxMultiplier(familyIndex),
+      slotMultiplier,
+      adjustedSlotMultiplier: slotMultiplier !== undefined && statScale !== undefined ? roundBudget(slotMultiplier * statScale) : undefined,
     });
     slotIndex += 1;
   }
@@ -268,55 +272,30 @@ export function calculateModBudgetSummary(input: {
     const key = entry.key.trim();
     const value = entry.value;
     const config = getModStatBudgetConfig(key);
-    const maxAtLevel = getModStatMaxAtRequiredLevel(key, requiredLevel);
+    const baseMaxAtLevel = getModStatMaxAtRequiredLevel(key, requiredLevel);
     const meta = statMeta.get(index);
-    if (!key || value === undefined || !Number.isFinite(value) || !config || maxAtLevel === undefined || !meta) {
+    if (!key || value === undefined || !Number.isFinite(value) || !config || baseMaxAtLevel === undefined || !meta) {
       return [];
     }
 
-    const effectiveWeight = roundBudget(config.weight * meta.familyTaxMultiplier);
-    const suggestedValue =
-      baseValue !== undefined && rollQuality !== undefined && meta.slotMultiplier !== undefined
-        ? Math.min(
-            maxAtLevel,
-            roundToStep((baseValue * meta.slotMultiplier * rollQuality) / effectiveWeight, config.roundStep ?? 0.1),
-          )
+    const effectiveMaxValue =
+      meta.adjustedSlotMultiplier !== undefined
+        ? roundToStep(baseMaxAtLevel * meta.adjustedSlotMultiplier, config.roundStep ?? 0.1)
         : undefined;
-    const powerScore = roundBudget(value * effectiveWeight);
+    const normalizedUsage = baseMaxAtLevel > 0 ? roundBudget(value / baseMaxAtLevel) : 0;
+    const powerScore = baseStatMax !== undefined ? roundBudget(baseStatMax * normalizedUsage) : roundBudget(value);
 
     return [
       {
         key,
         value,
         family: config.family,
-        weight: config.weight,
-        familyTaxMultiplier: meta.familyTaxMultiplier,
-        effectiveWeight,
-        maxAtLevel,
+        baseMaxAtLevel,
         slotIndex: meta.slotIndex,
         slotMultiplier: meta.slotMultiplier,
-        suggestedValue,
-        powerScore,
-        budgetSpent: powerScore,
-      },
-    ];
-  });
-
-  const abilities = input.abilities.flatMap<ModBudgetAbilityResult>((entry) => {
-    const id = entry.id?.trim() ?? "";
-    if (!id) return [];
-
-    const baseBudgetCost = getModAbilityBaseBudgetCost(id);
-    const extraBudgetCost =
-      entry.budgetCost !== undefined && Number.isFinite(entry.budgetCost) ? entry.budgetCost : 0;
-    const powerScore = roundBudget(baseBudgetCost + extraBudgetCost);
-
-    return [
-      {
-        id,
-        baseBudgetCost,
-        extraBudgetCost,
-        budgetCost: powerScore,
+        adjustedSlotMultiplier: meta.adjustedSlotMultiplier,
+        effectiveMaxValue,
+        normalizedUsage,
         powerScore,
         budgetSpent: powerScore,
       },
@@ -326,19 +305,25 @@ export function calculateModBudgetSummary(input: {
   const totalStatBudget = roundBudget(stats.reduce((sum, entry) => sum + entry.powerScore, 0));
   const totalAbilityBudget = roundBudget(abilities.reduce((sum, entry) => sum + entry.powerScore, 0));
   const totalBudgetSpent = roundBudget(totalStatBudget + totalAbilityBudget);
+  const targetScore =
+    baseStatMax !== undefined && rarityCapacityMultiplier !== undefined
+      ? roundBudget(baseStatMax * rarityCapacityMultiplier)
+      : undefined;
   const budgetRemaining = targetScore !== undefined ? roundBudget(targetScore - totalBudgetSpent) : undefined;
   const itemLevel = requiredLevel !== undefined ? Math.round(totalBudgetSpent) : undefined;
 
   return {
     requiredLevel,
     rarity: input.rarity,
-    baseValue,
-    rollQuality,
-    rollQualityRange,
+    baseStatMax,
     supportedStatCounts,
     activeStatCount,
     slotProfile,
     slotProfileLabel,
+    slotProfileTotal,
+    rarityCapacityMultiplier,
+    abilitySlotCostTotal,
+    statCapacityRemainingMultiplier,
     targetScore,
     budgetCap: targetScore ?? 0,
     totalStatBudget,
