@@ -284,6 +284,15 @@ export function createModAbilityDraft(id = "", budgetCost = ""): ModAbilityDraft
   return { id, budgetCost };
 }
 
+export function calculateDerivedSellPrice(levelRequirementInput: string, rarityInput: string) {
+  const levelRequirement = parseNumber(levelRequirementInput.trim() ? clampLevelInput(levelRequirementInput).trim() : "");
+  const rarity = parseNumber(rarityInput);
+  if (levelRequirement === undefined || rarity === undefined) return undefined;
+
+  const rarityMultiplier = rarity <= 0 ? 0.5 : rarity;
+  return Math.ceil(levelRequirement * rarityMultiplier);
+}
+
 export function buildModBudgetSummary(mod: ModDraft) {
   return calculateModBudgetSummary({
     requiredLevel: parseNumber(mod.levelRequirement),
@@ -347,10 +356,13 @@ export function autoBalanceModDraft(
 
 export function syncDerivedModFields(mod: ModDraft): ModDraft {
   const budget = buildModBudgetSummary(mod);
+  const normalizedLevelRequirement = mod.levelRequirement.trim() ? clampLevelInput(mod.levelRequirement).trim() : "";
+  const derivedSellPrice = calculateDerivedSellPrice(normalizedLevelRequirement, mod.rarity);
   return {
     ...mod,
-    levelRequirement: mod.levelRequirement.trim() ? clampLevelInput(mod.levelRequirement).trim() : "",
+    levelRequirement: normalizedLevelRequirement,
     itemLevel: budget.itemLevel === undefined ? "" : String(budget.itemLevel),
+    sellPrice: derivedSellPrice === undefined ? "" : String(derivedSellPrice),
   };
 }
 
@@ -571,7 +583,7 @@ export function createBulkModDrafts(
       itemLevel: "",
       rarity: template.rarity.trim(),
       durability: template.durability.trim(),
-      sellPrice: template.sellPrice.trim(),
+      sellPrice: "",
       stats: [],
       abilities: template.abilities.map((ability) => ({ ...ability })),
       icon: template.icon.trim(),
@@ -1200,18 +1212,6 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         draftIndex,
         itemId: id || undefined,
         message: "Durability must be numeric.",
-      });
-    }
-
-    if (!syncedMod.sellPrice.trim()) {
-      messages.push({ level: "warning", scope: "mods", draftIndex, itemId: id || undefined, message: "Sell price is blank." });
-    } else if (parseNumber(syncedMod.sellPrice) === undefined) {
-      messages.push({
-        level: "error",
-        scope: "mods",
-        draftIndex,
-        itemId: id || undefined,
-        message: "Sell price must be numeric.",
       });
     }
 

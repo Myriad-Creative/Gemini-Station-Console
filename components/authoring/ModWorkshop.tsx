@@ -5,6 +5,7 @@ import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, R
 import {
   autoBalanceModDraft,
   BulkModTemplateDraft,
+  calculateDerivedSellPrice,
   ModAbilityDraft,
   ModDraft,
   ModStatDraft,
@@ -101,6 +102,10 @@ export default function ModWorkshop({
         })),
       }),
     [bulkCreate],
+  );
+  const bulkSellPrice = useMemo(
+    () => calculateDerivedSellPrice(bulkCreate.levelRequirement, bulkCreate.rarity),
+    [bulkCreate.levelRequirement, bulkCreate.rarity],
   );
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
@@ -500,10 +505,11 @@ export default function ModWorkshop({
                   onChange={(value) => updateBulkCreate("durability", value)}
                 />
                 <Field
-                  label="Sell Price"
-                  value={bulkCreate.sellPrice}
-                  inputMode="numeric"
-                  onChange={(value) => updateBulkCreate("sellPrice", value)}
+                  label="Calculated Sell Price"
+                  value={bulkSellPrice === undefined ? "" : String(bulkSellPrice)}
+                  readOnly
+                  helpText="Auto-calculated as ceil(required level × rarity), with common using 0.5x."
+                  onChange={() => {}}
                 />
                 <SelectField
                   label="Class Restriction"
@@ -687,10 +693,11 @@ export default function ModWorkshop({
                     onChange={(value) => updateSelected((draft) => ({ ...draft, durability: value }))}
                   />
                   <Field
-                    label="Sell Price"
+                    label="Calculated Sell Price"
                     value={selectedSyncedMod.sellPrice}
-                    inputMode="numeric"
-                    onChange={(value) => updateSelected((draft) => ({ ...draft, sellPrice: value }))}
+                    readOnly
+                    helpText="Auto-calculated as ceil(required level × rarity), with common using 0.5x."
+                    onChange={() => {}}
                   />
                   <SelectField
                     label="Class Restriction"

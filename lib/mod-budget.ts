@@ -269,21 +269,22 @@ export function calculateModBudgetSummary(input: {
     const config = getModStatBudgetConfig(key);
     const baseMaxAtLevel = getModStatMaxAtRequiredLevel(key, requiredLevel);
     const meta = statMeta.get(index);
-    if (!key || value === undefined || !Number.isFinite(value) || !config || baseMaxAtLevel === undefined || !meta) {
+    if (!key || !config || baseMaxAtLevel === undefined || !meta) {
       return [];
     }
 
+    const numericValue = value !== undefined && Number.isFinite(value) ? value : 0;
     const effectiveMaxValue =
       meta.adjustedSlotMultiplier !== undefined
         ? roundToStep(baseMaxAtLevel * meta.adjustedSlotMultiplier, config.roundStep ?? 0.1)
         : undefined;
-    const normalizedUsage = baseMaxAtLevel > 0 ? roundBudget(value / baseMaxAtLevel) : 0;
-    const powerScore = baseStatMax !== undefined ? roundBudget(baseStatMax * normalizedUsage) : roundBudget(value);
+    const normalizedUsage = baseMaxAtLevel > 0 ? roundBudget(numericValue / baseMaxAtLevel) : 0;
+    const powerScore = baseStatMax !== undefined ? roundBudget(baseStatMax * normalizedUsage) : roundBudget(numericValue);
 
     return [
       {
         key,
-        value,
+        value: numericValue,
         family: config.family,
         baseMaxAtLevel,
         slotIndex: meta.slotIndex,
