@@ -61,7 +61,7 @@ export function RewardStrip({ rewardSummary }: { rewardSummary: MissionRewardSum
   if (!hasRewards) return <div className="text-sm text-white/45">No rewards listed.</div>;
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-wrap items-start gap-3">
       {rewardSummary.credits != null ? <RewardPill label="Credits" value={rewardSummary.credits} /> : null}
       {rewardSummary.xp != null ? <RewardPill label="XP" value={rewardSummary.xp} /> : null}
       {rewardSummary.rewards.map((reward) => (
