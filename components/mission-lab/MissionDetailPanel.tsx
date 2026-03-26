@@ -149,7 +149,13 @@ export default function MissionDetailPanel({
                           <div className="text-sm font-medium text-cyan-100">
                             Objective {objectiveIndex + 1}: {humanizeToken(objective.type)}
                           </div>
-                          <div className="mt-1 text-sm leading-6 text-white/80">{objective.description ?? "No description."}</div>
+                          <div className="mt-1 text-sm leading-6 text-white/80">{objective.objective ?? "No objective text."}</div>
+                          {objective.description && objective.description !== objective.objective ? (
+                            <div className="mt-3">
+                              <div className="label">Description</div>
+                              <div className="mt-1 text-sm leading-6 text-white/65">{objective.description}</div>
+                            </div>
+                          ) : null}
                           {objective.targetIds.length ? (
                             <div className="mt-2 flex flex-wrap gap-2">
                               {objective.targetIds.map((targetId) => (

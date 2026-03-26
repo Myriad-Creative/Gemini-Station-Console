@@ -200,7 +200,7 @@ export function MissionChainCard({
   selected?: boolean;
   onClick?: () => void;
 }) {
-  const objectivePreview = mission.steps[0]?.objectives.map((objective) => objective.description || humanizeToken(objective.type)).slice(0, 4) ?? [];
+  const objectivePreview = mission.steps[0]?.objectives.map((objective) => objective.objective || humanizeToken(objective.type)).slice(0, 4) ?? [];
 
   return (
     <MissionCardShell

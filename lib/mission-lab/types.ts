@@ -18,6 +18,7 @@ export interface NormalizedMissionObjective {
   index: number;
   type: string;
   count: number | null;
+  objective: string | null;
   description: string | null;
   targetIds: string[];
   raw: Record<string, unknown>;

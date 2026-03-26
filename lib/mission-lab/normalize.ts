@@ -9,6 +9,7 @@ import type {
 import {
   asRecord,
   dedupeStrings,
+  extractObjectiveDescription,
   extractTargetIds,
   humanizeToken,
   listFromUnknown,
@@ -80,7 +81,8 @@ function normalizeObjective(raw: unknown, stepIndex: number, objectiveIndex: num
     index: objectiveIndex,
     type,
     count,
-    description: summarizeObjectiveSource(source, type, count),
+    objective: summarizeObjectiveSource(source, type, count),
+    description: extractObjectiveDescription(source),
     targetIds: extractTargetIds(source),
     raw: source,
   };
@@ -313,7 +315,7 @@ export function buildMissionObjectivePreview(mission: NormalizedMission) {
   const primaryStep = mission.steps[0];
   if (!primaryStep) return [];
 
-  const lines = primaryStep.objectives.map((objective) => objective.description || humanizeToken(objective.type));
+  const lines = primaryStep.objectives.map((objective) => objective.objective || humanizeToken(objective.type));
   if (primaryStep.mode === "single") return lines.slice(0, 1);
   return lines.slice(0, 4);
 }

@@ -74,10 +74,24 @@ export function normalizeTaxonomyList(value: unknown) {
 export function humanizeToken(value: string | null | undefined) {
   if (!value) return "Unknown";
   return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+export function extractObjectiveDescription(raw: Record<string, unknown>) {
+  return stringOrNull(raw.description ?? raw.text ?? raw.summary);
+}
+
+function pluralizeLabel(value: string, count: number | null) {
+  if (count === null || count === 1 || !value || value.includes(",")) return value;
+
+  const trimmed = value.trim();
+  if (!trimmed || /s$/i.test(trimmed)) return trimmed;
+  if (/[^aeiou]y$/i.test(trimmed)) return `${trimmed.slice(0, -1)}ies`;
+  return `${trimmed}s`;
 }
 
 export function summarizeObjectiveSource(raw: Record<string, unknown>, type: string, count: number | null) {
@@ -97,8 +111,8 @@ export function summarizeObjectiveSource(raw: Record<string, unknown>, type: str
   );
 
   const targetIds = extractTargetIds(raw);
-  const joinedTargets = targetIds.slice(0, 3).join(", ");
-  const fallbackSubject = subject || joinedTargets || null;
+  const joinedTargets = targetIds.slice(0, 3).map((targetId) => humanizeToken(targetId)).join(", ");
+  const fallbackSubject = subject || pluralizeLabel(joinedTargets, count) || null;
 
   switch (type) {
     case "talk":
@@ -145,9 +159,12 @@ export function extractTargetIds(raw: Record<string, unknown>) {
   const fromArray = Array.isArray(raw.target_ids)
     ? (raw.target_ids as unknown[]).map((entry) => String(entry).trim()).filter(Boolean)
     : [];
+  const fromTargetIdArray = Array.isArray(raw.target_id)
+    ? (raw.target_id as unknown[]).map((entry) => String(entry).trim()).filter(Boolean)
+    : [];
 
   const singleValueCandidates = [
-    raw.target_id,
+    Array.isArray(raw.target_id) ? null : raw.target_id,
     raw.npc_id,
     raw.mob_id,
     raw.item_id,
@@ -160,7 +177,7 @@ export function extractTargetIds(raw: Record<string, unknown>) {
     .map((entry) => stringOrNull(entry))
     .filter((entry): entry is string => !!entry);
 
-  return dedupeStrings([...fromArray, ...singles]);
+  return dedupeStrings([...fromArray, ...fromTargetIdArray, ...singles]);
 }
 
 export function missionSortValue(mission: NormalizedMission, sortBy: string) {
