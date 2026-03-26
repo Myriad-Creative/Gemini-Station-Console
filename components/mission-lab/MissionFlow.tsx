@@ -50,13 +50,57 @@ function estimateNodeHeight(node: MissionGraphNode) {
   const modeSpacing = node.primaryMode === "sequential" ? 24 : node.primaryMode === "all" ? 14 : 0;
 
   return (
-    250 +
-    titleLines * 34 +
-    objectiveLines * 26 +
-    rewardRows * 78 +
+    172 +
+    titleLines * 28 +
+    objectiveLines * 24 +
+    rewardRows * 66 +
     modeSpacing +
     (node.additionalSteps ? 26 : 0)
   );
+}
+
+function getConnectedComponents(rawNodes: MissionGraphNode[], rawEdges: MissionGraphEdge[]) {
+  const nodeMap = new Map(rawNodes.map((node) => [node.id, node]));
+  const adjacency = new Map<string, Set<string>>();
+  for (const node of rawNodes) adjacency.set(node.id, new Set());
+  for (const edge of rawEdges) {
+    adjacency.get(edge.source)?.add(edge.target);
+    adjacency.get(edge.target)?.add(edge.source);
+  }
+
+  const visited = new Set<string>();
+  const components: Array<{ nodes: MissionGraphNode[]; edges: MissionGraphEdge[] }> = [];
+
+  for (const node of rawNodes) {
+    if (visited.has(node.id)) continue;
+
+    const queue = [node.id];
+    const componentNodeIds = new Set<string>();
+    visited.add(node.id);
+
+    while (queue.length) {
+      const current = queue.shift()!;
+      componentNodeIds.add(current);
+      for (const next of adjacency.get(current) ?? []) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+
+    const componentNodes = Array.from(componentNodeIds)
+      .map((nodeId) => nodeMap.get(nodeId))
+      .filter((entry): entry is MissionGraphNode => !!entry)
+      .sort((left, right) => left.title.localeCompare(right.title));
+    const componentEdges = rawEdges.filter((edge) => componentNodeIds.has(edge.source) && componentNodeIds.has(edge.target));
+    components.push({ nodes: componentNodes, edges: componentEdges });
+  }
+
+  return components.sort((left, right) => {
+    const leftKey = left.nodes.map((node) => node.title).sort()[0] ?? "";
+    const rightKey = right.nodes.map((node) => node.title).sort()[0] ?? "";
+    return leftKey.localeCompare(rightKey);
+  });
 }
 
 function layoutNodes(
@@ -67,49 +111,69 @@ function layoutNodes(
   focusEdgeIds: string[],
   onSelect: (missionKey: string) => void,
 ) {
-  const graph = new dagre.graphlib.Graph();
-  graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({
-    rankdir: "TB",
-    nodesep: 56,
-    ranksep: 132,
-    marginx: 32,
-    marginy: 32,
-  });
-
   const focusEdgeSet = new Set(focusEdgeIds);
+  const components = getConnectedComponents(rawNodes, rawEdges);
+  const nodes: MissionFlowCanvasNode[] = [];
+  let nextComponentX = 32;
 
-  for (const node of rawNodes) {
-    graph.setNode(node.id, { width: 340, height: estimateNodeHeight(node) });
+  for (const component of components) {
+    const graph = new dagre.graphlib.Graph();
+    graph.setDefaultEdgeLabel(() => ({}));
+    graph.setGraph({
+      rankdir: "TB",
+      nodesep: 44,
+      ranksep: 28,
+      marginx: 16,
+      marginy: 16,
+    });
+
+    for (const node of component.nodes) {
+      graph.setNode(node.id, { width: 340, height: estimateNodeHeight(node) });
+    }
+
+    for (const edge of component.edges) {
+      graph.setEdge(edge.source, edge.target);
+    }
+
+    dagre.layout(graph);
+
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+
+    for (const node of component.nodes) {
+      const position = graph.node(node.id);
+      const width = 340;
+      minX = Math.min(minX, position.x - width / 2);
+      maxX = Math.max(maxX, position.x + width / 2);
+    }
+
+    const componentOffsetX = nextComponentX - minX;
+    const componentWidth = maxX - minX;
+
+    for (const node of component.nodes) {
+      const position = graph.node(node.id);
+      const width = 340;
+      const height = estimateNodeHeight(node);
+
+      nodes.push({
+        id: node.id,
+        type: "missionNode",
+        position: {
+          x: componentOffsetX + position.x - width / 2,
+          y: position.y - height / 2 + 24,
+        },
+        draggable: false,
+        selectable: false,
+        data: {
+          mission: node,
+          selected: selectedMissionKey === node.id,
+          onSelect,
+        },
+      });
+    }
+
+    nextComponentX += componentWidth + 84;
   }
-
-  for (const edge of rawEdges) {
-    graph.setEdge(edge.source, edge.target);
-  }
-
-  dagre.layout(graph);
-
-  const nodes: MissionFlowCanvasNode[] = rawNodes.map((node) => {
-    const position = graph.node(node.id);
-    const width = 340;
-    const height = estimateNodeHeight(node);
-
-    return {
-      id: node.id,
-      type: "missionNode",
-      position: {
-        x: position.x - width / 2,
-        y: position.y - height / 2,
-      },
-      draggable: false,
-      selectable: false,
-      data: {
-        mission: node,
-        selected: selectedMissionKey === node.id,
-        onSelect,
-      },
-    };
-  });
 
   const edges: Edge[] = rawEdges.map((edge) => {
     const highlighted = focusEdgeSet.has(edge.id);
