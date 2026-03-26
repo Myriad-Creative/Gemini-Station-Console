@@ -23,9 +23,11 @@ function formatMode(mode: string | null) {
 
 function RewardPill({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-[4.25rem] rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center">
-      <div className="text-2xl font-semibold text-white">{value}</div>
-      <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-white/55">{label}</div>
+    <div className="flex flex-col items-center">
+      <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3">
+        <div className="text-center text-2xl font-semibold text-white">{value}</div>
+      </div>
+      <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-white/55">{label}</div>
     </div>
   );
 }
@@ -33,20 +35,22 @@ function RewardPill({ label, value }: { label: string; value: number }) {
 function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
   if (reward.icon) {
     return (
-      <img
-        src={`/api/icon?res=${encodeURIComponent(reward.icon)}&id=${encodeURIComponent(reward.id)}&name=${encodeURIComponent(
-          reward.name ?? reward.id,
-        )}`}
-        alt={reward.name ?? reward.id}
-        width={56}
-        height={56}
-        className="h-14 w-14 rounded-lg border border-cyan-400/20 object-cover"
-      />
+      <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
+        <img
+          src={`/api/icon?res=${encodeURIComponent(reward.icon)}&id=${encodeURIComponent(reward.id)}&name=${encodeURIComponent(
+            reward.name ?? reward.id,
+          )}`}
+          alt={reward.name ?? reward.id}
+          width={72}
+          height={72}
+          className="h-[72px] w-[72px] rounded-md object-cover"
+        />
+      </div>
     );
   }
 
   return (
-    <div className="flex h-14 min-w-[5rem] items-center justify-center rounded-lg border border-white/10 bg-white/5 px-2 text-center text-[11px] text-white/75">
+    <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-2 text-center text-[11px] text-white/75">
       {reward.name ?? reward.id}
     </div>
   );
