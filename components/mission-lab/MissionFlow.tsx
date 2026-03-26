@@ -14,14 +14,20 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MissionGraphEdge, MissionGraphNode } from "@lib/mission-lab/types";
 import { MissionCard } from "@components/mission-lab/MissionCard";
+
+const CARD_WIDTH = 340;
+const CHAIN_GAP = 25;
+const COMPONENT_GAP = 84;
+const COMPONENT_TOP = 24;
 
 type MissionFlowNodeData = {
   mission: MissionGraphNode;
   selected: boolean;
   onSelect: (missionKey: string) => void;
+  onMeasure: (missionKey: string, height: number) => void;
 };
 
 type MissionFlowCanvasNode = Node<MissionFlowNodeData, "missionNode">;
@@ -57,6 +63,10 @@ function estimateNodeHeight(node: MissionGraphNode) {
     modeSpacing +
     (node.additionalSteps ? 26 : 0)
   );
+}
+
+function nodeHeightForLayout(node: MissionGraphNode, measuredHeights: Record<string, number>) {
+  return measuredHeights[node.id] ?? estimateNodeHeight(node);
 }
 
 function getConnectedComponents(rawNodes: MissionGraphNode[], rawEdges: MissionGraphEdge[]) {
@@ -103,13 +113,56 @@ function getConnectedComponents(rawNodes: MissionGraphNode[], rawEdges: MissionG
   });
 }
 
+function buildTopologicalOrder(
+  componentNodes: MissionGraphNode[],
+  componentEdges: MissionGraphEdge[],
+  fallbackOrder: string[],
+) {
+  const fallbackIndex = new Map(fallbackOrder.map((nodeId, index) => [nodeId, index]));
+  const indegree = new Map<string, number>();
+  const children = new Map<string, string[]>();
+
+  for (const node of componentNodes) {
+    indegree.set(node.id, 0);
+    children.set(node.id, []);
+  }
+
+  for (const edge of componentEdges) {
+    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
+    children.get(edge.source)?.push(edge.target);
+  }
+
+  const queue = componentNodes
+    .map((node) => node.id)
+    .filter((nodeId) => (indegree.get(nodeId) ?? 0) === 0)
+    .sort((left, right) => (fallbackIndex.get(left) ?? 0) - (fallbackIndex.get(right) ?? 0));
+
+  const ordered: string[] = [];
+  while (queue.length) {
+    const current = queue.shift()!;
+    ordered.push(current);
+
+    for (const next of children.get(current) ?? []) {
+      const nextIndegree = (indegree.get(next) ?? 0) - 1;
+      indegree.set(next, nextIndegree);
+      if (nextIndegree === 0) {
+        queue.push(next);
+        queue.sort((left, right) => (fallbackIndex.get(left) ?? 0) - (fallbackIndex.get(right) ?? 0));
+      }
+    }
+  }
+
+  return ordered.length === componentNodes.length ? ordered : fallbackOrder;
+}
+
 function layoutNodes(
   rawNodes: MissionGraphNode[],
   rawEdges: MissionGraphEdge[],
   selectedMissionKey: string | null,
-  focusNodeIds: string[],
   focusEdgeIds: string[],
   onSelect: (missionKey: string) => void,
+  onMeasure: (missionKey: string, height: number) => void,
+  measuredHeights: Record<string, number>,
 ) {
   const focusEdgeSet = new Set(focusEdgeIds);
   const components = getConnectedComponents(rawNodes, rawEdges);
@@ -128,7 +181,7 @@ function layoutNodes(
     });
 
     for (const node of component.nodes) {
-      graph.setNode(node.id, { width: 340, height: estimateNodeHeight(node) });
+      graph.setNode(node.id, { width: CARD_WIDTH, height: nodeHeightForLayout(node, measuredHeights) });
     }
 
     for (const edge of component.edges) {
@@ -139,28 +192,60 @@ function layoutNodes(
 
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
+    const dagrePositions = new Map<string, { x: number; y: number }>();
 
     for (const node of component.nodes) {
       const position = graph.node(node.id);
-      const width = 340;
+      dagrePositions.set(node.id, position);
+      const width = CARD_WIDTH;
       minX = Math.min(minX, position.x - width / 2);
       maxX = Math.max(maxX, position.x + width / 2);
     }
 
     const componentOffsetX = nextComponentX - minX;
     const componentWidth = maxX - minX;
+    const parentMap = new Map<string, string[]>();
+    for (const node of component.nodes) parentMap.set(node.id, []);
+    for (const edge of component.edges) parentMap.get(edge.target)?.push(edge.source);
+
+    const fallbackOrder = [...component.nodes]
+      .sort((left, right) => {
+        const leftPosition = dagrePositions.get(left.id)!;
+        const rightPosition = dagrePositions.get(right.id)!;
+        if (leftPosition.y !== rightPosition.y) return leftPosition.y - rightPosition.y;
+        return leftPosition.x - rightPosition.x;
+      })
+      .map((node) => node.id);
+    const topoOrder = buildTopologicalOrder(component.nodes, component.edges, fallbackOrder);
+    const topMap = new Map<string, number>();
+    for (const nodeId of topoOrder) {
+      const parents = parentMap.get(nodeId) ?? [];
+      if (!parents.length) {
+        topMap.set(nodeId, COMPONENT_TOP);
+        continue;
+      }
+
+      topMap.set(
+        nodeId,
+        Math.max(
+          ...parents.map((parentId) => {
+            const parentNode = component.nodes.find((entry) => entry.id === parentId)!;
+            return (topMap.get(parentId) ?? COMPONENT_TOP) + nodeHeightForLayout(parentNode, measuredHeights) + CHAIN_GAP;
+          }),
+        ),
+      );
+    }
 
     for (const node of component.nodes) {
-      const position = graph.node(node.id);
-      const width = 340;
-      const height = estimateNodeHeight(node);
+      const position = dagrePositions.get(node.id)!;
+      const width = CARD_WIDTH;
 
       nodes.push({
         id: node.id,
         type: "missionNode",
         position: {
           x: componentOffsetX + position.x - width / 2,
-          y: position.y - height / 2 + 24,
+          y: topMap.get(node.id) ?? COMPONENT_TOP,
         },
         draggable: false,
         selectable: false,
@@ -168,11 +253,12 @@ function layoutNodes(
           mission: node,
           selected: selectedMissionKey === node.id,
           onSelect,
+          onMeasure,
         },
       });
     }
 
-    nextComponentX += componentWidth + 84;
+    nextComponentX += componentWidth + COMPONENT_GAP;
   }
 
   const edges: Edge[] = rawEdges.map((edge) => {
@@ -200,9 +286,26 @@ function layoutNodes(
   return { nodes, edges };
 }
 
-function MissionFlowNode({ data }: NodeProps<MissionFlowCanvasNode>) {
+function MissionFlowNode({ id, data }: NodeProps<MissionFlowCanvasNode>) {
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = nodeRef.current;
+    if (!element) return;
+
+    const reportHeight = () => {
+      const nextHeight = Math.ceil(element.getBoundingClientRect().height);
+      data.onMeasure(id, nextHeight);
+    };
+
+    reportHeight();
+    const observer = new ResizeObserver(() => reportHeight());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [id, data.onMeasure]);
+
   return (
-    <div className="w-[340px]">
+    <div ref={nodeRef} className="w-[340px]">
       <Handle type="target" position={Position.Top} className="!h-3 !w-3 !border-0 !bg-cyan-300/70" />
       <MissionCard
         mission={data.mission}
@@ -238,12 +341,20 @@ export default function MissionFlow({
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [flowNodes, setFlowNodes] = useState<MissionFlowCanvasNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
+
+  const handleNodeMeasure = useCallback((missionKey: string, height: number) => {
+    setMeasuredHeights((current) => {
+      if (current[missionKey] === height) return current;
+      return { ...current, [missionKey]: height };
+    });
+  }, []);
 
   useEffect(() => {
-    const next = layoutNodes(nodes, edges, selectedMissionKey, focusNodeIds, focusEdgeIds, onSelect);
+    const next = layoutNodes(nodes, edges, selectedMissionKey, focusEdgeIds, onSelect, handleNodeMeasure, measuredHeights);
     setFlowNodes(next.nodes);
     setFlowEdges(next.edges);
-  }, [nodes, edges, selectedMissionKey, focusNodeIds, focusEdgeIds, onSelect]);
+  }, [nodes, edges, selectedMissionKey, focusNodeIds, focusEdgeIds, onSelect, handleNodeMeasure, measuredHeights]);
 
   useEffect(() => {
     if (!flowInstance || !flowNodes.length) return;
