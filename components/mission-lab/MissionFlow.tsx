@@ -294,7 +294,7 @@ function MissionFlowNode({ id, data }: NodeProps<MissionFlowCanvasNode>) {
     if (!element) return;
 
     const reportHeight = () => {
-      const nextHeight = Math.ceil(element.getBoundingClientRect().height);
+      const nextHeight = Math.ceil(element.offsetHeight);
       data.onMeasure(id, nextHeight);
     };
 

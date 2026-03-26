@@ -52,6 +52,55 @@ function stripInvalidControlCharacters(input: string) {
   return input.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u2028\u2029]/g, " ");
 }
 
+function escapeLineBreaksInsideStrings(input: string) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (!inString) {
+      output += char;
+      if (char === "\"") inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      output += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      output += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === "\r") {
+      if (input[index + 1] === "\n") index += 1;
+      output += "\\n";
+      continue;
+    }
+
+    if (char === "\n") {
+      output += "\\n";
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
 function formatParseError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -88,8 +137,13 @@ export function parseMissionJsonText(input: string): MissionParseResult {
     warnings.push("Removed invalid control characters before tolerant parse.");
   }
 
-  const withoutTrailingCommas = stripTrailingCommas(withoutControlCharacters);
-  if (withoutTrailingCommas !== withoutControlCharacters) {
+  const repairedLineBreaks = escapeLineBreaksInsideStrings(withoutControlCharacters);
+  if (repairedLineBreaks !== withoutControlCharacters) {
+    warnings.push("Escaped raw line breaks inside quoted strings before tolerant parse.");
+  }
+
+  const withoutTrailingCommas = stripTrailingCommas(repairedLineBreaks);
+  if (withoutTrailingCommas !== repairedLineBreaks) {
     warnings.push("Removed trailing commas before tolerant parse.");
   }
 
