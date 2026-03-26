@@ -27,9 +27,11 @@ function splitRelativePath(relativePath: string) {
 function shouldIgnoreEntry(relativePath: string) {
   const normalized = normalizePath(relativePath);
   const lower = normalized.toLowerCase();
+  const segments = lower.split("/").filter(Boolean);
   if (!normalized) return true;
   if (lower.includes("__macosx/")) return true;
   if (lower.endsWith(".ds_store")) return true;
+  if (segments.includes("test")) return true;
   return false;
 }
 
