@@ -21,14 +21,42 @@ import { MissionCard } from "@components/mission-lab/MissionCard";
 type MissionFlowNodeData = {
   mission: MissionGraphNode;
   selected: boolean;
-  dimmed: boolean;
   onSelect: (missionKey: string) => void;
 };
 
 type MissionFlowCanvasNode = Node<MissionFlowNodeData, "missionNode">;
 
+function estimateWrappedLines(text: string, charsPerLine: number) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return 1;
+
+  return normalized
+    .split("\n")
+    .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+}
+
 function estimateNodeHeight(node: MissionGraphNode) {
-  return 240 + node.objectivePreview.length * 30 + (node.rewardSummary.rewards.length ? 28 : 0) + (node.additionalSteps ? 22 : 0);
+  const titleLines = estimateWrappedLines(node.title, 18);
+  const objectiveCharsPerLine = node.primaryMode === "single" ? 34 : 28;
+  const objectiveLines = Math.max(
+    1,
+    node.objectivePreview.reduce((total, line) => total + estimateWrappedLines(line, objectiveCharsPerLine), 0),
+  );
+  const rewardBlocks =
+    (node.rewardSummary.credits != null ? 1 : 0) +
+    (node.rewardSummary.xp != null ? 1 : 0) +
+    node.rewardSummary.rewards.length;
+  const rewardRows = rewardBlocks ? Math.ceil(rewardBlocks / 3) : 1;
+  const modeSpacing = node.primaryMode === "sequential" ? 24 : node.primaryMode === "all" ? 14 : 0;
+
+  return (
+    250 +
+    titleLines * 34 +
+    objectiveLines * 26 +
+    rewardRows * 78 +
+    modeSpacing +
+    (node.additionalSteps ? 26 : 0)
+  );
 }
 
 function layoutNodes(
@@ -44,13 +72,11 @@ function layoutNodes(
   graph.setGraph({
     rankdir: "TB",
     nodesep: 56,
-    ranksep: 88,
+    ranksep: 132,
     marginx: 32,
     marginy: 32,
   });
 
-  const shouldDim = focusNodeIds.length > 0 && focusNodeIds.length !== rawNodes.length;
-  const focusNodeSet = new Set(focusNodeIds);
   const focusEdgeSet = new Set(focusEdgeIds);
 
   for (const node of rawNodes) {
@@ -80,7 +106,6 @@ function layoutNodes(
       data: {
         mission: node,
         selected: selectedMissionKey === node.id,
-        dimmed: shouldDim && !focusNodeSet.has(node.id),
         onSelect,
       },
     };
@@ -88,7 +113,6 @@ function layoutNodes(
 
   const edges: Edge[] = rawEdges.map((edge) => {
     const highlighted = focusEdgeSet.has(edge.id);
-    const dimmed = shouldDim && !highlighted;
     const stroke = highlighted ? "#7dd3fc" : "#3f5f7e";
 
     return {
@@ -104,7 +128,7 @@ function layoutNodes(
       style: {
         stroke,
         strokeWidth: highlighted ? 2.5 : 1.4,
-        opacity: dimmed ? 0.2 : 0.9,
+        opacity: 0.9,
       },
     };
   });
@@ -119,7 +143,6 @@ function MissionFlowNode({ data }: NodeProps<MissionFlowCanvasNode>) {
       <MissionCard
         mission={data.mission}
         selected={data.selected}
-        dimmed={data.dimmed}
         onClick={() => data.onSelect(data.mission.missionKey)}
       />
       <Handle type="source" position={Position.Bottom} className="!h-3 !w-3 !border-0 !bg-cyan-300/70" />

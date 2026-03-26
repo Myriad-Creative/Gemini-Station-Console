@@ -14,7 +14,6 @@ type MissionCardBase = {
   faction: string | null;
   folderName: string;
   selected?: boolean;
-  dimmed?: boolean;
   onClick?: () => void;
 };
 
@@ -119,7 +118,6 @@ function MissionCardShell({
   faction,
   folderName,
   selected,
-  dimmed,
   onClick,
 }: MissionCardBase) {
   return (
@@ -128,9 +126,9 @@ function MissionCardShell({
       onClick={onClick}
       className={`w-full rounded-2xl border px-5 py-5 text-left transition ${
         selected
-          ? "border-cyan-300/60 bg-[#0d1a2d] shadow-[0_0_0_1px_rgba(125,211,252,0.15)]"
+          ? "border-cyan-300/70 bg-[#0d1a2d] shadow-[0_0_0_1px_rgba(125,211,252,0.24),0_0_28px_rgba(34,211,238,0.18)]"
           : "border-white/12 bg-[#0b172a]"
-      } ${dimmed ? "opacity-40" : "opacity-100"} ${onClick ? "hover:border-cyan-300/35 hover:bg-[#0f1d34]" : ""}`}
+      } ${onClick ? "hover:border-cyan-300/35 hover:bg-[#0f1d34]" : ""}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -166,12 +164,10 @@ function MissionCardShell({
 export function MissionCard({
   mission,
   selected,
-  dimmed,
   onClick,
 }: {
   mission: MissionGraphNode;
   selected?: boolean;
-  dimmed?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -186,7 +182,6 @@ export function MissionCard({
       faction={mission.faction}
       folderName={mission.folderName}
       selected={selected}
-      dimmed={dimmed}
       onClick={onClick}
     />
   );
@@ -195,12 +190,10 @@ export function MissionCard({
 export function MissionChainCard({
   mission,
   selected,
-  dimmed,
   onClick,
 }: {
   mission: NormalizedMission;
   selected?: boolean;
-  dimmed?: boolean;
   onClick?: () => void;
 }) {
   const objectivePreview = mission.steps[0]?.objectives.map((objective) => objective.description || humanizeToken(objective.type)).slice(0, 4) ?? [];
@@ -217,7 +210,6 @@ export function MissionChainCard({
       faction={mission.faction}
       folderName={mission.folderName}
       selected={selected}
-      dimmed={dimmed}
       onClick={onClick}
     />
   );
