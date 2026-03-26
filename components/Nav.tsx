@@ -7,6 +7,7 @@ const tabs = [
   { href: "/mods", label: "Mods" },
   { href: "/items", label: "Items" },
   { href: "/missions", label: "Missions" },
+  { href: "/mission-lab", label: "Mission Lab" },
   { href: "/authoring", label: "Authoring" },
   { href: "/reports/holes", label: "Holes" },
   { href: "/reports/outliers", label: "Outliers" },

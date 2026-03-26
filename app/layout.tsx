@@ -1,3 +1,4 @@
+import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import Link from "next/link";
 import GlobalBeforeUnload from "@components/GlobalBeforeUnload";
