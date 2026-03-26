@@ -81,8 +81,8 @@ export function humanizeToken(value: string | null | undefined) {
 }
 
 export function summarizeObjectiveSource(raw: Record<string, unknown>, type: string, count: number | null) {
-  const explicitDescription = stringOrNull(raw.description ?? raw.text ?? raw.summary);
-  if (explicitDescription) return explicitDescription;
+  const explicitObjective = stringOrNull(raw.objective ?? raw.objective_text ?? raw.goal ?? raw.label ?? raw.title);
+  if (explicitObjective) return explicitObjective;
 
   const subject = stringOrNull(
     raw.target_name ??
