@@ -1,3 +1,5 @@
+import { MOD_STAT_BUDGET_CONFIG } from "@lib/mod-budget";
+
 export const RARITY_COLOR: Record<number, string> = {
   0: "#FFFFFF",
   1: "#3CB371",
@@ -6,22 +8,30 @@ export const RARITY_COLOR: Record<number, string> = {
   4: "#FFD700"
 };
 
-export const ALL_STATS: string[] = [
-  "armor",
-  "shields",
-  "power",
-  "evasion",
-  "shield_regen",
-  "armor_regen",
-  "targeting",
-  "threat_generation",
-  "hacking",
-  "damage_reflect",
-  "damage_reduction",
-  "stealth",
-  "sensors",
-  "salvage_bonus",
-  "heat_resistance",
-  "speed",
-  "overclock"
-];
+export const RARITY_LABEL: Record<number, string> = {
+  0: "Common",
+  1: "Uncommon",
+  2: "Rare",
+  3: "Epic",
+  4: "Legendary"
+};
+
+export const MOD_SLOT_OPTIONS = [
+  "Armor",
+  "Engine",
+  "Sensor",
+  "Shield",
+  "Utility",
+  "Weapon"
+] as const;
+
+export const CLASS_RESTRICTION_OPTIONS = [
+  "None",
+  "Soldier",
+  "Entrepreneur",
+  "Scout",
+  "Engineer",
+  "Miner"
+] as const;
+
+export const ALL_STATS: string[] = Object.keys(MOD_STAT_BUDGET_CONFIG);

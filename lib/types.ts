@@ -5,6 +5,10 @@ export interface Mod {
   name: string;
   slot: string;
   classRestriction?: string[];
+  statsCapOverride?: boolean;
+  isQuestReward?: boolean;
+  isDungeonDrop?: boolean;
+  isBossDrop?: boolean;
   levelRequirement: number;
   itemLevel?: number;
   rarity: number;

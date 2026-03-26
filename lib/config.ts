@@ -12,6 +12,7 @@ export type DataUrls = {
 type Config = {
   manifest_url: string;
   data_urls?: DataUrls;
+  mods_override_json?: string | null;
   level_bands: [number, number][];
   coverage_threshold_per_slot: number;
   zscore_threshold: number;
@@ -29,6 +30,7 @@ const defaultConfig: Config = {
     mods: "https://json-service-production-e4bb.up.railway.app/json/Mods.json",
     items: "https://json-service-production-e4bb.up.railway.app/json/items.json"
   },
+  mods_override_json: null,
   level_bands: [[1,9],[10,19],[20,29],[30,39],[40,49],[50,59],[60,69],[70,79],[80,89],[90,99],[100,100]],
   coverage_threshold_per_slot: 10,
   zscore_threshold: 2.0,
