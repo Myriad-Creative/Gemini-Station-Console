@@ -19,6 +19,12 @@ Open **Settings** to view the currently loaded URLs and force a reload.
 - Mods Explorer (icons, rarity coloring, **hover card** with full stats/desc, sorting)
 - Items Explorer (icons, filters, sorting)
 - Missions Explorer (filter by band)
+- Mob Lab:
+  - Import a `mobs.json` file with tolerant JSON5 parsing
+  - Browse mobs by name, ID, level, faction, and AI type
+  - Clone mobs, create blank mobs, edit runtime fields, and manage stat blocks
+  - Live duplicate-ID alerts plus validation for invalid JSON blocks
+  - Download the updated `mobs.json`, copy the full file JSON, or copy the current mob JSON
 - Mission Lab:
   - Import a missions zip or a selected missions folder
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
@@ -48,6 +54,23 @@ Open **Settings** to view the currently loaded URLs and force a reload.
    - graph cycles.
 
 Mission Lab is intentionally isolated from the manifest/data URL loader used by the rest of the console. Imports are read-only and held in a separate in-memory Mission Lab workspace until cleared.
+
+## Mob Lab Usage
+1. Open `/mob-lab` from the top navigation.
+2. Either:
+   - import an existing `mobs.json` file, or
+   - start a blank workspace for new mob creation.
+3. Use the left browser to search, sort, filter, and select mobs.
+4. Edit the selected mob’s:
+   - ID, display name, level, faction, AI type, scene, and sprite
+   - abilities, services, comms directory, loot tables, hail fields, flags, and stat block
+   - scan JSON and extra JSON for runtime-only fields not covered by the dedicated inputs
+5. Use the export actions to:
+   - download the updated `mobs.json`,
+   - copy the whole updated file JSON, or
+   - copy just the current mob JSON.
+
+Mob Lab is isolated from the console’s existing read-only mob parsing and from the separate mod/mission authoring tools.
 
 ## Config
 See `config.json` for level bands, thresholds, rarity labels, and weights.
