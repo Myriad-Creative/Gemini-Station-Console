@@ -96,7 +96,14 @@ function SummaryCard({ label, value }: { label: string; value: string | number }
   );
 }
 
-function MultiSelectField({
+function summarizeSelectedValues(label: string, selected: string[]) {
+  if (!selected.length) return `All ${label.toLowerCase()}`;
+  if (selected.length === 1) return selected[0];
+  if (selected.length === 2) return `${selected[0]}, ${selected[1]}`;
+  return `${selected.length} selected`;
+}
+
+function DropdownMultiSelectField({
   label,
   values,
   selected,
@@ -110,18 +117,54 @@ function MultiSelectField({
   return (
     <div>
       <div className="label">{label}</div>
-      <select
-        className="select mt-1 min-h-[7.5rem] w-full"
-        multiple
-        value={selected}
-        onChange={(event) => onChange(Array.from(event.target.selectedOptions).map((option) => option.value))}
-      >
-        {values.map((value) => (
-          <option key={`${label}-${value}`} value={value}>
-            {value}
-          </option>
-        ))}
-      </select>
+      <details className="group mt-1">
+        <summary className="select flex min-h-11 list-none cursor-pointer items-center justify-between gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+          <span className={`truncate ${selected.length ? "text-white" : "text-white/50"}`}>{summarizeSelectedValues(label, selected)}</span>
+          <span className="text-xs text-white/45 transition group-open:rotate-180">v</span>
+        </summary>
+        <div className="mt-2 rounded-xl border border-white/10 bg-[#091321] p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-xs uppercase tracking-[0.24em] text-white/35">{values.length} options</div>
+            <button
+              type="button"
+              className="text-xs uppercase tracking-[0.2em] text-cyan-100/80 hover:text-cyan-50 disabled:text-white/30"
+              onClick={(event) => {
+                event.preventDefault();
+                onChange([]);
+              }}
+              disabled={!selected.length}
+            >
+              Clear
+            </button>
+          </div>
+
+          {values.length ? (
+            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+              {values.map((value) => {
+                const checked = selected.includes(value);
+                return (
+                  <label
+                    key={`${label}-${value}`}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-white/80 hover:border-cyan-300/20 hover:bg-cyan-300/[0.04]"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-white/15 bg-[#07111d] text-cyan-300 focus:ring-cyan-300/25"
+                      checked={checked}
+                      onChange={() =>
+                        onChange(checked ? selected.filter((entry) => entry !== value) : [...selected, value])
+                      }
+                    />
+                    <span className="min-w-0 break-words">{value}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-white/45">No options available.</div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -396,6 +439,166 @@ export default function MissionLabApp() {
 
   const detailMission = rows.find((mission) => mission.key === detailMissionKey) ?? null;
   const missionByKey = Object.fromEntries(rows.map((mission) => [mission.key, mission])) as Record<string, NormalizedMission>;
+  const workspaceContent =
+    activeTab === "browser" ? (
+      summary ? (
+        <div className="card overflow-x-auto">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="text-sm text-white/60">
+              Showing <span className="text-white">{rows.length}</span> of <span className="text-white">{summary.totalMissions}</span> imported
+              missions.
+            </div>
+            {isLoading ? <div className="text-sm text-white/45">Refreshing…</div> : null}
+          </div>
+
+          <table className="table min-w-full">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>ID</th>
+                <th>Level</th>
+                <th>Folder</th>
+                <th>Faction</th>
+                <th>Mode</th>
+                <th>Objectives</th>
+                <th>Prereqs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? (
+                rows.map((mission) => (
+                  <tr
+                    key={mission.key}
+                    className={`cursor-pointer ${filters.selectedMissionKey === mission.key ? "bg-cyan-300/5" : ""}`}
+                    onClick={() => {
+                      selectMission(mission.key, true);
+                    }}
+                  >
+                    <td className="font-medium">{mission.title}</td>
+                    <td className="text-white/65">{mission.id}</td>
+                    <td>{mission.level ?? "?"}</td>
+                    <td>{mission.folderName}</td>
+                    <td>{mission.faction ?? "None"}</td>
+                    <td>{humanizeToken(mission.primaryMode)}</td>
+                    <td>{mission.objectiveCount}</td>
+                    <td>{mission.prerequisiteCount}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-white/50">
+                    No missions match the current filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+      )
+    ) : activeTab === "map" ? (
+      summary ? (
+        <div className="space-y-4">
+          <div className="card">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="text-xl font-semibold text-white">Mission Map</div>
+                <div className="mt-1 text-sm text-white/55">Edges follow explicit mission prerequisites only. Disconnected missions stay visible.</div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={`rounded-full px-4 py-2 text-sm ${mapMode === "graph" ? "bg-accent text-black" : "border border-white/10 text-white/75 hover:bg-white/5"}`}
+                  onClick={() => setMapMode("graph")}
+                >
+                  Full Graph
+                </button>
+                <button
+                  className={`rounded-full px-4 py-2 text-sm ${mapMode === "chain" ? "bg-accent text-black" : "border border-white/10 text-white/75 hover:bg-white/5"}`}
+                  onClick={() => setMapMode("chain")}
+                >
+                  Focused Chain
+                </button>
+                <button
+                  className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
+                  onClick={() => setCenterSignal((value) => value + 1)}
+                  disabled={!filters.selectedMissionKey}
+                >
+                  Center on Selected
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
+              <div>
+                <div className="label">Focused Mission</div>
+                <select
+                  className="select mt-1 w-full"
+                  value={filters.focusedMissionKey ?? ""}
+                  onChange={(event) => selectMission(event.target.value)}
+                >
+                  {rows.map((mission) => (
+                    <option key={mission.key} value={mission.key}>
+                      {mission.title} ({mission.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-sm text-white/55 lg:text-right">
+                <div>Visible missions: {graphNodes.length}</div>
+                <div>Visible edges: {graphEdges.length}</div>
+              </div>
+            </div>
+          </div>
+
+          {mapMode === "graph" ? (
+            <MissionFlow
+              nodes={graphNodes}
+              edges={graphEdges}
+              selectedMissionKey={filters.selectedMissionKey}
+              focusNodeIds={graphFocus.nodeIds}
+              focusEdgeIds={graphFocus.edgeIds}
+              centerSignal={centerSignal}
+              onSelect={(missionKey) => {
+                selectMission(missionKey, true);
+              }}
+            />
+          ) : graphFocus.orderedNodeIds.length ? (
+            <div className="mx-auto flex max-w-2xl flex-col items-center gap-0">
+              {graphFocus.orderedNodeIds.map((missionKey, index) => {
+                const mission = missionByKey[missionKey];
+                if (!mission) return null;
+
+                return (
+                  <div key={mission.key} className="flex w-full flex-col items-center">
+                    <div className="w-full">
+                      <MissionChainCard
+                        mission={mission}
+                        selected={filters.selectedMissionKey === mission.key}
+                        onClick={() => {
+                          selectMission(mission.key, true);
+                        }}
+                      />
+                    </div>
+                    {index < graphFocus.orderedNodeIds.length - 1 ? <div className="h-14 w-px bg-cyan-300/30" /> : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState title="No focused chain available" body="Select a mission that exists in the current filtered set." />
+          )}
+        </div>
+      ) : (
+        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+      )
+    ) : activeTab === "diagnostics" ? (
+      summary ? (
+        <MissionDiagnosticsPanel summary={summary} diagnostics={diagnostics} />
+      ) : (
+        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+      )
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -532,317 +735,176 @@ export default function MissionLabApp() {
         </div>
       ) : null}
 
-      {(activeTab === "browser" || activeTab === "map") && summary ? (
-        <div className="card space-y-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-xl font-semibold text-white">Shared Filters</div>
-              <div className="mt-1 text-sm text-white/55">Browser and Map use the same filtered mission set and selection state.</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn" onClick={() => exportMissionsToCsv(rows)} disabled={!rows.length}>
-                Export CSV
-              </button>
-              <button
-                className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-              >
-                Reset Filters
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-4">
-            <div className="xl:col-span-2">
-              <div className="label">Search</div>
-              <input
-                className="input mt-1"
-                value={filters.search}
-                placeholder="Search title, id, folder, tag, arc, or faction"
-                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-              />
-            </div>
-            <div>
-              <div className="label">Level Min</div>
-              <input
-                className="input mt-1"
-                value={filters.levelMin}
-                placeholder={String(options?.minLevel ?? "")}
-                onChange={(event) => setFilters((current) => ({ ...current, levelMin: event.target.value }))}
-              />
-            </div>
-            <div>
-              <div className="label">Level Max</div>
-              <input
-                className="input mt-1"
-                value={filters.levelMax}
-                placeholder={String(options?.maxLevel ?? "")}
-                onChange={(event) => setFilters((current) => ({ ...current, levelMax: event.target.value }))}
-              />
-            </div>
-
-            <MultiSelectField label="Folder" values={options?.folders ?? []} selected={filters.folders} onChange={(next) => updateArrayFilter("folders", next)} />
-            <MultiSelectField
-              label="Derived Category"
-              values={options?.categories ?? []}
-              selected={filters.categories}
-              onChange={(next) => updateArrayFilter("categories", next)}
-            />
-            <MultiSelectField label="Arc" values={options?.arcs ?? []} selected={filters.arcs} onChange={(next) => updateArrayFilter("arcs", next)} />
-            <MultiSelectField label="Tag" values={options?.tags ?? []} selected={filters.tags} onChange={(next) => updateArrayFilter("tags", next)} />
-            <MultiSelectField
-              label="Faction"
-              values={options?.factions ?? []}
-              selected={filters.factions}
-              onChange={(next) => updateArrayFilter("factions", next)}
-            />
-            <MultiSelectField
-              label="Class"
-              values={options?.classes ?? []}
-              selected={filters.classes}
-              onChange={(next) => updateArrayFilter("classes", next)}
-            />
-            <MultiSelectField label="Mode" values={options?.modes ?? []} selected={filters.modes} onChange={(next) => updateArrayFilter("modes", next)} />
-            <MultiSelectField
-              label="Objective Type"
-              values={options?.objectiveTypes ?? []}
-              selected={filters.objectiveTypes}
-              onChange={(next) => updateArrayFilter("objectiveTypes", next)}
-            />
-
-            <div>
-              <div className="label">Has Prerequisites</div>
-              <select
-                className="select mt-1 w-full"
-                value={filters.hasPrerequisites}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    hasPrerequisites: event.target.value as MissionFilterState["hasPrerequisites"],
-                  }))
-                }
-              >
-                <option value="all">All</option>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-            </div>
-            <div>
-              <div className="label">Repeatable</div>
-              <select
-                className="select mt-1 w-full"
-                value={filters.repeatable}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    repeatable: event.target.value as MissionFilterState["repeatable"],
-                  }))
-                }
-              >
-                <option value="all">All</option>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-            </div>
-            <div>
-              <div className="label">Sort By</div>
-              <select
-                className="select mt-1 w-full"
-                value={filters.sortBy}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    sortBy: event.target.value as MissionSortKey,
-                  }))
-                }
-              >
-                <option value="title">Title</option>
-                <option value="id">ID</option>
-                <option value="level">Level</option>
-                <option value="folder">Folder</option>
-                <option value="faction">Faction</option>
-                <option value="mode">Type / Mode</option>
-                <option value="objectiveCount">Objective Count</option>
-                <option value="prerequisiteCount">Prerequisite Count</option>
-              </select>
-            </div>
-            <div>
-              <div className="label">Direction</div>
-              <select
-                className="select mt-1 w-full"
-                value={filters.sortDirection}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    sortDirection: event.target.value === "desc" ? "desc" : "asc",
-                  }))
-                }
-              >
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {activeTab === "browser" ? (
+      {activeTab !== "import" ? (
         summary ? (
-          <div className="card overflow-x-auto">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="text-sm text-white/60">
-                Showing <span className="text-white">{rows.length}</span> of <span className="text-white">{summary.totalMissions}</span> imported
-                missions.
-              </div>
-              {isLoading ? <div className="text-sm text-white/45">Refreshing…</div> : null}
-            </div>
-
-            <table className="table min-w-full">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>ID</th>
-                  <th>Level</th>
-                  <th>Folder</th>
-                  <th>Faction</th>
-                  <th>Mode</th>
-                  <th>Objectives</th>
-                  <th>Prereqs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length ? (
-                  rows.map((mission) => (
-                    <tr
-                      key={mission.key}
-                      className={`cursor-pointer ${filters.selectedMissionKey === mission.key ? "bg-cyan-300/5" : ""}`}
-                      onClick={() => {
-                        selectMission(mission.key, true);
-                      }}
-                    >
-                      <td className="font-medium">{mission.title}</td>
-                      <td className="text-white/65">{mission.id}</td>
-                      <td>{mission.level ?? "?"}</td>
-                      <td>{mission.folderName}</td>
-                      <td>{mission.faction ?? "None"}</td>
-                      <td>{humanizeToken(mission.primaryMode)}</td>
-                      <td>{mission.objectiveCount}</td>
-                      <td>{mission.prerequisiteCount}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8} className="py-10 text-center text-white/50">
-                      No missions match the current filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
-        )
-      ) : null}
-
-      {activeTab === "map" ? (
-        summary ? (
-          <div className="space-y-4">
-            <div className="card">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <div className="text-xl font-semibold text-white">Mission Map</div>
-                  <div className="mt-1 text-sm text-white/55">Edges follow explicit mission prerequisites only. Disconnected missions stay visible.</div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className={`rounded-full px-4 py-2 text-sm ${mapMode === "graph" ? "bg-accent text-black" : "border border-white/10 text-white/75 hover:bg-white/5"}`}
-                    onClick={() => setMapMode("graph")}
-                  >
-                    Full Graph
-                  </button>
-                  <button
-                    className={`rounded-full px-4 py-2 text-sm ${mapMode === "chain" ? "bg-accent text-black" : "border border-white/10 text-white/75 hover:bg-white/5"}`}
-                    onClick={() => setMapMode("chain")}
-                  >
-                    Focused Chain
-                  </button>
-                  <button
-                    className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-                    onClick={() => setCenterSignal((value) => value + 1)}
-                    disabled={!filters.selectedMissionKey}
-                  >
-                    Center on Selected
-                  </button>
-                </div>
+          <div className="grid gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
+            <aside className="card h-fit space-y-4 xl:sticky xl:top-24">
+              <div className="space-y-1">
+                <div className="text-xl font-semibold text-white">Shared Filters</div>
+                <div className="text-sm text-white/55">Browser, Map, and Diagnostics stay aligned to the same mission selection and filter set.</div>
               </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                <button className="btn w-full" onClick={() => exportMissionsToCsv(rows)} disabled={!rows.length}>
+                  Export CSV
+                </button>
+                <button
+                  className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                >
+                  Reset Filters
+                </button>
+              </div>
+
+              <div className="space-y-4">
                 <div>
-                  <div className="label">Focused Mission</div>
+                  <div className="label">Search</div>
+                  <input
+                    className="input mt-1"
+                    value={filters.search}
+                    placeholder="Search title, id, folder, tag, arc, or faction"
+                    onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <div className="label">Level Min</div>
+                  <input
+                    className="input mt-1"
+                    value={filters.levelMin}
+                    placeholder={String(options?.minLevel ?? "")}
+                    onChange={(event) => setFilters((current) => ({ ...current, levelMin: event.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <div className="label">Level Max</div>
+                  <input
+                    className="input mt-1"
+                    value={filters.levelMax}
+                    placeholder={String(options?.maxLevel ?? "")}
+                    onChange={(event) => setFilters((current) => ({ ...current, levelMax: event.target.value }))}
+                  />
+                </div>
+
+                <DropdownMultiSelectField
+                  label="Folder"
+                  values={options?.folders ?? []}
+                  selected={filters.folders}
+                  onChange={(next) => updateArrayFilter("folders", next)}
+                />
+                <DropdownMultiSelectField
+                  label="Derived Category"
+                  values={options?.categories ?? []}
+                  selected={filters.categories}
+                  onChange={(next) => updateArrayFilter("categories", next)}
+                />
+                <DropdownMultiSelectField label="Arc" values={options?.arcs ?? []} selected={filters.arcs} onChange={(next) => updateArrayFilter("arcs", next)} />
+                <DropdownMultiSelectField label="Tag" values={options?.tags ?? []} selected={filters.tags} onChange={(next) => updateArrayFilter("tags", next)} />
+                <DropdownMultiSelectField
+                  label="Faction"
+                  values={options?.factions ?? []}
+                  selected={filters.factions}
+                  onChange={(next) => updateArrayFilter("factions", next)}
+                />
+                <DropdownMultiSelectField
+                  label="Class"
+                  values={options?.classes ?? []}
+                  selected={filters.classes}
+                  onChange={(next) => updateArrayFilter("classes", next)}
+                />
+                <DropdownMultiSelectField label="Mode" values={options?.modes ?? []} selected={filters.modes} onChange={(next) => updateArrayFilter("modes", next)} />
+                <DropdownMultiSelectField
+                  label="Objective Type"
+                  values={options?.objectiveTypes ?? []}
+                  selected={filters.objectiveTypes}
+                  onChange={(next) => updateArrayFilter("objectiveTypes", next)}
+                />
+
+                <div>
+                  <div className="label">Has Prerequisites</div>
                   <select
                     className="select mt-1 w-full"
-                    value={filters.focusedMissionKey ?? ""}
-                    onChange={(event) => selectMission(event.target.value)}
+                    value={filters.hasPrerequisites}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        hasPrerequisites: event.target.value as MissionFilterState["hasPrerequisites"],
+                      }))
+                    }
                   >
-                    {rows.map((mission) => (
-                      <option key={mission.key} value={mission.key}>
-                        {mission.title} ({mission.id})
-                      </option>
-                    ))}
+                    <option value="all">All</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
                   </select>
                 </div>
-                <div className="text-sm text-white/55 lg:text-right">
-                  <div>Visible missions: {graphNodes.length}</div>
-                  <div>Visible edges: {graphEdges.length}</div>
+
+                <div>
+                  <div className="label">Repeatable</div>
+                  <select
+                    className="select mt-1 w-full"
+                    value={filters.repeatable}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        repeatable: event.target.value as MissionFilterState["repeatable"],
+                      }))
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="label">Sort By</div>
+                  <select
+                    className="select mt-1 w-full"
+                    value={filters.sortBy}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        sortBy: event.target.value as MissionSortKey,
+                      }))
+                    }
+                  >
+                    <option value="title">Title</option>
+                    <option value="id">ID</option>
+                    <option value="level">Level</option>
+                    <option value="folder">Folder</option>
+                    <option value="faction">Faction</option>
+                    <option value="mode">Type / Mode</option>
+                    <option value="objectiveCount">Objective Count</option>
+                    <option value="prerequisiteCount">Prerequisite Count</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="label">Direction</div>
+                  <select
+                    className="select mt-1 w-full"
+                    value={filters.sortDirection}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        sortDirection: event.target.value === "desc" ? "desc" : "asc",
+                      }))
+                    }
+                  >
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
+                  </select>
                 </div>
               </div>
-            </div>
+            </aside>
 
-            {mapMode === "graph" ? (
-              <MissionFlow
-                nodes={graphNodes}
-                edges={graphEdges}
-                selectedMissionKey={filters.selectedMissionKey}
-                focusNodeIds={graphFocus.nodeIds}
-                focusEdgeIds={graphFocus.edgeIds}
-                centerSignal={centerSignal}
-                onSelect={(missionKey) => {
-                  selectMission(missionKey, true);
-                }}
-              />
-            ) : graphFocus.orderedNodeIds.length ? (
-              <div className="mx-auto flex max-w-2xl flex-col items-center gap-0">
-                {graphFocus.orderedNodeIds.map((missionKey, index) => {
-                  const mission = missionByKey[missionKey];
-                  if (!mission) return null;
-
-                  return (
-                    <div key={mission.key} className="flex w-full flex-col items-center">
-                      <div className="w-full">
-                        <MissionChainCard
-                          mission={mission}
-                          selected={filters.selectedMissionKey === mission.key}
-                          onClick={() => {
-                            selectMission(mission.key, true);
-                          }}
-                        />
-                      </div>
-                      {index < graphFocus.orderedNodeIds.length - 1 ? <div className="h-14 w-px bg-cyan-300/30" /> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <EmptyState title="No focused chain available" body="Select a mission that exists in the current filtered set." />
-            )}
+            <div className="min-w-0">{workspaceContent}</div>
           </div>
         ) : (
-          <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+          workspaceContent
         )
       ) : null}
-
-      {activeTab === "diagnostics" ? <MissionDiagnosticsPanel summary={summary} diagnostics={diagnostics} /> : null}
 
       <MissionDetailPanel
         mission={detailMission}
