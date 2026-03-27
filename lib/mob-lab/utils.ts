@@ -13,9 +13,11 @@ import type {
   MobLabSummary,
   MobLabWorkspace,
   MobValidationIssue,
+  ScanTierDraft,
 } from "@lib/mob-lab/types";
 
 type JsonObject = Record<string, unknown>;
+const SCAN_RESERVED_KEYS = ["Faction", "Class", "Notes", "tiers"] as const;
 
 let draftCounter = 0;
 
@@ -77,6 +79,10 @@ function cleanObject(source: JsonObject) {
   return next;
 }
 
+function formatJsonBlock(source: JsonObject) {
+  return Object.keys(source).length ? JSON.stringify(source, null, 2) : "";
+}
+
 function parseScalar(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -122,9 +128,80 @@ function orderedStatKeys(stats: Record<string, string>) {
   return [...BUILT_IN_MOB_STAT_KEYS, ...customKeys];
 }
 
+function normalizeScanTierText(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  return JSON.stringify(value);
+}
+
+function normalizeScanDraft(value: unknown) {
+  const scanSource = asObject(value);
+  const rawTiers = scanSource.tiers;
+  const tiersSource = rawTiers && typeof rawTiers === "object" && !Array.isArray(rawTiers) ? (rawTiers as JsonObject) : null;
+  const scanExtra = stripKeys(scanSource, ["Faction", "Class", "Notes"]);
+  if (tiersSource) {
+    delete scanExtra.tiers;
+  }
+
+  return {
+    scan_faction: stringOrEmpty(scanSource.Faction).trim(),
+    scan_class: stringOrEmpty(scanSource.Class).trim(),
+    scan_notes: stringOrEmpty(scanSource.Notes).trim(),
+    scan_tiers: tiersSource
+      ? Object.entries(tiersSource).map(([threshold, tierValue]) => ({
+          key: createDraftKey(),
+          threshold: String(threshold).trim(),
+          text: normalizeScanTierText(tierValue),
+        }))
+      : [],
+    scan_extra_json: formatJsonBlock(scanExtra),
+  };
+}
+
+function parseScanTierValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const startsLikeJson = (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+  if (!startsLikeJson) return trimmed;
+
+  try {
+    return JSON5.parse(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+function buildScanObject(mob: MobDraft) {
+  const scanExtra = parseObjectTextarea(mob.scan_extra_json, "Scan Extra JSON");
+  const tiers = mob.scan_tiers.reduce<JsonObject>((accumulator, tier) => {
+    const threshold = tier.threshold.trim();
+    const text = tier.text.trim();
+    if (!threshold && !text) return accumulator;
+    if (!threshold) return accumulator;
+    accumulator[threshold] = parseScanTierValue(text);
+    return accumulator;
+  }, {});
+
+  const known = cleanObject({
+    Faction: mob.scan_faction.trim(),
+    Class: mob.scan_class.trim(),
+    Notes: mob.scan_notes.trim(),
+    tiers,
+  });
+
+  const next = { ...known } as JsonObject;
+  for (const [key, value] of Object.entries(scanExtra)) {
+    if (SCAN_RESERVED_KEYS.includes(key as (typeof SCAN_RESERVED_KEYS)[number])) continue;
+    next[key] = value;
+  }
+
+  return Object.keys(next).length ? next : undefined;
+}
+
 function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft {
   const statsSource = asObject(source.stats);
   const stats: Record<string, string> = {};
+  const scanDraft = normalizeScanDraft(source.scan);
 
   for (const key of Object.keys(statsSource)) {
     stats[key] = formatDraftNumber(statsSource[key]);
@@ -164,11 +241,13 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     poi_require_discovery: booleanFromUnknown(source.poi_require_discovery),
     poi_show: booleanFromUnknown(source.poi_show),
     repair_cost: formatDraftNumber(source.repair_cost),
-    scan_json: source.scan ? JSON.stringify(source.scan, null, 2) : "",
+    scan_faction: scanDraft.scan_faction,
+    scan_class: scanDraft.scan_class,
+    scan_notes: scanDraft.scan_notes,
+    scan_tiers: scanDraft.scan_tiers,
+    scan_extra_json: scanDraft.scan_extra_json,
     services: stringListFromUnknown(source.services),
-    extra_json: JSON.stringify(stripKeys(source, MOB_KNOWN_TOP_LEVEL_FIELDS), null, 2) === "{}"
-      ? ""
-      : JSON.stringify(stripKeys(source, MOB_KNOWN_TOP_LEVEL_FIELDS), null, 2),
+    extra_json: formatJsonBlock(stripKeys(source, MOB_KNOWN_TOP_LEVEL_FIELDS)),
   };
 }
 
@@ -239,9 +318,21 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     poi_require_discovery: false,
     poi_show: false,
     repair_cost: "",
-    scan_json: "",
+    scan_faction: "",
+    scan_class: "",
+    scan_notes: "",
+    scan_tiers: [],
+    scan_extra_json: "",
     services: [],
     extra_json: "",
+  };
+}
+
+export function createBlankScanTierDraft(): ScanTierDraft {
+  return {
+    key: createDraftKey(),
+    threshold: "",
+    text: "",
   };
 }
 
@@ -263,6 +354,11 @@ export function cloneMobDraft(source: MobDraft, existingIds: string[]) {
     key: createDraftKey(),
     id: nextGeneratedMobId(existingIds, source.id || "mob_000"),
     display_name: source.display_name ? `${source.display_name} Copy` : "",
+    abilities: [...source.abilities],
+    stats: { ...source.stats },
+    comms_directory: [...source.comms_directory],
+    scan_tiers: source.scan_tiers.map((tier) => ({ ...tier, key: createDraftKey() })),
+    services: [...source.services],
   } satisfies MobDraft;
 }
 
@@ -340,14 +436,48 @@ export function validateMobDrafts(mobs: MobDraft[]): MobValidationIssue[] {
       }
     }
 
-    if (mob.scan_json.trim()) {
+    for (const [index, tier] of mob.scan_tiers.entries()) {
+      const threshold = tier.threshold.trim();
+      const text = tier.text.trim();
+      if (!threshold && !text) continue;
+      if (!threshold && text) {
+        issues.push({
+          level: "error",
+          mobKey: mob.key,
+          field: "scan_tiers",
+          message: `Scan tier ${index + 1} needs a numeric threshold.`,
+        });
+        continue;
+      }
+      if (Number.isNaN(Number(threshold))) {
+        issues.push({
+          level: "error",
+          mobKey: mob.key,
+          field: "scan_tiers",
+          message: `Scan tier ${index + 1} threshold must be numeric.`,
+        });
+      }
+    }
+
+    if (mob.scan_extra_json.trim()) {
       try {
-        parseObjectTextarea(mob.scan_json, "Scan JSON");
+        const scanExtra = parseObjectTextarea(mob.scan_extra_json, "Scan Extra JSON");
+        const reservedKeys = Object.keys(scanExtra).filter((key) =>
+          SCAN_RESERVED_KEYS.includes(key as (typeof SCAN_RESERVED_KEYS)[number]),
+        );
+        if (reservedKeys.length) {
+          issues.push({
+            level: "warning",
+            mobKey: mob.key,
+            field: "scan_extra_json",
+            message: `Scan Extra JSON includes reserved keys that will be ignored: ${reservedKeys.join(", ")}.`,
+          });
+        }
       } catch (error) {
         issues.push({
           level: "error",
           mobKey: mob.key,
-          field: "scan_json",
+          field: "scan_extra_json",
           message: error instanceof Error ? error.message : String(error),
         });
       }
@@ -421,7 +551,7 @@ export function summarizeMobWorkspace(workspace: MobLabWorkspace | null, issues:
 
 export function serializeMobDraft(mob: MobDraft) {
   const extra = parseObjectTextarea(mob.extra_json, "Extra JSON");
-  const scan = mob.scan_json.trim() ? parseObjectTextarea(mob.scan_json, "Scan JSON") : undefined;
+  const scan = buildScanObject(mob);
   const stats = orderedStatKeys(mob.stats).reduce<Record<string, number>>((accumulator, key) => {
     const value = mob.stats[key]?.trim();
     if (!value) return accumulator;
@@ -475,7 +605,7 @@ export function serializeMobDraft(mob: MobDraft) {
 
   const next = { ...known } as JsonObject;
   for (const [key, value] of Object.entries(extra)) {
-    if (key in next) continue;
+    if (MOB_KNOWN_TOP_LEVEL_FIELDS.includes(key as (typeof MOB_KNOWN_TOP_LEVEL_FIELDS)[number])) continue;
     next[key] = value;
   }
 

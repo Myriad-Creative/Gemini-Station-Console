@@ -4,6 +4,12 @@ export type MobLabParseStrategy = "strict" | "json5";
 export type MobSortKey = "display_name" | "id" | "level" | "faction" | "ai_type";
 export type ValidationLevel = "error" | "warning";
 
+export interface ScanTierDraft {
+  key: string;
+  threshold: string;
+  text: string;
+}
+
 export interface MobDraft {
   key: string;
   sourceIndex: number;
@@ -38,7 +44,11 @@ export interface MobDraft {
   poi_require_discovery: boolean;
   poi_show: boolean;
   repair_cost: string;
-  scan_json: string;
+  scan_faction: string;
+  scan_class: string;
+  scan_notes: string;
+  scan_tiers: ScanTierDraft[];
+  scan_extra_json: string;
   services: string[];
   extra_json: string;
 }

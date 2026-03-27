@@ -6,6 +6,7 @@ import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "
 import {
   cloneMobDraft,
   createBlankMobDraft,
+  createBlankScanTierDraft,
   createBlankMobWorkspace,
   deleteMobDraftAt,
   duplicateMobIdMap,
@@ -485,7 +486,7 @@ export default function MobLabApp() {
             <div className="space-y-3 text-sm text-white/70">
               <div>Browse mobs by name, ID, level, faction, and AI type.</div>
               <div>Clone existing mobs or create blank ones for new enemy/NPC work.</div>
-              <div>Edit core fields, hail/comms data, loot tables, stats, services, scan data, and extra runtime JSON.</div>
+              <div>Edit core fields, hail/comms data, loot tables, stats, services, scan fields, and extra runtime JSON.</div>
               <div>Get live duplicate-ID alerts and validation for invalid JSON blocks.</div>
               <div>Download the full updated `mobs.json`, copy the whole file JSON, or copy just the current mob JSON.</div>
             </div>
@@ -1046,13 +1047,126 @@ export default function MobLabApp() {
                   </div>
                 </Section>
 
-                <Section title="Scan Data" description="Raw JSON5 object used for scan information, tiers, and discovery details.">
-                  <textarea
-                    className="input min-h-48 font-mono text-sm"
-                    value={selectedMob.scan_json}
-                    placeholder='{\n  "Faction": "Terran",\n  "Class": "Capital Ship"\n}'
-                    onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_json: event.target.value }))}
-                  />
+                <Section title="Scan Data" description="Edit the structured scan fields directly, including as many threshold tiers as you need.">
+                  <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <div className="label">Scan Faction</div>
+                      <input
+                        className="input mt-1"
+                        value={selectedMob.scan_faction}
+                        placeholder="Gem"
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_faction: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <div className="label">Scan Class</div>
+                      <input
+                        className="input mt-1"
+                        value={selectedMob.scan_class}
+                        placeholder="Support Craft"
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_class: event.target.value }))}
+                      />
+                    </div>
+                    <div className="lg:col-span-2 xl:col-span-3">
+                      <div className="label">Scan Notes</div>
+                      <textarea
+                        className="input mt-1 min-h-28"
+                        value={selectedMob.scan_notes}
+                        placeholder="Support ships are the resupplying arm of every faction."
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_notes: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 border-t border-white/10 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-white">Scan Tiers</div>
+                        <div className="text-xs text-white/50">
+                          Each tier uses a numeric threshold and the text revealed at that scan level.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                        onClick={() =>
+                          updateSelectedMob((current) => ({
+                            ...current,
+                            scan_tiers: [...current.scan_tiers, createBlankScanTierDraft()],
+                          }))
+                        }
+                      >
+                        Add Tier
+                      </button>
+                    </div>
+
+                    {selectedMob.scan_tiers.length ? (
+                      <div className="space-y-2">
+                        {selectedMob.scan_tiers.map((tier) => (
+                          <div key={tier.key} className="grid gap-2 md:grid-cols-[120px_minmax(0,1fr)_auto]">
+                            <input
+                              type="number"
+                              className="input"
+                              value={tier.threshold}
+                              placeholder="5"
+                              onChange={(event) =>
+                                updateSelectedMob((current) => ({
+                                  ...current,
+                                  scan_tiers: current.scan_tiers.map((entry) =>
+                                    entry.key === tier.key ? { ...entry, threshold: event.target.value } : entry,
+                                  ),
+                                }))
+                              }
+                            />
+                            <input
+                              className="input"
+                              value={tier.text}
+                              placeholder="Docking chatter detected."
+                              onChange={(event) =>
+                                updateSelectedMob((current) => ({
+                                  ...current,
+                                  scan_tiers: current.scan_tiers.map((entry) =>
+                                    entry.key === tier.key ? { ...entry, text: event.target.value } : entry,
+                                  ),
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="rounded border border-red-400/20 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10"
+                              onClick={() =>
+                                updateSelectedMob((current) => ({
+                                  ...current,
+                                  scan_tiers: current.scan_tiers.filter((entry) => entry.key !== tier.key),
+                                }))
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                        No scan tiers yet. Add one to define reveal thresholds.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 border-t border-white/10 pt-4">
+                    <div>
+                      <div className="text-sm font-medium text-white">Scan Extra JSON</div>
+                      <div className="mt-1 text-xs text-white/50">
+                        Unsupported scan keys are preserved here. Reserved keys like `Faction`, `Class`, `Notes`, and `tiers` should stay in the fields above.
+                      </div>
+                    </div>
+                    <textarea
+                      className="input min-h-36 font-mono text-sm"
+                      value={selectedMob.scan_extra_json}
+                      placeholder='{\n  "Discovery": "Optional unsupported scan fields stay here."\n}'
+                      onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_extra_json: event.target.value }))}
+                    />
+                  </div>
                 </Section>
 
                 <Section title="Extra JSON" description="Unknown runtime fields stay here and are merged back into the mob at export time.">
