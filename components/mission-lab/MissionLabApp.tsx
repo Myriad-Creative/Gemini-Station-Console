@@ -768,23 +768,24 @@ export default function MissionLabApp() {
                 </div>
 
                 <div>
-                  <div className="label">Level Min</div>
-                  <input
-                    className="input mt-1"
-                    value={filters.levelMin}
-                    placeholder={String(options?.minLevel ?? "")}
-                    onChange={(event) => setFilters((current) => ({ ...current, levelMin: event.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <div className="label">Level Max</div>
-                  <input
-                    className="input mt-1"
-                    value={filters.levelMax}
-                    placeholder={String(options?.maxLevel ?? "")}
-                    onChange={(event) => setFilters((current) => ({ ...current, levelMax: event.target.value }))}
-                  />
+                  <div className="label">Level</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      className="input min-w-0 flex-1"
+                      value={filters.levelMin}
+                      placeholder={String(options?.minLevel ?? "")}
+                      aria-label="Level minimum"
+                      onChange={(event) => setFilters((current) => ({ ...current, levelMin: event.target.value }))}
+                    />
+                    <span className="text-sm text-white/45">to</span>
+                    <input
+                      className="input min-w-0 flex-1"
+                      value={filters.levelMax}
+                      placeholder={String(options?.maxLevel ?? "")}
+                      aria-label="Level maximum"
+                      onChange={(event) => setFilters((current) => ({ ...current, levelMax: event.target.value }))}
+                    />
+                  </div>
                 </div>
 
                 <DropdownMultiSelectField
