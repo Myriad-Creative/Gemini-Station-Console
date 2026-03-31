@@ -118,10 +118,20 @@ function Section({
   );
 }
 
-function CatalogThumb({ icon, id, name }: { icon?: string; id: string; name: string }) {
+function CatalogThumb({
+  icon,
+  id,
+  name,
+  className = "h-20 w-20",
+}: {
+  icon?: string;
+  id: string;
+  name: string;
+  className?: string;
+}) {
   const src = buildIconSrc(icon, id, name);
   return (
-    <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+    <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b] ${className}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={name} className="h-full w-full object-cover" />
@@ -145,23 +155,24 @@ function PreviewCard({
         product.missing ? "border-red-300/20 bg-red-400/10" : "border-white/10 bg-black/25"
       }`}
     >
-      <button
-        type="button"
-        className="absolute right-2 top-2 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] uppercase tracking-[0.24em] text-white/60 hover:bg-white/10 hover:text-white"
-        onClick={onRemove}
-      >
-        Remove
-      </button>
-
-      <div className="flex gap-3 pr-14">
-        <CatalogThumb icon={product.icon} id={product.id} name={product.name} />
-        <div className="min-w-0">
-          <div className="text-xs uppercase tracking-[0.28em] text-cyan-200/55">{product.kind}</div>
-          <div className="mt-1 text-lg font-semibold text-white">{product.name}</div>
-          <div className="mt-1 text-sm text-white/55">{product.metaLabel}</div>
-          <div className="mt-3 rounded bg-white/5 px-2 py-1 text-xs text-white/60">{product.id}</div>
-          {product.missing ? <div className="mt-2 text-xs text-red-100">Missing from the current console catalog.</div> : null}
+      <div className="flex items-start justify-between gap-3">
+        <CatalogThumb icon={product.icon} id={product.id} name={product.name} className="h-24 w-24" />
+        <div className="flex flex-col items-end gap-2">
+          <button
+            type="button"
+            className="rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] uppercase tracking-[0.24em] text-white/60 hover:bg-white/10 hover:text-white"
+            onClick={onRemove}
+          >
+            Remove
+          </button>
+          <div className="max-w-[120px] truncate rounded bg-white/5 px-2 py-1 text-xs text-white/60">{product.id}</div>
         </div>
+      </div>
+
+      <div className="mt-3 min-w-0">
+        <div className="line-clamp-2 text-lg font-semibold text-white">{product.name}</div>
+        <div className="mt-2 text-sm text-white/55">{product.metaLabel}</div>
+        {product.missing ? <div className="mt-2 text-xs text-red-100">Missing from the current console catalog.</div> : null}
       </div>
     </div>
   );
@@ -992,14 +1003,14 @@ export default function MerchantLabApp() {
                       </div>
                     </div>
 
-                    <div className="mt-6 grid gap-6 xl:grid-cols-2">
+                    <div className="mt-6 space-y-8">
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-lg font-semibold text-white">Items</div>
                           <div className="text-sm text-white/45">{selectedItemProducts.length} attached</div>
                         </div>
                         {selectedItemProducts.length ? (
-                          <div className="space-y-3">
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {selectedItemProducts.map((product, index) => (
                               <PreviewCard key={`preview-item-${product.id}-${index}`} product={product} onRemove={() => removeCatalogEntry("items", index)} />
                             ))}
@@ -1017,7 +1028,7 @@ export default function MerchantLabApp() {
                           <div className="text-sm text-white/45">{selectedModProducts.length} attached</div>
                         </div>
                         {selectedModProducts.length ? (
-                          <div className="space-y-3">
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {selectedModProducts.map((product, index) => (
                               <PreviewCard key={`preview-mod-${product.id}-${index}`} product={product} onRemove={() => removeCatalogEntry("mods", index)} />
                             ))}
