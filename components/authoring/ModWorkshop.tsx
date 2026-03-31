@@ -164,6 +164,10 @@ export default function ModWorkshop({
   const selectedMod = mods[clampedSelectedIndex] ?? null;
   const selectedSyncedMod = useMemo(() => (selectedMod ? syncDerivedModFields(selectedMod) : null), [selectedMod]);
   const selectedBudget = useMemo(() => (selectedSyncedMod ? buildModBudgetSummary(selectedSyncedMod) : null), [selectedSyncedMod]);
+  const selectedExportPreview = useMemo(
+    () => (selectedSyncedMod ? JSON.stringify(exportModDraft(selectedSyncedMod), null, 2) : ""),
+    [selectedSyncedMod],
+  );
 
   const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
   const bulkBudget = useMemo(() => calculateBulkCreateBudget(bulkCreate), [bulkCreate]);
@@ -452,6 +456,12 @@ export default function ModWorkshop({
 
     const didCopy = await copyText(JSON.stringify(exportModDraft(selectedSyncedMod), null, 2));
     setStatus(didCopy ? "Copied the selected mod JSON to the clipboard." : "Clipboard copy failed in this browser context.");
+  }
+
+  async function copyExportPreview() {
+    if (!selectedExportPreview) return;
+    const didCopy = await copyText(selectedExportPreview);
+    setStatus(didCopy ? "Copied the export preview JSON to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
   return (
@@ -1195,9 +1205,14 @@ export default function ModWorkshop({
               </div>
 
               <div className="card">
-                <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Export Preview</h2>
+                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copyExportPreview}>
+                    Copy Preview JSON
+                  </button>
+                </div>
                 <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
-                  {JSON.stringify(exportModDraft(selectedSyncedMod), null, 2)}
+                  {selectedExportPreview}
                 </pre>
               </div>
             </>
