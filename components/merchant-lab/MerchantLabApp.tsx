@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { RARITY_COLOR } from "@lib/constants";
 import type { Item, Mod } from "@lib/types";
 import type {
   MerchantCatalogMode,
@@ -149,18 +150,20 @@ function PreviewCard({
   product: PreviewProduct;
   onRemove: () => void;
 }) {
+  const titleColor = product.rarity === 4 ? "#F97316" : product.rarity === 3 ? "#8B5CF6" : RARITY_COLOR[product.rarity ?? 0] || "#FFFFFF";
+
   return (
     <div
       className={`relative overflow-hidden rounded-2xl border p-3 ${
         product.missing ? "border-red-300/20 bg-red-400/10" : "border-white/10 bg-black/25"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <CatalogThumb icon={product.icon} id={product.id} name={product.name} className="h-24 w-24" />
-        <div className="flex flex-col items-end gap-2">
+      <div className="flex items-start gap-3">
+        <CatalogThumb icon={product.icon} id={product.id} name={product.name} className="h-[75px] w-[75px]" />
+        <div className="flex min-w-[75px] flex-col items-start gap-2">
           <button
             type="button"
-            className="rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] uppercase tracking-[0.24em] text-white/60 hover:bg-white/10 hover:text-white"
+            className="rounded border border-white/10 bg-black/30 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-white/60 hover:bg-white/10 hover:text-white"
             onClick={onRemove}
           >
             Remove
@@ -170,7 +173,9 @@ function PreviewCard({
       </div>
 
       <div className="mt-3 min-w-0">
-        <div className="line-clamp-2 text-lg font-semibold text-white">{product.name}</div>
+        <div className="line-clamp-2 text-lg font-semibold" style={{ color: titleColor }}>
+          {product.name}
+        </div>
         <div className="mt-2 text-sm text-white/55">{product.metaLabel}</div>
         {product.missing ? <div className="mt-2 text-xs text-red-100">Missing from the current console catalog.</div> : null}
       </div>
