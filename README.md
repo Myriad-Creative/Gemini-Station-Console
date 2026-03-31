@@ -25,6 +25,13 @@ Open **Settings** to view the currently loaded URLs and force a reload.
   - Clone mobs, create blank mobs, edit runtime fields, and manage stat blocks
   - Live duplicate-ID alerts plus validation for invalid JSON blocks
   - Download the updated `mobs.json`, copy the full file JSON, or copy the current mob JSON
+- Merchant Lab:
+  - Import or paste `merchant_profiles.json`
+  - Create, clone, delete, and validate merchant profiles with unique profile IDs
+  - Browse the live console item/mod catalog with filters for rarity, level range, slot, type, and class restriction
+  - Click catalog entries to attach them to the selected merchant profile
+  - Preview item and mod offerings in a storefront-style layout with remove actions
+  - Download the updated `merchant_profiles.json`, copy the full file JSON, or copy just the selected profile JSON
 - Mission Lab:
   - Import a missions zip or a selected missions folder
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
@@ -71,6 +78,26 @@ Mission Lab is intentionally isolated from the manifest/data URL loader used by 
    - copy just the current mob JSON.
 
 Mob Lab is isolated from the console’s existing read-only mob parsing and from the separate mod/mission authoring tools.
+
+## Merchant Lab Usage
+1. Open `/merchant-lab` from the top navigation.
+2. Either:
+   - import an existing `merchant_profiles.json` file,
+   - paste the JSON contents and load them, or
+   - start a blank workspace.
+3. Use the left sidebar to:
+   - search and switch merchant profiles,
+   - create or clone profiles,
+   - browse the current item/mod catalog,
+   - filter products by rarity, level range, slot, type, and class restriction.
+4. Click an item or mod in the catalog browser to attach it to the selected merchant profile.
+5. Use the storefront preview to review offerings and remove attached products.
+6. Export the workspace by:
+   - downloading `merchant_profiles.json`,
+   - copying the whole updated file JSON, or
+   - copying only the currently selected profile JSON.
+
+Merchant Lab is isolated from the console’s existing read-only item/mod explorers and from the separate mission/mob tools.
 
 ## Config
 See `config.json` for level bands, thresholds, rarity labels, and weights.

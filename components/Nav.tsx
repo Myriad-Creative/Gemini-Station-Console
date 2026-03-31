@@ -8,6 +8,7 @@ const tabs = [
   { href: "/items", label: "Items" },
   { href: "/missions", label: "Missions" },
   { href: "/mob-lab", label: "Mob Lab" },
+  { href: "/merchant-lab", label: "Merchant Lab" },
   { href: "/mission-lab", label: "Mission Lab" },
   { href: "/authoring", label: "Authoring" },
   { href: "/reports/holes", label: "Holes" },
