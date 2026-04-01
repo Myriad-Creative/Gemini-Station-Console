@@ -678,7 +678,7 @@ export default function MerchantLabApp() {
       ) : (
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="space-y-6">
-            <div className="card h-fit space-y-4 xl:sticky xl:top-24">
+            <div className="card h-fit space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xl font-semibold text-white">Profile Library</div>
