@@ -48,6 +48,13 @@ export function getSectionLinks(pathname: string | null | undefined): NavLink[] 
   return [];
 }
 
+export function getSectionAnchorHref(pathname: string | null | undefined) {
+  const section = getActiveSection(pathname);
+  if (section === "missions") return "/missions";
+  if (section === "mods") return "/mods";
+  return null;
+}
+
 export function isMainLinkActive(pathname: string | null | undefined, href: string) {
   if (href === "/") return pathname === "/";
   if (href === "/missions") return getActiveSection(pathname) === "missions";

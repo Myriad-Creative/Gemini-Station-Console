@@ -11,6 +11,8 @@ export default function Nav() {
         <Link
           key={t.href}
           href={t.href}
+          data-main-nav-link="true"
+          data-nav-href={t.href}
           className={`text-sm ${isMainLinkActive(pathname, t.href) ? "text-accent" : "text-white/80 hover:text-white"}`}
         >
           {t.label}
