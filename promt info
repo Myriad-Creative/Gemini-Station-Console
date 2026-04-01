@@ -1,0 +1,110 @@
+You are working in `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console`.
+
+Project baseline:
+- This is a Next.js + TypeScript + Tailwind app.
+- Existing manifest/data_url loading for the main console must keep working exactly as-is.
+- Do not break existing routes, APIs, `lib/types.ts`, or `lib/datastore.ts` contracts for the current explorers/dashboard unless explicitly asked.
+- New major features should be isolated in their own route/module namespace instead of being mixed into existing datastore-backed flows.
+
+Current feature areas already added:
+1. Mission Lab
+- Route: `/mission-lab`
+- Main files:
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/components/mission-lab/*`
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/lib/mission-lab/*`
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/app/api/mission-lab/*`
+- Important behavior:
+  - Read-only import/browse/visualize tool, not an authoring tool.
+  - Imports mission zip or folder.
+  - Tolerant parsing of malformed JSON.
+  - Mission graph edges come only from prerequisites.
+  - Missions in a `test` folder are intentionally omitted.
+  - Objective text on cards must come from the objective field, not description.
+  - Browser + Map share filters.
+  - Graph layout was tuned to avoid overlap and uses measured card sizing.
+  - Selected mission uses glow only; non-selected nodes should not be dimmed.
+
+2. Mob Lab
+- Route: `/mob-lab`
+- Main files:
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/components/mob-lab/MobLabApp.tsx`
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/lib/mob-lab/*`
+- Important behavior:
+  - Separate editing tool for `mobs.json`.
+  - Supports import, browse, create, clone, delete, export, copy full JSON, copy single mob JSON.
+  - IDs must be unique within workspace and duplicate IDs show as validation errors.
+  - Scan Data is no longer raw JSON for primary editing.
+  - Scan fields are structured:
+    - `scan_faction`
+    - `scan_class`
+    - `scan_notes`
+    - dynamic `scan_tiers`
+    - `scan_extra_json`
+  - Scan tiers support add/remove rows with threshold + text.
+  - Existing scan tier values that are arrays/objects must round-trip correctly.
+  - Blank tier text in existing data is valid and must not be treated as an error.
+  - Extra scan fields are preserved via `scan_extra_json`.
+
+3. Merchant Lab
+- Route: `/merchant-lab`
+- Main files:
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/components/merchant-lab/MerchantLabApp.tsx`
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/lib/merchant-lab/*`
+- Important behavior:
+  - Separate editing tool for `merchant_profiles.json`.
+  - Supports file upload or pasted JSON.
+  - Supports create, clone, delete, export full file, copy full file, copy single profile.
+  - Merchant profile IDs must be unique.
+  - Uses live catalog data from existing `/api/items` and `/api/mods`.
+  - Catalog entries are click-to-add to selected profile.
+  - Storefront preview layout requirements currently in place:
+    - items section first, mods section below
+    - 4 cards per row on desktop
+    - smaller preview cards
+    - icon size is 75x75
+    - remove button text is small
+    - remove button and product ID align along the icon edge
+    - no “ITEM” / “MOD” label in the preview card
+    - title uses rarity colors:
+      - white
+      - green
+      - blue
+      - purple
+      - orange
+  - Profile Library card must NOT be sticky; sidebar cards should not overlap on scroll.
+  - Item/mod ids should serialize back as numbers when numeric in JSON.
+
+4. Authoring Workspace
+- Route: `/authoring`
+- Existing tabs: Mission Builder and Mod Builder.
+- Important recent change:
+  - Mod Builder Export Preview box now has a button to copy the exact preview JSON directly from that panel.
+- Main file:
+  - `/Users/jonwenzel/Desktop/GIT/Gem-Console/Gemini-Station-Console/components/authoring/ModWorkshop.tsx`
+
+General implementation expectations:
+- Reuse existing styling patterns where reasonable.
+- Keep new feature state isolated from the existing global Gemini store unless intentionally integrating with current console APIs.
+- Preserve import/export round-tripping when editing JSON-backed tools.
+- Prefer tolerant parsing for user-supplied JSON files.
+- Surface validation problems instead of silently discarding data.
+- Avoid fragile hacks tied only to one sample file.
+- Update nav and README when adding major new feature areas.
+
+Repo/navigation/docs:
+- Nav already includes:
+  - `/mob-lab`
+  - `/merchant-lab`
+  - `/mission-lab`
+  - `/authoring`
+- README already documents Mission Lab, Mob Lab, and Merchant Lab usage.
+- If you add major behavior, keep README in sync.
+
+Verification expectations:
+- Run `npm run build` after changes.
+- If working with real sample JSON files outside the repo, test import/export behavior directly when possible.
+
+Small shell gotcha:
+- Paths like `app/(routes)/...` need quoting in zsh commands.
+
+Unless explicitly asked otherwise, preserve all of the above behavior while making changes.
