@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
 import type { Item, Mod } from "@lib/types";
 import type {
@@ -88,6 +88,12 @@ async function copyToClipboard(value: string) {
   } finally {
     document.body.removeChild(textarea);
   }
+}
+
+function mergeTextareaPaste(currentValue: string, pastedText: string, selectionStart: number | null, selectionEnd: number | null) {
+  const start = selectionStart ?? currentValue.length;
+  const end = selectionEnd ?? currentValue.length;
+  return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -426,6 +432,16 @@ export default function MerchantLabApp() {
     importText(pasteJson, "Pasted JSON", "pasted");
   }
 
+  function handlePasteJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedText = event.clipboardData.getData("text");
+    const nextValue = mergeTextareaPaste(pasteJson, pastedText, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+    event.preventDefault();
+    setPasteJson(nextValue);
+    if (nextValue.trim()) {
+      importText(nextValue, "Pasted JSON", "pasted");
+    }
+  }
+
   function startBlankWorkspace() {
     const nextWorkspace = createBlankMerchantWorkspace();
     setWorkspace(nextWorkspace);
@@ -618,16 +634,6 @@ export default function MerchantLabApp() {
         {status.message}
       </div>
 
-      <div className="card space-y-3">
-        <div className="text-lg font-semibold text-white">Paste merchant_profiles.json</div>
-        <textarea
-          className="input min-h-32 font-mono text-sm"
-          value={pasteJson}
-          placeholder='[\n  { "id": "utf_support_vendor", "items": [6, 7], "mods": [9] }\n]'
-          onChange={(event) => setPasteJson(event.target.value)}
-        />
-      </div>
-
       {workspace ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SummaryCard label="Profiles" value={summary.totalProfiles} />
@@ -639,12 +645,23 @@ export default function MerchantLabApp() {
       ) : null}
 
       {!workspace ? (
-        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+        <>
+          <div className="card space-y-4">
+            <div className="text-xl font-semibold text-white">What Merchant Lab Includes</div>
+            <div className="space-y-3 text-sm text-white/70">
+              <div>Browse and manage merchant profiles with unique-ID validation, cloning, and deletion.</div>
+              <div>Preview all attached items and mods in a storefront-style layout with remove actions.</div>
+              <div>Filter the live console item/mod catalog and click products to add them into the selected profile.</div>
+              <div>Copy the full updated `merchant_profiles.json`, copy only the selected profile, or download the file.</div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="card space-y-5">
             <div>
               <div className="text-xl font-semibold text-white">Import Existing Merchant Profiles</div>
               <div className="mt-2 text-sm text-white/60">
-                Upload `merchant_profiles.json` or paste its contents above. Merchant Lab accepts strict JSON and
+                Upload `merchant_profiles.json` or paste its contents in the JSON box. Merchant Lab accepts strict JSON and
                 tolerant JSON with trailing commas.
               </div>
             </div>
@@ -666,15 +683,22 @@ export default function MerchantLabApp() {
           </div>
 
           <div className="card space-y-4">
-            <div className="text-xl font-semibold text-white">What Merchant Lab Includes</div>
-            <div className="space-y-3 text-sm text-white/70">
-              <div>Browse and manage merchant profiles with unique-ID validation, cloning, and deletion.</div>
-              <div>Preview all attached items and mods in a storefront-style layout with remove actions.</div>
-              <div>Filter the live console item/mod catalog and click products to add them into the selected profile.</div>
-              <div>Copy the full updated `merchant_profiles.json`, copy only the selected profile, or download the file.</div>
+            <div>
+              <div className="text-xl font-semibold text-white">Paste merchant_profiles.json</div>
+              <div className="mt-2 text-sm text-white/60">
+                Pasting will auto-load immediately, and the Load Pasted JSON button remains available if you want to trigger it manually.
+              </div>
             </div>
+            <textarea
+              className="input min-h-[260px] font-mono text-sm"
+              value={pasteJson}
+              placeholder='[\n  { "id": "utf_support_vendor", "items": [6, 7], "mods": [9] }\n]'
+              onChange={(event) => setPasteJson(event.target.value)}
+              onPaste={handlePasteJsonPaste}
+            />
           </div>
-        </div>
+          </div>
+        </>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="space-y-6">

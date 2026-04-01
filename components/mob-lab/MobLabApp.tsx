@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
 import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
 import {
@@ -168,6 +168,12 @@ async function copyToClipboard(value: string) {
   }
 }
 
+function mergeTextareaPaste(currentValue: string, pastedText: string, selectionStart: number | null, selectionEnd: number | null) {
+  const start = selectionStart ?? currentValue.length;
+  const end = selectionEnd ?? currentValue.length;
+  return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
+}
+
 export default function MobLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [workspace, setWorkspace] = useState<MobLabWorkspace | null>(null);
@@ -177,9 +183,10 @@ export default function MobLabApp() {
   const [aiFilter, setAiFilter] = useState("");
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Import a mobs.json file or start a blank workspace to begin building mobs.",
+    message: "Import or paste a mobs.json file, or start a blank workspace to begin building mobs.",
   });
 
   const validation = useMemo(() => validateMobDrafts(workspace?.mobs ?? []), [workspace]);
@@ -264,24 +271,48 @@ export default function MobLabApp() {
     setWorkspace(updateMobDraftAt(workspace, selectedMob.key, updater));
   }
 
-  async function importFile(file: File) {
+  function importText(text: string, sourceLabel: string | null, sourceType: "uploaded" | "pasted") {
     try {
-      const result = importMobWorkspace(await file.text(), file.name);
+      const result = importMobWorkspace(text, sourceLabel, sourceType);
       setWorkspace(result.workspace);
       setSelectedMobKey(result.workspace.mobs[0]?.key ?? null);
       setStatus({
         tone: "success",
         message: result.warnings.length
-          ? `Imported ${result.workspace.mobs.length} mobs from ${file.name}. ${result.warnings.join(" ")}`
-          : `Imported ${result.workspace.mobs.length} mobs from ${file.name}.`,
+          ? `Imported ${result.workspace.mobs.length} mobs.${sourceLabel ? ` Source: ${sourceLabel}.` : ""} ${result.warnings.join(" ")}`
+          : `Imported ${result.workspace.mobs.length} mobs${sourceLabel ? ` from ${sourceLabel}` : ""}.`,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
       });
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function importFile(file: File) {
+    importText(await file.text(), file.name, "uploaded");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function loadPastedJson() {
+    if (!pasteJson.trim()) {
+      setStatus({
+        tone: "error",
+        message: "Paste mobs.json content into the JSON box before loading it.",
+      });
+      return;
+    }
+    importText(pasteJson, "Pasted JSON", "pasted");
+  }
+
+  function handlePasteJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedText = event.clipboardData.getData("text");
+    const nextValue = mergeTextareaPaste(pasteJson, pastedText, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+    event.preventDefault();
+    setPasteJson(nextValue);
+    if (nextValue.trim()) {
+      importText(nextValue, "Pasted JSON", "pasted");
     }
   }
 
@@ -383,7 +414,7 @@ export default function MobLabApp() {
 
   const hasWorkspaceErrors = validation.some((issue) => issue.level === "error");
   const workspaceSourceLabel =
-    workspace?.sourceType === "uploaded"
+    workspace?.sourceType === "uploaded" || workspace?.sourceType === "pasted"
       ? `${workspace.sourceLabel ?? "mobs.json"} (${workspace.parseStrategy === "strict" ? "strict JSON" : "JSON5"})`
       : "Blank workspace";
 
@@ -401,6 +432,12 @@ export default function MobLabApp() {
         <div className="flex flex-wrap gap-2">
           <button className="btn" onClick={() => fileInputRef.current?.click()}>
             Import mobs.json
+          </button>
+          <button
+            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
+            onClick={loadPastedJson}
+          >
+            Load Pasted JSON
           </button>
           <button
             className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
@@ -455,13 +492,25 @@ export default function MobLabApp() {
       ) : null}
 
       {!workspace ? (
-        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+        <>
+          <div className="card space-y-4">
+            <div className="text-xl font-semibold text-white">What Mob Lab Includes</div>
+            <div className="space-y-3 text-sm text-white/70">
+              <div>Browse mobs by name, ID, level, faction, and AI type.</div>
+              <div>Clone existing mobs or create blank ones for new enemy/NPC work.</div>
+              <div>Edit core fields, hail/comms data, loot tables, stats, services, scan fields, and extra runtime JSON.</div>
+              <div>Get live duplicate-ID alerts and validation for invalid JSON blocks.</div>
+              <div>Download the full updated `mobs.json`, copy the whole file JSON, or copy just the current mob JSON.</div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="card space-y-5">
             <div>
               <div className="text-xl font-semibold text-white">Import Existing Mobs</div>
               <div className="mt-2 text-sm text-white/60">
-                Upload the runtime `mobs.json` file. Mob Lab uses tolerant JSON5 parsing, so files with trailing commas or unquoted
-                keys will still import.
+                Upload the runtime `mobs.json` file or paste its contents in the JSON box. Mob Lab uses tolerant JSON5 parsing, so files
+                with trailing commas or unquoted keys will still import.
               </div>
             </div>
 
@@ -482,16 +531,22 @@ export default function MobLabApp() {
           </div>
 
           <div className="card space-y-4">
-            <div className="text-xl font-semibold text-white">What Mob Lab Includes</div>
-            <div className="space-y-3 text-sm text-white/70">
-              <div>Browse mobs by name, ID, level, faction, and AI type.</div>
-              <div>Clone existing mobs or create blank ones for new enemy/NPC work.</div>
-              <div>Edit core fields, hail/comms data, loot tables, stats, services, scan fields, and extra runtime JSON.</div>
-              <div>Get live duplicate-ID alerts and validation for invalid JSON blocks.</div>
-              <div>Download the full updated `mobs.json`, copy the whole file JSON, or copy just the current mob JSON.</div>
+            <div>
+              <div className="text-xl font-semibold text-white">Paste mobs.json</div>
+              <div className="mt-2 text-sm text-white/60">
+                Pasting will auto-load immediately, and the Load Pasted JSON button remains available if you want to trigger it manually.
+              </div>
             </div>
+            <textarea
+              className="input min-h-[260px] font-mono text-sm"
+              value={pasteJson}
+              placeholder='[\n  { "id": "PirateFighter", "display_name": "Pirate Raider", "level": 3 }\n]'
+              onChange={(event) => setPasteJson(event.target.value)}
+              onPaste={handlePasteJsonPaste}
+            />
           </div>
-        </div>
+          </div>
+        </>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="card h-fit space-y-4 xl:sticky xl:top-24">

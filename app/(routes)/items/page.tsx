@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
 
 type Item = { id:string; name:string; levelRequirement:number; rarity:number; icon?:string; type?:string; };
+const DEFAULT_ITEM_ICON = "res://assets/items/icon_lootbox.png";
 
 function rarityStyle(r:number) { return { color: RARITY_COLOR[r] || "#C0C0C0" }; }
 
@@ -50,9 +51,9 @@ export default function ItemsPage() {
         <table className="table">
           <thead>
             <tr>
-              {["name","levelRequirement","rarity","type"].map(k=> (
+              {["id","name","levelRequirement","rarity","type"].map(k=> (
                 <th key={k} onClick={()=>{ setAsc(k===sortKey ? !asc : true); setSortKey(k); }} className="cursor-pointer">
-                  {k === "levelRequirement" ? "Level" : k[0].toUpperCase()+k.slice(1)} {sortKey===k ? (asc?"▲":"▼"):""}
+                  {k === "levelRequirement" ? "Level" : k === "id" ? "ID" : k[0].toUpperCase()+k.slice(1)} {sortKey===k ? (asc?"▲":"▼"):""}
                 </th>
               ))}
             </tr>
@@ -60,9 +61,16 @@ export default function ItemsPage() {
           <tbody>
             {sorted.map(it => (
               <tr key={it.id}>
+                <td className="font-mono text-xs text-white/70">{it.id}</td>
                 <td>
                   <div className="flex items-center gap-2">
-                    {it.icon ? <img src={`/api/icon?res=${encodeURIComponent(it.icon)}&id=${encodeURIComponent(it.id)}&name=${encodeURIComponent(it.name)}`} alt="" width={28} height={28} style={{borderRadius:4}} /> : <div style={{width:28,height:28,background:"#222",borderRadius:4}}/>}
+                    <img
+                      src={`/api/icon?res=${encodeURIComponent(it.icon || DEFAULT_ITEM_ICON)}&id=${encodeURIComponent(it.id)}&name=${encodeURIComponent(it.name)}`}
+                      alt=""
+                      width={28}
+                      height={28}
+                      style={{borderRadius:4}}
+                    />
                     <span style={rarityStyle(it.rarity)} className="font-medium">{it.name}</span>
                   </div>
                 </td>

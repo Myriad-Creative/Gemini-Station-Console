@@ -1,5 +1,5 @@
 export type MobLabSourceShape = "array" | "record";
-export type MobLabSourceType = "uploaded" | "blank";
+export type MobLabSourceType = "uploaded" | "pasted" | "blank";
 export type MobLabParseStrategy = "strict" | "json5";
 export type MobSortKey = "display_name" | "id" | "level" | "faction" | "ai_type";
 export type ValidationLevel = "error" | "warning";

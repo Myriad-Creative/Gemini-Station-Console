@@ -568,8 +568,8 @@ export default function ModWorkshop({
       return;
     }
 
-    const didCopy = await copyText(JSON.stringify(exportModDraft(selectedSyncedMod), null, 2));
-    setStatus(didCopy ? "Copied the selected mod JSON to the clipboard." : "Clipboard copy failed in this browser context.");
+    const didCopy = await copyText(`,${JSON.stringify(exportModDraft(selectedSyncedMod), null, 2)}`);
+    setStatus(didCopy ? "Copied the selected mod JSON to the clipboard with a leading comma." : "Clipboard copy failed in this browser context.");
   }
 
   async function copyExportPreview() {

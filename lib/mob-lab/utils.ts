@@ -362,7 +362,7 @@ export function cloneMobDraft(source: MobDraft, existingIds: string[]) {
   } satisfies MobDraft;
 }
 
-export function importMobWorkspace(text: string, sourceLabel: string | null): MobLabImportResult {
+export function importMobWorkspace(text: string, sourceLabel: string | null, sourceType: "uploaded" | "pasted" = "uploaded"): MobLabImportResult {
   const cleaned = text.replace(/^\uFEFF/, "");
   let parsed: unknown;
   let parseStrategy: MobLabParseStrategy = "strict";
@@ -379,7 +379,7 @@ export function importMobWorkspace(text: string, sourceLabel: string | null): Mo
   const normalized = normalizeImportedRoot(parsed);
   return {
     workspace: {
-      sourceType: "uploaded",
+      sourceType,
       sourceLabel,
       sourceShape: normalized.shape,
       parseStrategy,
