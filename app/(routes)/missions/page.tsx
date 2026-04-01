@@ -1,72 +1,41 @@
-"use client";
-import { useEffect, useState } from "react";
+import Link from "next/link";
 
-type Mission = {
-  id: string; title: string; has_explicit_gating: boolean;
-  level_min?: number; level_max?: number; inferred_level?: number;
-  giver_id?: string; faction?: string; arcs?: string[]; tags?: string[];
-  objectives: any[];
-};
+const missionLinks = [
+  {
+    href: "/missions/explorer",
+    title: "Mission Explorer",
+    description: "Browse the current console mission data set and inspect objective coverage and level bands.",
+  },
+  {
+    href: "/missions/lab",
+    title: "Mission Lab",
+    description: "Import zipped mission workspaces, inspect diagnostics, and visualize prerequisite chains.",
+  },
+  {
+    href: "/missions/creator",
+    title: "Mission Creator",
+    description: "Author and export richer mission drafts with prerequisite validation and JSON export tooling.",
+  },
+];
 
 export default function MissionsPage() {
-  const [bands, setBands] = useState<[number, number][]>([]);
-  const [band, setBand] = useState("");
-  const [rows, setRows] = useState<Mission[]>([]);
-
-  const load = async () => {
-    const r = await fetch(`/api/missions${band ? `?band=${band}` : ""}`);
-    const j = await r.json();
-    setRows(j.rows);
-    setBands(j.bands);
-  };
-  useEffect(()=> { load(); }, [band]);
-
   return (
-    <div className="space-y-4">
-      <h1 className="page-title">Missions Explorer</h1>
-      <div className="card flex gap-2 items-end">
-        <div>
-          <div className="label">Band</div>
-          <select className="select" value={band} onChange={e => setBand(e.target.value)}>
-            <option value="">All</option>
-            {bands.map(([a,b]) => <option key={`${a}-${b}`} value={`${a}-${b}`}>{a}-{b}</option>)}
-          </select>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="page-title mb-1">Missions</h1>
+        <p className="max-w-3xl text-sm text-white/70">
+          Mission tooling is now grouped here. This dashboard is a placeholder entry point for the mission explorer, mission lab, and mission creator.
+        </p>
       </div>
 
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Level (explicit / inferred)</th>
-              <th>Faction</th>
-              <th>Giver</th>
-              <th>Objectives</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(m => (
-              <tr key={m.id}>
-                <td className="font-medium">{m.title}</td>
-                <td>
-                  {m.has_explicit_gating
-                    ? `${m.level_min ?? "?"}-${m.level_max ?? "?"}`
-                    : <span className="badge">inferred: {m.inferred_level ?? "?"}</span>}
-                </td>
-                <td>{m.faction || ""}</td>
-                <td>{m.giver_id || ""}</td>
-                <td>
-                  {(m.objectives || []).map((o: any, i: number) =>
-                    <span key={i} className="badge mr-1">{o.type}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {missionLinks.map((link) => (
+          <Link key={link.href} href={link.href} className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
+            <div className="text-xl font-semibold text-white">{link.title}</div>
+            <div className="text-sm leading-6 text-white/65">{link.description}</div>
+          </Link>
+        ))}
       </div>
-
     </div>
   );
 }

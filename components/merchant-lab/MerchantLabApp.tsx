@@ -522,11 +522,13 @@ export default function MerchantLabApp() {
   async function handleCurrentProfileCopy() {
     if (!selectedProfile) return;
     try {
-      const contents = stringifySingleMerchantProfile(selectedProfile);
+      const contents = `,${stringifySingleMerchantProfile(selectedProfile)}`;
       const didCopy = await copyToClipboard(contents);
       setStatus({
         tone: didCopy ? "success" : "error",
-        message: didCopy ? `Copied ${selectedProfile.id || "current profile"} JSON to the clipboard.` : "Clipboard copy failed in this browser context.",
+        message: didCopy
+          ? `Copied ${selectedProfile.id || "current profile"} JSON to the clipboard with a leading comma.`
+          : "Clipboard copy failed in this browser context.",
       });
     } catch (error) {
       setStatus({
