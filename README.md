@@ -28,6 +28,7 @@ Open **Settings** to view the currently loaded URLs and force a reload.
 - Merchant Lab:
   - Import or paste `merchant_profiles.json`
   - Create, clone, delete, and validate merchant profiles with unique profile IDs
+  - Add authoring-only `name` and `description` metadata for management notes while keeping `id` as the primary identifier
   - Browse the live console item/mod catalog with filters for rarity, level range, slot, type, and class restriction
   - Click catalog entries to attach them to the selected merchant profile
   - Preview item and mod offerings in a storefront-style layout with remove actions
@@ -88,6 +89,7 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
 3. Use the left sidebar to:
    - search and switch merchant profiles,
    - create or clone profiles,
+   - manage authoring-only profile name and description metadata,
    - browse the current item/mod catalog,
    - filter products by rarity, level range, slot, type, and class restriction.
 4. Click an item or mod in the catalog browser to attach it to the selected merchant profile.

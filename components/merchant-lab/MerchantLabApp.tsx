@@ -277,7 +277,7 @@ export default function MerchantLabApp() {
     const query = profileSearch.trim().toLowerCase();
     return (workspace?.profiles ?? []).filter((profile) => {
       if (!query) return true;
-      return profile.id.toLowerCase().includes(query);
+      return [profile.id, profile.name, profile.description].join(" ").toLowerCase().includes(query);
     });
   }, [profileSearch, workspace]);
 
@@ -694,7 +694,7 @@ export default function MerchantLabApp() {
                 <input
                   className="input mt-1"
                   value={profileSearch}
-                  placeholder="Search merchant profile IDs..."
+                  placeholder="Search profile ID, name, or notes..."
                   onChange={(event) => setProfileSearch(event.target.value)}
                 />
               </div>
@@ -720,6 +720,8 @@ export default function MerchantLabApp() {
                         }`}
                       >
                         <div className="truncate text-base font-semibold text-white">{profile.id || "Untitled Profile"}</div>
+                        {profile.name ? <div className="mt-1 truncate text-sm text-cyan-100/75">{profile.name}</div> : null}
+                        {profile.description ? <div className="mt-1 line-clamp-2 text-xs text-white/45">{profile.description}</div> : null}
                         <div className="mt-2 flex flex-wrap gap-2 text-xs">
                           <span className="badge">{profile.items.length} items</span>
                           <span className="badge">{profile.mods.length} mods</span>
@@ -962,7 +964,10 @@ export default function MerchantLabApp() {
                   ) : null}
                 </div>
 
-                <Section title="Profile Settings" description="Set the merchant profile id and preserve any unsupported runtime fields here.">
+                <Section
+                  title="Profile Settings"
+                  description="Set the merchant profile id plus authoring-only name/description metadata. The game can ignore these fields, but Merchant Lab will preserve them in JSON."
+                >
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div>
                       <div className="label">Merchant Profile ID</div>
@@ -974,6 +979,15 @@ export default function MerchantLabApp() {
                       />
                     </div>
                     <div>
+                      <div className="label">Authoring Name</div>
+                      <input
+                        className="input mt-1"
+                        value={selectedProfile.name}
+                        placeholder="Crossroads Quartermaster"
+                        onChange={(event) => updateSelectedProfile((current) => ({ ...current, name: event.target.value }))}
+                      />
+                    </div>
+                    <div>
                       <div className="label">Attached Product Counts</div>
                       <div className="mt-1 flex h-[42px] items-center gap-2 rounded border border-white/10 bg-black/20 px-3 text-sm text-white/70">
                         <span>{selectedProfile.items.length} items</span>
@@ -981,6 +995,16 @@ export default function MerchantLabApp() {
                         <span>{selectedProfile.mods.length} mods</span>
                       </div>
                     </div>
+                  </div>
+
+                  <div>
+                    <div className="label">Authoring Description / Notes</div>
+                    <textarea
+                      className="input mt-1 min-h-28"
+                      value={selectedProfile.description}
+                      placeholder="Used by the Crossroads station vendor near the main docking concourse."
+                      onChange={(event) => updateSelectedProfile((current) => ({ ...current, description: event.target.value }))}
+                    />
                   </div>
 
                   <div>
@@ -1002,6 +1026,8 @@ export default function MerchantLabApp() {
                     <div className="border-b border-white/10 pb-4">
                       <div className="text-xs uppercase tracking-[0.34em] text-cyan-200/45">Merchant Profile</div>
                       <div className="mt-2 text-4xl font-semibold text-white">{selectedProfile.id || "Untitled Merchant"}</div>
+                      {selectedProfile.name ? <div className="mt-2 text-lg font-medium text-cyan-100/80">{selectedProfile.name}</div> : null}
+                      {selectedProfile.description ? <div className="mt-3 max-w-3xl text-sm leading-6 text-white/55">{selectedProfile.description}</div> : null}
                       <div className="mt-3 text-sm text-white/50">
                         {selectedProfile.items.length} item offer{selectedProfile.items.length === 1 ? "" : "s"} · {selectedProfile.mods.length} mod
                         offer{selectedProfile.mods.length === 1 ? "" : "s"}

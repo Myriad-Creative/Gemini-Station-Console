@@ -8,6 +8,8 @@ export interface MerchantProfileDraft {
   key: string;
   sourceIndex: number;
   id: string;
+  name: string;
+  description: string;
   items: string[];
   mods: string[];
   extra_json: string;

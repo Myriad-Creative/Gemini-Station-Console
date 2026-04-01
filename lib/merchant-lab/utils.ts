@@ -12,7 +12,7 @@ import type {
 
 type JsonObject = Record<string, unknown>;
 
-const MERCHANT_PROFILE_RESERVED_KEYS = ["id", "items", "mods"] as const;
+const MERCHANT_PROFILE_RESERVED_KEYS = ["id", "name", "description", "items", "mods"] as const;
 
 let draftCounter = 0;
 
@@ -103,6 +103,8 @@ function normalizeImportedProfile(source: JsonObject, sourceIndex: number): Merc
     key: createDraftKey(),
     sourceIndex,
     id: String(source.id ?? "").trim(),
+    name: String(source.name ?? "").trim(),
+    description: String(source.description ?? "").trim(),
     items: normalizeIdList(source.items),
     mods: normalizeIdList(source.mods),
     extra_json: formatJsonBlock(stripKeys(source, MERCHANT_PROFILE_RESERVED_KEYS)),
@@ -143,6 +145,8 @@ export function createBlankMerchantProfile(existingIds: string[] = []): Merchant
     key: createDraftKey(),
     sourceIndex: -1,
     id: nextGeneratedMerchantProfileId(existingIds, "merchant_profile_000"),
+    name: "",
+    description: "",
     items: [],
     mods: [],
     extra_json: "",
@@ -328,6 +332,8 @@ export function serializeMerchantProfile(profile: MerchantProfileDraft) {
   const extra = parseObjectTextarea(profile.extra_json, "Extra JSON");
   const known = cleanObject({
     id: profile.id.trim(),
+    name: profile.name.trim(),
+    description: profile.description.trim(),
     items: profile.items.map((entry) => toExportReferenceId(entry)).filter((entry) => entry !== undefined),
     mods: profile.mods.map((entry) => toExportReferenceId(entry)).filter((entry) => entry !== undefined),
   });
