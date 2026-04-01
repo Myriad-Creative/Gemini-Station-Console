@@ -5,6 +5,7 @@ export interface ModStatBudgetConfig {
   level1Max: number;
   level100Max: number;
   roundStep?: number;
+  signed?: boolean;
 }
 
 export interface ModBudgetStatInput {
@@ -118,13 +119,15 @@ export const MOD_STAT_BUDGET_CONFIG: Record<string, ModStatBudgetConfig> = {
   speed: { family: "general", level1Max: 10, level100Max: 100, roundStep: 1 },
   energy_regen_rate: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
   shield_regen: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
-  threat_generation: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
   stealth: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
   heat_resistance: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
   overclock: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.01 },
+  crit_damage: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.01 },
+  crit_chance: { family: "general", level1Max: 1, level100Max: 100, roundStep: 0.01 },
   damage_reflect: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 0.01 },
   damage_reduction: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 0.01 },
   armor_regen: { family: "extraExotic", level1Max: 1, level100Max: 100, roundStep: 1 },
+  threat_generation: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 0.01, signed: true },
 };
 
 export function clampModRequiredLevel(level: number) {
@@ -197,6 +200,10 @@ export function getModSlotProfile(rarity?: number, statCount?: number) {
 
 export function getModStatBudgetConfig(key: string) {
   return MOD_STAT_BUDGET_CONFIG[key];
+}
+
+export function isSignedModStat(key: string) {
+  return !!getModStatBudgetConfig(key)?.signed;
 }
 
 export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number) {
@@ -285,12 +292,13 @@ export function calculateModBudgetSummary(input: {
     }
 
     const numericValue = value !== undefined && Number.isFinite(value) ? value : 0;
+    const effectiveNumericValue = config.signed ? Math.abs(numericValue) : numericValue;
     const effectiveMaxValue =
       meta.adjustedSlotMultiplier !== undefined
         ? roundToStep(baseMaxAtLevel * meta.adjustedSlotMultiplier, config.roundStep ?? 0.1)
         : undefined;
-    const normalizedUsage = baseMaxAtLevel > 0 ? roundBudget(numericValue / baseMaxAtLevel) : 0;
-    const powerScore = baseStatMax !== undefined ? roundBudget(baseStatMax * normalizedUsage) : roundBudget(numericValue);
+    const normalizedUsage = baseMaxAtLevel > 0 ? roundBudget(effectiveNumericValue / baseMaxAtLevel) : 0;
+    const powerScore = baseStatMax !== undefined ? roundBudget(baseStatMax * normalizedUsage) : roundBudget(effectiveNumericValue);
 
     return [
       {

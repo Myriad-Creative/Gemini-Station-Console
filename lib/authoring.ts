@@ -8,6 +8,7 @@ import {
   getModSupportedStatCounts,
   getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
+  isSignedModStat,
 } from "@lib/mod-budget";
 
 export type ValidationLevel = "error" | "warning";
@@ -74,6 +75,22 @@ export interface ModAbilityDraft {
   budgetCost: string;
 }
 
+export interface ModGeneratorMetadata {
+  generatedBy: "auto";
+  requestedRoles: string[];
+  requestedSlots: string[];
+  roleId: string;
+  slotId: string;
+  level: number;
+  rarity: number;
+  primaryStat: string;
+  secondaryStats: string[];
+  abilityPool: Array<number | string>;
+  selectedAbilities: Array<number | string>;
+  finalRolledStats: Record<string, number>;
+  threatSign?: "positive" | "negative";
+}
+
 export interface ModDraft {
   id: string;
   name: string;
@@ -93,6 +110,7 @@ export interface ModDraft {
   icon: string;
   description: string;
   extraJson: string;
+  generatorMeta?: ModGeneratorMetadata;
 }
 
 export interface BulkModTemplateDraft {
@@ -217,6 +235,41 @@ function parseScalarString(value: string): string | number | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   return /^-?\d+(?:\.\d+)?$/.test(trimmed) ? Number(trimmed) : trimmed;
+}
+
+function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as JsonObject;
+  const roleId = String(source.roleId ?? "").trim();
+  const slotId = String(source.slotId ?? "").trim();
+  const primaryStat = String(source.primaryStat ?? "").trim();
+  if (!roleId || !slotId || !primaryStat) return undefined;
+
+  const finalRolledStatsSource = asObject(source.finalRolledStats);
+  const finalRolledStats = Object.fromEntries(
+    Object.entries(finalRolledStatsSource)
+      .map(([key, entry]) => [key, typeof entry === "number" ? entry : Number(entry)])
+      .filter(([, entry]) => Number.isFinite(entry)),
+  ) as Record<string, number>;
+
+  return {
+    generatedBy: "auto",
+    requestedRoles: stringList(source.requestedRoles),
+    requestedSlots: stringList(source.requestedSlots),
+    roleId,
+    slotId,
+    level: Number(source.level ?? 0),
+    rarity: Number(source.rarity ?? 0),
+    primaryStat,
+    secondaryStats: stringList(source.secondaryStats),
+    abilityPool: stringList(source.abilityPool).map((entry) => parseScalarString(entry) ?? entry),
+    selectedAbilities: stringList(source.selectedAbilities).map((entry) => parseScalarString(entry) ?? entry),
+    finalRolledStats,
+    threatSign:
+      source.threatSign === "positive" || source.threatSign === "negative"
+        ? (source.threatSign as "positive" | "negative")
+        : undefined,
+  };
 }
 
 function parseBooleanFlag(value: unknown) {
@@ -386,10 +439,10 @@ export function autoBalanceModDraft(
     }
 
     const clampMax = statBudget.currentMaxValue ?? statBudget.effectiveMaxValue;
-    if (numericValue !== undefined && clampMax !== undefined && numericValue > clampMax) {
+    if (numericValue !== undefined && clampMax !== undefined && Math.abs(numericValue) > clampMax) {
       return {
         ...stat,
-        value: formatDraftNumber(clampMax),
+        value: formatDraftNumber(Math.sign(numericValue || 1) * clampMax),
       };
     }
 
@@ -577,6 +630,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     icon: "",
     description: "",
     extraJson: "",
+    generatorMeta: undefined,
   });
 }
 
@@ -621,6 +675,7 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
     icon: String(source.icon ?? ""),
     description: String(source.description ?? ""),
     extraJson: normalizeStoredExtraJson(source.extraJson),
+    generatorMeta: normalizeGeneratorMetadata(source.generatorMeta),
   });
 }
 
@@ -884,6 +939,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     icon: String(source.icon ?? ""),
     description: String(source.description ?? source.desc ?? ""),
     extraJson: prettyExtraJson({ ...importedExtra, ...sourceExtra }),
+    generatorMeta: undefined,
   });
 }
 
@@ -1441,7 +1497,8 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
         const effectiveBudgetStat = budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
         const effectiveMaxValue = effectiveBudgetStat?.currentMaxValue ?? effectiveBudgetStat?.effectiveMaxValue;
         const maxAtLevel = effectiveMaxValue ?? getModStatMaxAtRequiredLevel(key, levelRequirement);
-        if (maxAtLevel !== undefined && numericValue !== undefined && numericValue > maxAtLevel) {
+        const effectiveMagnitude = numericValue !== undefined && isSignedModStat(key) ? Math.abs(numericValue) : numericValue;
+        if (maxAtLevel !== undefined && effectiveMagnitude !== undefined && effectiveMagnitude > maxAtLevel) {
           messages.push({
             level: "error",
             scope: "mods",

@@ -1,0 +1,1127 @@
+{
+  "schema_version": "1.0",
+  "config_name": "space_ship_mod_generator",
+  "roll_weight_scale": {
+    "0": "never",
+    "1": "edge_case",
+    "2": "situational",
+    "3": "normal",
+    "4": "strong",
+    "5": "signature"
+  },
+  "stat_order": [
+    "speed",
+    "sensors",
+    "energy_regen_rate",
+    "power",
+    "targeting",
+    "threat_generation",
+    "hacking",
+    "armor",
+    "shields",
+    "shield_regen",
+    "evasion",
+    "damage_reflect",
+    "damage_reduction",
+    "heat_resistance",
+    "overclock",
+    "stealth",
+    "crit_damage",
+    "crit_chance"
+  ],
+  "slot_order": [
+    "armor",
+    "utility",
+    "shields",
+    "weapons",
+    "sensors",
+    "engines"
+  ],
+  "role_order": [
+    "tank_aggro",
+    "tank",
+    "dps_fast_medium",
+    "dps_slow_big",
+    "repair",
+    "support"
+  ],
+  "manual_only_stats": [
+    "armor_regen"
+  ],
+  "stats": {
+    "speed": {
+      "label": "Speed",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "sensors": {
+      "label": "Sensors",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "energy_regen_rate": {
+      "label": "Energy Regen",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "power": {
+      "label": "Power",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "targeting": {
+      "label": "Targeting",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "threat_generation": {
+      "label": "Threat Generation",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common",
+      "signed": true
+    },
+    "hacking": {
+      "label": "Hacking",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "specialist"
+    },
+    "armor": {
+      "label": "Armor",
+      "decimals": 0,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "shields": {
+      "label": "Shields",
+      "decimals": 0,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "shield_regen": {
+      "label": "Shield Regen",
+      "decimals": 0,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "evasion": {
+      "label": "Evasion",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "damage_reflect": {
+      "label": "Damage Reflect",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "exotic"
+    },
+    "damage_reduction": {
+      "label": "Damage Reduction",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "exotic"
+    },
+    "heat_resistance": {
+      "label": "Heat Resistance",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "specialist"
+    },
+    "overclock": {
+      "label": "Overclock",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "stealth": {
+      "label": "Stealth",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "specialist"
+    },
+    "crit_damage": {
+      "label": "Critical Damage",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "crit_chance": {
+      "label": "Critical Chance",
+      "decimals": 2,
+      "rollable": true,
+      "rarity_class": "common"
+    },
+    "armor_regen": {
+      "label": "Armor Regen",
+      "decimals": 2,
+      "rollable": false,
+      "rarity_class": "manual_only"
+    }
+  },
+  "slots": {
+    "armor": {
+      "label": "Armor",
+      "focus": [
+        "defense"
+      ],
+      "default_primary_stat": "armor",
+      "recommended_primary_candidates": [
+        "armor"
+      ]
+    },
+    "utility": {
+      "label": "Utility",
+      "focus": [
+        "all"
+      ],
+      "default_primary_stat": null,
+      "recommended_primary_candidates_by_role": {
+        "tank_aggro": [
+          "threat_generation",
+          "armor",
+          "shields"
+        ],
+        "tank": [
+          "armor",
+          "shields"
+        ],
+        "dps_fast_medium": [
+          "overclock",
+          "power"
+        ],
+        "dps_slow_big": [
+          "power",
+          "crit_damage",
+          "targeting"
+        ],
+        "repair": [
+          "power",
+          "energy_regen_rate",
+          "shield_regen"
+        ],
+        "support": [
+          "sensors",
+          "hacking",
+          "energy_regen_rate"
+        ]
+      }
+    },
+    "shields": {
+      "label": "Shields",
+      "focus": [
+        "defense"
+      ],
+      "default_primary_stat": "shields",
+      "recommended_primary_candidates": [
+        "shields",
+        "shield_regen"
+      ]
+    },
+    "weapons": {
+      "label": "Weapons",
+      "focus": [
+        "offense"
+      ],
+      "default_primary_stat": "power",
+      "recommended_primary_candidates": [
+        "power",
+        "targeting",
+        "overclock",
+        "crit_chance"
+      ]
+    },
+    "sensors": {
+      "label": "Sensors",
+      "focus": [
+        "offense",
+        "defense",
+        "non_combat",
+        "misc"
+      ],
+      "default_primary_stat": "sensors",
+      "recommended_primary_candidates": [
+        "sensors",
+        "hacking",
+        "stealth",
+        "targeting"
+      ]
+    },
+    "engines": {
+      "label": "Engines",
+      "focus": [
+        "movement",
+        "defense",
+        "offense"
+      ],
+      "default_primary_stat": "speed",
+      "recommended_primary_candidates": [
+        "speed",
+        "evasion",
+        "heat_resistance"
+      ]
+    }
+  },
+  "roles": {
+    "tank_aggro": {
+      "label": "Tank (Aggro)",
+      "description": "Controls enemy attention and survives focus fire.",
+      "threat_sign_bias": "positive"
+    },
+    "tank": {
+      "label": "Tank",
+      "description": "Pure survivability and mitigation.",
+      "threat_sign_bias": "neutral_or_positive"
+    },
+    "dps_fast_medium": {
+      "label": "DPS – Fast / Medium",
+      "description": "High action speed and steady pressure.",
+      "threat_sign_bias": "negative"
+    },
+    "dps_slow_big": {
+      "label": "DPS – Slow / Big",
+      "description": "Lower cadence, heavier hits, larger burst windows.",
+      "threat_sign_bias": "negative"
+    },
+    "repair": {
+      "label": "Repair",
+      "description": "Restores and stabilizes allies.",
+      "threat_sign_bias": "negative"
+    },
+    "support": {
+      "label": "Support",
+      "description": "Intel, control, setup, and utility.",
+      "threat_sign_bias": "negative"
+    }
+  },
+  "rarity_classes": {
+    "multipliers": {
+      "common": 1.0,
+      "specialist": 0.75,
+      "exotic": 0.35,
+      "manual_only": 0.0
+    },
+    "by_stat": {
+      "speed": "common",
+      "sensors": "common",
+      "energy_regen_rate": "common",
+      "power": "common",
+      "targeting": "common",
+      "threat_generation": "common",
+      "hacking": "specialist",
+      "armor": "common",
+      "shields": "common",
+      "shield_regen": "common",
+      "evasion": "common",
+      "damage_reflect": "exotic",
+      "damage_reduction": "exotic",
+      "heat_resistance": "specialist",
+      "overclock": "common",
+      "stealth": "specialist",
+      "crit_damage": "common",
+      "crit_chance": "common",
+      "armor_regen": "manual_only"
+    }
+  },
+  "matrices": {
+    "slot_stat_affinity": {
+      "armor": {
+        "speed": 1,
+        "sensors": 0,
+        "energy_regen_rate": 1,
+        "power": 1,
+        "targeting": 0,
+        "threat_generation": 3,
+        "hacking": 0,
+        "armor": 5,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 2,
+        "damage_reflect": 3,
+        "damage_reduction": 4,
+        "heat_resistance": 3,
+        "overclock": 1,
+        "stealth": 2,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "utility": {
+        "speed": 3,
+        "sensors": 4,
+        "energy_regen_rate": 4,
+        "power": 3,
+        "targeting": 3,
+        "threat_generation": 3,
+        "hacking": 4,
+        "armor": 2,
+        "shields": 2,
+        "shield_regen": 2,
+        "evasion": 3,
+        "damage_reflect": 2,
+        "damage_reduction": 2,
+        "heat_resistance": 4,
+        "overclock": 4,
+        "stealth": 4,
+        "crit_damage": 2,
+        "crit_chance": 3
+      },
+      "shields": {
+        "speed": 0,
+        "sensors": 0,
+        "energy_regen_rate": 3,
+        "power": 2,
+        "targeting": 0,
+        "threat_generation": 3,
+        "hacking": 0,
+        "armor": 0,
+        "shields": 5,
+        "shield_regen": 4,
+        "evasion": 2,
+        "damage_reflect": 3,
+        "damage_reduction": 3,
+        "heat_resistance": 2,
+        "overclock": 1,
+        "stealth": 2,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "weapons": {
+        "speed": 0,
+        "sensors": 0,
+        "energy_regen_rate": 2,
+        "power": 5,
+        "targeting": 4,
+        "threat_generation": 4,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 0,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 0,
+        "overclock": 4,
+        "stealth": 2,
+        "crit_damage": 4,
+        "crit_chance": 4
+      },
+      "sensors": {
+        "speed": 1,
+        "sensors": 5,
+        "energy_regen_rate": 3,
+        "power": 1,
+        "targeting": 4,
+        "threat_generation": 2,
+        "hacking": 4,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 3,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 3,
+        "stealth": 4,
+        "crit_damage": 2,
+        "crit_chance": 3
+      },
+      "engines": {
+        "speed": 5,
+        "sensors": 1,
+        "energy_regen_rate": 3,
+        "power": 2,
+        "targeting": 2,
+        "threat_generation": 2,
+        "hacking": 0,
+        "armor": 2,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 4,
+        "damage_reflect": 1,
+        "damage_reduction": 0,
+        "heat_resistance": 4,
+        "overclock": 3,
+        "stealth": 3,
+        "crit_damage": 0,
+        "crit_chance": 1
+      }
+    },
+    "role_slot_affinity": {
+      "tank_aggro": {
+        "armor": 5,
+        "utility": 4,
+        "shields": 4,
+        "weapons": 4,
+        "sensors": 1,
+        "engines": 2
+      },
+      "tank": {
+        "armor": 5,
+        "utility": 4,
+        "shields": 5,
+        "weapons": 1,
+        "sensors": 1,
+        "engines": 2
+      },
+      "dps_fast_medium": {
+        "armor": 1,
+        "utility": 4,
+        "shields": 1,
+        "weapons": 5,
+        "sensors": 2,
+        "engines": 4
+      },
+      "dps_slow_big": {
+        "armor": 1,
+        "utility": 3,
+        "shields": 1,
+        "weapons": 5,
+        "sensors": 4,
+        "engines": 2
+      },
+      "repair": {
+        "armor": 2,
+        "utility": 5,
+        "shields": 5,
+        "weapons": 0,
+        "sensors": 2,
+        "engines": 1
+      },
+      "support": {
+        "armor": 1,
+        "utility": 5,
+        "shields": 2,
+        "weapons": 1,
+        "sensors": 5,
+        "engines": 3
+      }
+    },
+    "role_stat_weight": {
+      "tank_aggro": {
+        "speed": 1,
+        "sensors": 1,
+        "energy_regen_rate": 2,
+        "power": 4,
+        "targeting": 3,
+        "threat_generation": 5,
+        "hacking": 0,
+        "armor": 4,
+        "shields": 4,
+        "shield_regen": 3,
+        "evasion": 2,
+        "damage_reflect": 2,
+        "damage_reduction": 4,
+        "heat_resistance": 2,
+        "overclock": 2,
+        "stealth": 0,
+        "crit_damage": 0,
+        "crit_chance": 1
+      },
+      "tank": {
+        "speed": 1,
+        "sensors": 0,
+        "energy_regen_rate": 2,
+        "power": 4,
+        "targeting": 2,
+        "threat_generation": 2,
+        "hacking": 0,
+        "armor": 5,
+        "shields": 5,
+        "shield_regen": 4,
+        "evasion": 2,
+        "damage_reflect": 3,
+        "damage_reduction": 5,
+        "heat_resistance": 2,
+        "overclock": 1,
+        "stealth": 0,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "dps_fast_medium": {
+        "speed": 3,
+        "sensors": 1,
+        "energy_regen_rate": 4,
+        "power": 4,
+        "targeting": 4,
+        "threat_generation": 3,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 0,
+        "evasion": 3,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 5,
+        "stealth": 1,
+        "crit_damage": 2,
+        "crit_chance": 4
+      },
+      "dps_slow_big": {
+        "speed": 1,
+        "sensors": 2,
+        "energy_regen_rate": 2,
+        "power": 5,
+        "targeting": 4,
+        "threat_generation": 2,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 0,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 2,
+        "stealth": 1,
+        "crit_damage": 5,
+        "crit_chance": 3
+      },
+      "repair": {
+        "speed": 1,
+        "sensors": 2,
+        "energy_regen_rate": 5,
+        "power": 5,
+        "targeting": 0,
+        "threat_generation": 3,
+        "hacking": 0,
+        "armor": 2,
+        "shields": 4,
+        "shield_regen": 4,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 1,
+        "heat_resistance": 1,
+        "overclock": 4,
+        "stealth": 1,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "support": {
+        "speed": 2,
+        "sensors": 5,
+        "energy_regen_rate": 4,
+        "power": 4,
+        "targeting": 3,
+        "threat_generation": 3,
+        "hacking": 4,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 2,
+        "damage_reflect": 0,
+        "damage_reduction": 1,
+        "heat_resistance": 1,
+        "overclock": 4,
+        "stealth": 3,
+        "crit_damage": 0,
+        "crit_chance": 0
+      }
+    },
+    "pair_affinity": {
+      "speed": {
+        "speed": 0,
+        "sensors": 3,
+        "energy_regen_rate": 2,
+        "power": 2,
+        "targeting": 2,
+        "threat_generation": 1,
+        "hacking": 1,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 5,
+        "damage_reflect": 1,
+        "damage_reduction": 0,
+        "heat_resistance": 3,
+        "overclock": 4,
+        "stealth": 4,
+        "crit_damage": 1,
+        "crit_chance": 1
+      },
+      "sensors": {
+        "speed": 2,
+        "sensors": 0,
+        "energy_regen_rate": 2,
+        "power": 1,
+        "targeting": 5,
+        "threat_generation": 1,
+        "hacking": 5,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 3,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 3,
+        "stealth": 4,
+        "crit_damage": 2,
+        "crit_chance": 3
+      },
+      "energy_regen_rate": {
+        "speed": 2,
+        "sensors": 3,
+        "energy_regen_rate": 0,
+        "power": 4,
+        "targeting": 2,
+        "threat_generation": 1,
+        "hacking": 3,
+        "armor": 1,
+        "shields": 3,
+        "shield_regen": 4,
+        "evasion": 2,
+        "damage_reflect": 0,
+        "damage_reduction": 1,
+        "heat_resistance": 2,
+        "overclock": 5,
+        "stealth": 1,
+        "crit_damage": 1,
+        "crit_chance": 1
+      },
+      "power": {
+        "speed": 2,
+        "sensors": 1,
+        "energy_regen_rate": 3,
+        "power": 0,
+        "targeting": 5,
+        "threat_generation": 4,
+        "hacking": 2,
+        "armor": 1,
+        "shields": 2,
+        "shield_regen": 1,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 4,
+        "stealth": 2,
+        "crit_damage": 4,
+        "crit_chance": 5
+      },
+      "targeting": {
+        "speed": 2,
+        "sensors": 4,
+        "energy_regen_rate": 1,
+        "power": 5,
+        "targeting": 0,
+        "threat_generation": 1,
+        "hacking": 1,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 3,
+        "stealth": 2,
+        "crit_damage": 4,
+        "crit_chance": 5
+      },
+      "hacking": {
+        "speed": 2,
+        "sensors": 5,
+        "energy_regen_rate": 3,
+        "power": 2,
+        "targeting": 1,
+        "threat_generation": 2,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 0,
+        "evasion": 2,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 2,
+        "overclock": 4,
+        "stealth": 5,
+        "crit_damage": 1,
+        "crit_chance": 1
+      },
+      "armor": {
+        "speed": 1,
+        "sensors": 1,
+        "energy_regen_rate": 1,
+        "power": 1,
+        "targeting": 1,
+        "threat_generation": 4,
+        "hacking": 0,
+        "armor": 0,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 2,
+        "damage_reflect": 4,
+        "damage_reduction": 5,
+        "heat_resistance": 3,
+        "overclock": 1,
+        "stealth": 2,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "shields": {
+        "speed": 1,
+        "sensors": 1,
+        "energy_regen_rate": 4,
+        "power": 2,
+        "targeting": 1,
+        "threat_generation": 4,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 0,
+        "shield_regen": 5,
+        "evasion": 2,
+        "damage_reflect": 3,
+        "damage_reduction": 3,
+        "heat_resistance": 1,
+        "overclock": 1,
+        "stealth": 2,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "shield_regen": {
+        "speed": 1,
+        "sensors": 1,
+        "energy_regen_rate": 4,
+        "power": 2,
+        "targeting": 1,
+        "threat_generation": 3,
+        "hacking": 0,
+        "armor": 1,
+        "shields": 5,
+        "shield_regen": 0,
+        "evasion": 1,
+        "damage_reflect": 2,
+        "damage_reduction": 2,
+        "heat_resistance": 1,
+        "overclock": 1,
+        "stealth": 1,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "evasion": {
+        "speed": 5,
+        "sensors": 3,
+        "energy_regen_rate": 1,
+        "power": 2,
+        "targeting": 2,
+        "threat_generation": 3,
+        "hacking": 1,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 0,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 2,
+        "overclock": 3,
+        "stealth": 4,
+        "crit_damage": 1,
+        "crit_chance": 1
+      },
+      "damage_reflect": {
+        "speed": 0,
+        "sensors": 1,
+        "energy_regen_rate": 1,
+        "power": 1,
+        "targeting": 1,
+        "threat_generation": 4,
+        "hacking": 0,
+        "armor": 4,
+        "shields": 3,
+        "shield_regen": 2,
+        "evasion": 0,
+        "damage_reflect": 0,
+        "damage_reduction": 5,
+        "heat_resistance": 2,
+        "overclock": 0,
+        "stealth": 0,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "damage_reduction": {
+        "speed": 1,
+        "sensors": 1,
+        "energy_regen_rate": 1,
+        "power": 1,
+        "targeting": 1,
+        "threat_generation": 4,
+        "hacking": 0,
+        "armor": 5,
+        "shields": 4,
+        "shield_regen": 2,
+        "evasion": 1,
+        "damage_reflect": 3,
+        "damage_reduction": 0,
+        "heat_resistance": 3,
+        "overclock": 0,
+        "stealth": 1,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "heat_resistance": {
+        "speed": 5,
+        "sensors": 3,
+        "energy_regen_rate": 2,
+        "power": 1,
+        "targeting": 1,
+        "threat_generation": 1,
+        "hacking": 1,
+        "armor": 5,
+        "shields": 4,
+        "shield_regen": 1,
+        "evasion": 2,
+        "damage_reflect": 1,
+        "damage_reduction": 3,
+        "heat_resistance": 0,
+        "overclock": 1,
+        "stealth": 3,
+        "crit_damage": 0,
+        "crit_chance": 0
+      },
+      "overclock": {
+        "speed": 3,
+        "sensors": 3,
+        "energy_regen_rate": 5,
+        "power": 5,
+        "targeting": 4,
+        "threat_generation": 1,
+        "hacking": 3,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 2,
+        "evasion": 2,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 0,
+        "stealth": 1,
+        "crit_damage": 2,
+        "crit_chance": 4
+      },
+      "stealth": {
+        "speed": 4,
+        "sensors": 5,
+        "energy_regen_rate": 1,
+        "power": 2,
+        "targeting": 3,
+        "threat_generation": 2,
+        "hacking": 5,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 4,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 2,
+        "overclock": 1,
+        "stealth": 0,
+        "crit_damage": 2,
+        "crit_chance": 3
+      },
+      "crit_damage": {
+        "speed": 1,
+        "sensors": 2,
+        "energy_regen_rate": 1,
+        "power": 4,
+        "targeting": 4,
+        "threat_generation": 1,
+        "hacking": 1,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 3,
+        "stealth": 2,
+        "crit_damage": 0,
+        "crit_chance": 5
+      },
+      "crit_chance": {
+        "speed": 2,
+        "sensors": 3,
+        "energy_regen_rate": 1,
+        "power": 4,
+        "targeting": 5,
+        "threat_generation": 1,
+        "hacking": 1,
+        "armor": 1,
+        "shields": 1,
+        "shield_regen": 1,
+        "evasion": 1,
+        "damage_reflect": 0,
+        "damage_reduction": 0,
+        "heat_resistance": 1,
+        "overclock": 3,
+        "stealth": 2,
+        "crit_damage": 5,
+        "crit_chance": 0
+      }
+    },
+    "pair_affinity_profiles": {
+      "threat_generation": {
+        "positive": {
+          "speed": 1,
+          "sensors": 1,
+          "energy_regen_rate": 2,
+          "power": 4,
+          "targeting": 2,
+          "threat_generation": 0,
+          "hacking": 0,
+          "armor": 5,
+          "shields": 5,
+          "shield_regen": 3,
+          "evasion": 1,
+          "damage_reflect": 3,
+          "damage_reduction": 4,
+          "heat_resistance": 1,
+          "overclock": 1,
+          "stealth": 0,
+          "crit_damage": 1,
+          "crit_chance": 1
+        },
+        "negative": {
+          "speed": 4,
+          "sensors": 4,
+          "energy_regen_rate": 2,
+          "power": 1,
+          "targeting": 2,
+          "threat_generation": 0,
+          "hacking": 3,
+          "armor": 0,
+          "shields": 0,
+          "shield_regen": 1,
+          "evasion": 5,
+          "damage_reflect": 0,
+          "damage_reduction": 0,
+          "heat_resistance": 1,
+          "overclock": 3,
+          "stealth": 5,
+          "crit_damage": 1,
+          "crit_chance": 1
+        }
+      }
+    }
+  },
+  "special_stat_rules": {
+    "threat_generation": {
+      "mode": "signed_scalar",
+      "role_sign_bias": {
+        "tank_aggro": "positive",
+        "tank": "neutral_or_positive",
+        "dps_fast_medium": "negative",
+        "dps_slow_big": "negative",
+        "repair": "negative",
+        "support": "negative"
+      },
+      "secondary_sign_hint_by_primary_stat": {
+        "armor": "positive",
+        "shields": "positive",
+        "shield_regen": "positive",
+        "damage_reflect": "positive",
+        "damage_reduction": "positive",
+        "power": "positive",
+        "hacking": "negative",
+        "evasion": "negative",
+        "stealth": "negative"
+      },
+      "primary_profile_selection": {
+        "positive": [
+          "positive",
+          "neutral_or_positive"
+        ],
+        "negative": [
+          "negative"
+        ]
+      }
+    }
+  },
+  "generation_rules": {
+    "allow_duplicate_stats_on_same_mod": false,
+    "zero_weight_blocks_roll": true,
+    "primary_stat_selection": {
+      "dedicated_slot_default_primary": {
+        "armor": "armor",
+        "shields": "shields",
+        "weapons": "power",
+        "sensors": "sensors",
+        "engines": "speed"
+      },
+      "utility_primary_is_role_driven": true,
+      "recommended_primary_candidates_by_slot": {
+        "armor": [
+          "armor"
+        ],
+        "shields": [
+          "shields",
+          "shield_regen"
+        ],
+        "weapons": [
+          "power",
+          "targeting",
+          "overclock",
+          "crit_chance"
+        ],
+        "sensors": [
+          "sensors",
+          "hacking",
+          "stealth",
+          "targeting"
+        ],
+        "engines": [
+          "speed",
+          "evasion",
+          "heat_resistance"
+        ]
+      },
+      "recommended_primary_candidates_by_role_for_utility": {
+        "tank_aggro": [
+          "threat_generation",
+          "armor",
+          "shields"
+        ],
+        "tank": [
+          "armor",
+          "shields"
+        ],
+        "dps_fast_medium": [
+          "overclock",
+          "power"
+        ],
+        "dps_slow_big": [
+          "power",
+          "crit_damage",
+          "targeting"
+        ],
+        "repair": [
+          "power",
+          "energy_regen_rate",
+          "shield_regen"
+        ],
+        "support": [
+          "sensors",
+          "hacking",
+          "energy_regen_rate"
+        ]
+      }
+    },
+    "secondary_stat_weight_formula": "slot_stat_affinity * role_stat_weight * pair_affinity * rarity_multiplier * situational_multiplier",
+    "default_external_multipliers": {
+      "situational_multiplier": 1.0
+    },
+    "notes": [
+      "Use role_slot_affinity to bias which roles are more natural for each slot, if your generator selects role after slot.",
+      "If role is selected first, role_slot_affinity can be used to bias which slots are more natural for that role.",
+      "For threat_generation as a secondary stat, use secondary_sign_hint_by_primary_stat when available; otherwise fall back to the role_sign_bias.",
+      "For threat_generation as a primary stat, use the positive or negative threat_generation pair_affinity profile based on the role_sign_bias."
+    ]
+  }
+}

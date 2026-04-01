@@ -26,6 +26,7 @@ import {
   validateModDrafts,
 } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
+import { generateAutoMods, getAutoModGeneratorConfig } from "@lib/mod-auto-generator";
 import {
   MOD_BASE_ABILITY_SLOT_COST,
   MOD_MAX_ABILITIES,
@@ -36,6 +37,8 @@ import {
 } from "@lib/mod-budget";
 
 type IssueFilter = "all" | "error" | "warning";
+type EditorMode = "editor" | "bulk" | "auto";
+type AbilityOption = { id: number | string; name?: string; description?: string };
 
 type BulkCreateState = {
   titles: string;
@@ -51,6 +54,27 @@ type BulkCreateState = {
   description: string;
 };
 
+type AutoGenerateState = {
+  count: string;
+  levelMin: string;
+  levelMax: string;
+  rarity: string;
+  allowedSlots: string[];
+  allowedRoles: string[];
+  abilityPool: string[];
+  abilitySearch: string;
+};
+
+const AUTO_MOD_GENERATOR_CONFIG = getAutoModGeneratorConfig();
+const AUTO_MOD_SLOT_OPTIONS = AUTO_MOD_GENERATOR_CONFIG.slot_order.map((slotId) => ({
+  value: slotId,
+  label: AUTO_MOD_GENERATOR_CONFIG.slots[slotId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.slots].label,
+}));
+const AUTO_MOD_ROLE_OPTIONS = AUTO_MOD_GENERATOR_CONFIG.role_order.map((roleId) => ({
+  value: roleId,
+  label: AUTO_MOD_GENERATOR_CONFIG.roles[roleId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.roles].label,
+}));
+
 const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   titles: "",
   slot: "",
@@ -63,6 +87,17 @@ const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   abilities: [],
   icon: "",
   description: "",
+};
+
+const EMPTY_AUTO_GENERATE_STATE: AutoGenerateState = {
+  count: "10",
+  levelMin: "1",
+  levelMax: "100",
+  rarity: "0",
+  allowedSlots: [...AUTO_MOD_GENERATOR_CONFIG.slot_order],
+  allowedRoles: [...AUTO_MOD_GENERATOR_CONFIG.role_order],
+  abilityPool: [],
+  abilitySearch: "",
 };
 
 function formatDraftNumber(value: number) {
@@ -151,13 +186,36 @@ export default function ModWorkshop({
   const [slotFilter, setSlotFilter] = useState("");
   const [levelMinFilter, setLevelMinFilter] = useState("");
   const [levelMaxFilter, setLevelMaxFilter] = useState("");
-  const [showBulkCreate, setShowBulkCreate] = useState(false);
+  const [editorMode, setEditorMode] = useState<EditorMode>("editor");
   const [bulkCreate, setBulkCreate] = useState<BulkCreateState>(EMPTY_BULK_CREATE_STATE);
+  const [autoGenerate, setAutoGenerate] = useState<AutoGenerateState>(EMPTY_AUTO_GENERATE_STATE);
+  const [availableAbilities, setAvailableAbilities] = useState<AbilityOption[]>([]);
 
   useEffect(() => {
     if (selectedIndex <= mods.length - 1) return;
     setSelectedIndex(Math.max(0, mods.length - 1));
   }, [mods.length, selectedIndex]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAbilities() {
+      try {
+        const response = await fetch("/api/abilities");
+        const json = await response.json().catch(() => ({ data: [] }));
+        if (cancelled) return;
+        setAvailableAbilities(Array.isArray(json.data) ? json.data : []);
+      } catch {
+        if (cancelled) return;
+        setAvailableAbilities([]);
+      }
+    }
+
+    loadAbilities();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clampedSelectedIndex = Math.max(0, Math.min(selectedIndex, Math.max(0, mods.length - 1)));
   const deferredSearch = search.trim().toLowerCase();
@@ -175,6 +233,15 @@ export default function ModWorkshop({
     () => calculateDerivedSellPrice(bulkCreate.levelRequirement, bulkCreate.rarity),
     [bulkCreate.levelRequirement, bulkCreate.rarity],
   );
+  const filteredAbilityOptions = useMemo(() => {
+    const searchValue = autoGenerate.abilitySearch.trim().toLowerCase();
+    if (!searchValue) return availableAbilities;
+    return availableAbilities.filter((ability) => {
+      const name = (ability.name || "").toLowerCase();
+      const id = String(ability.id).toLowerCase();
+      return name.includes(searchValue) || id.includes(searchValue);
+    });
+  }, [autoGenerate.abilitySearch, availableAbilities]);
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
   const issueFlagsByIndex = useMemo(() => {
@@ -326,6 +393,20 @@ export default function ModWorkshop({
     }));
   }
 
+  function updateAutoGenerate<K extends keyof AutoGenerateState>(key: K, value: AutoGenerateState[K]) {
+    setAutoGenerate((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleAutoGenerateValue(key: "allowedSlots" | "allowedRoles" | "abilityPool", value: string) {
+    setAutoGenerate((current) => {
+      const currentValues = current[key];
+      return {
+        ...current,
+        [key]: currentValues.includes(value) ? currentValues.filter((entry) => entry !== value) : [...currentValues, value],
+      };
+    });
+  }
+
   function addMod() {
     const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
     const previousId = selectedSyncedMod?.id.trim() || existingIds[existingIds.length - 1];
@@ -358,7 +439,7 @@ export default function ModWorkshop({
   function createBulkMods() {
     if (!bulkTitles.length) {
       setStatus("Paste at least one mod title before creating bulk mods.");
-      setShowBulkCreate(true);
+      setEditorMode("bulk");
       return;
     }
 
@@ -389,6 +470,39 @@ export default function ModWorkshop({
     setSelectedIndex(insertAt);
     setBulkCreate((current) => ({ ...current, titles: "" }));
     setStatus(`Created ${created.length} mod draft(s) from the bulk title list.`);
+  }
+
+  function createAutoGeneratedMods() {
+    try {
+      const existingIds = mods.map((mod) => mod.id.trim()).filter(Boolean);
+      const previousId = selectedSyncedMod?.id.trim() || existingIds[existingIds.length - 1];
+      const result = generateAutoMods(
+        {
+          count: Number(autoGenerate.count),
+          allowedSlots: autoGenerate.allowedSlots,
+          levelMin: Number(autoGenerate.levelMin),
+          levelMax: Number(autoGenerate.levelMax),
+          rarity: Number(autoGenerate.rarity),
+          allowedRoles: autoGenerate.allowedRoles,
+          abilityPool: autoGenerate.abilityPool,
+        },
+        existingIds,
+        previousId,
+      );
+
+      const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
+      const next = [...mods];
+      next.splice(insertAt, 0, ...result.mods);
+      onChange(next);
+      setSelectedIndex(insertAt);
+      setEditorMode("editor");
+      setStatus(
+        `Generated ${result.mods.length} auto mod draft(s).${result.warnings.length ? ` ${result.warnings.join(" ")}` : ""}`,
+      );
+    } catch (error) {
+      setEditorMode("auto");
+      setStatus(error instanceof Error ? error.message : "Auto-generation failed.");
+    }
   }
 
   async function importModsJson(event: ChangeEvent<HTMLInputElement>) {
@@ -477,10 +591,16 @@ export default function ModWorkshop({
             </div>
             <div className="flex gap-2">
               <button
-                className={`rounded px-3 py-2 text-sm transition ${showBulkCreate ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
-                onClick={() => setShowBulkCreate((current) => !current)}
+                className={`rounded px-3 py-2 text-sm transition ${editorMode === "bulk" ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
+                onClick={() => setEditorMode((current) => (current === "bulk" ? "editor" : "bulk"))}
               >
-                {showBulkCreate ? "Hide Bulk" : "Bulk Create"}
+                {editorMode === "bulk" ? "Hide Bulk" : "Bulk Create"}
+              </button>
+              <button
+                className={`rounded px-3 py-2 text-sm transition ${editorMode === "auto" ? "bg-accent text-black" : "bg-white/5 hover:bg-white/10"}`}
+                onClick={() => setEditorMode((current) => (current === "auto" ? "editor" : "auto"))}
+              >
+                {editorMode === "auto" ? "Hide Auto" : "Auto Generate"}
               </button>
               <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMod}>
                 New
@@ -630,11 +750,13 @@ export default function ModWorkshop({
         {selectedSyncedMod ? <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." /> : null}
 
         {selectedSyncedMod ? <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact /> : null}
+
+        {selectedSyncedMod?.generatorMeta ? <GeneratorMetaCard mod={selectedSyncedMod} /> : null}
       </div>
 
-      {!selectedSyncedMod && !showBulkCreate ? null : (
+      {!selectedSyncedMod && editorMode === "editor" ? null : (
         <div className="space-y-6">
-          {showBulkCreate ? (
+          {editorMode === "bulk" ? (
             <div className="card space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -891,7 +1013,169 @@ export default function ModWorkshop({
             </div>
           ) : null}
 
-          {!selectedSyncedMod ? null : (
+          {editorMode === "auto" ? (
+            <div className="card space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Auto Generate Mods</h2>
+                  <div className="text-xs text-white/50">
+                    Generate a batch from the slot, role, stat, and threat affinity config while keeping the existing mod budget system for final stat values.
+                  </div>
+                </div>
+                <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
+                  {autoGenerate.count || "0"} requested · {autoGenerate.abilityPool.length} ability option(s)
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="Count"
+                  value={autoGenerate.count}
+                  inputMode="numeric"
+                  step={1}
+                  onChange={(value) => updateAutoGenerate("count", value)}
+                  helpText="Creates this many new drafts in one batch."
+                />
+                <RarityField
+                  label="Rarity"
+                  value={autoGenerate.rarity}
+                  onChange={(value) => updateAutoGenerate("rarity", value)}
+                />
+              </div>
+
+              <div>
+                <div className="label mb-2">Level Range</div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),auto,minmax(0,1fr)]">
+                  <input
+                    className="input"
+                    type="number"
+                    inputMode="numeric"
+                    step={1}
+                    value={autoGenerate.levelMin}
+                    onChange={(event) => updateAutoGenerate("levelMin", event.target.value.trim() ? clampLevelInput(event.target.value) : "")}
+                    placeholder="1"
+                  />
+                  <div className="flex items-center justify-center text-sm text-white/60">to</div>
+                  <input
+                    className="input"
+                    type="number"
+                    inputMode="numeric"
+                    step={1}
+                    value={autoGenerate.levelMax}
+                    onChange={(event) => updateAutoGenerate("levelMax", event.target.value.trim() ? clampLevelInput(event.target.value) : "")}
+                    placeholder="100"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium">Allowed Slots</div>
+                  <div className="text-xs text-white/50">
+                    If multiple slots are checked, slot selection is biased by the selected role&apos;s slot affinity within this filtered pool.
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {AUTO_MOD_SLOT_OPTIONS.map((option) => (
+                    <CheckboxField
+                      key={`auto-slot-${option.value}`}
+                      label={option.label}
+                      checked={autoGenerate.allowedSlots.includes(option.value)}
+                      onChange={() => toggleAutoGenerateValue("allowedSlots", option.value)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium">Target Classes</div>
+                  <div className="text-xs text-white/50">
+                    These are the role ids from your generator config. Each generated mod targets one selected role; roles are not blended together.
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {AUTO_MOD_ROLE_OPTIONS.map((option) => (
+                    <CheckboxField
+                      key={`auto-role-${option.value}`}
+                      label={option.label}
+                      checked={autoGenerate.allowedRoles.includes(option.value)}
+                      onChange={() => toggleAutoGenerateValue("allowedRoles", option.value)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Ability Pool</div>
+                    <div className="text-xs text-white/50">
+                      Pick the abilities that are allowed in this session. Generated mods usually stay stat-only, but any rolled ability is chosen from this bag.
+                    </div>
+                  </div>
+                  <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+                    {availableAbilities.length} loaded
+                  </div>
+                </div>
+
+                <input
+                  className="input"
+                  value={autoGenerate.abilitySearch}
+                  onChange={(event) => updateAutoGenerate("abilitySearch", event.target.value)}
+                  placeholder="Search abilities by name or id"
+                />
+
+                <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                  {filteredAbilityOptions.length ? (
+                    filteredAbilityOptions.map((ability) => {
+                      const abilityId = String(ability.id);
+                      const checked = autoGenerate.abilityPool.includes(abilityId);
+                      return (
+                        <label
+                          key={`auto-ability-${abilityId}`}
+                          className={`flex items-start gap-3 rounded border px-3 py-3 text-sm transition ${
+                            checked ? "border-accent bg-white/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                          }`}
+                        >
+                          <input
+                            className="mt-1 h-4 w-4"
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAutoGenerateValue("abilityPool", abilityId)}
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-white">{ability.name || abilityId}</div>
+                            <div className="text-xs text-white/50">ID: {abilityId}</div>
+                            {ability.description ? <div className="mt-1 text-xs text-white/60">{ability.description}</div> : null}
+                          </div>
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                      No abilities match the current search.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button className="btn" onClick={createAutoGeneratedMods}>
+                  Generate {autoGenerate.count || "0"} Mods
+                </button>
+                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setAutoGenerate(EMPTY_AUTO_GENERATE_STATE)}>
+                  Reset Auto Generator
+                </button>
+              </div>
+
+              <div className="rounded border border-white/10 bg-black/20 p-3 text-xs text-white/60">
+                Generated mods keep the current budget rules, export with the normal mod schema, keep game class restriction as <code>None</code>, and store the selected role/slot/debug output as authoring-only metadata on the draft.
+              </div>
+            </div>
+          ) : null}
+
+          {!selectedSyncedMod || editorMode !== "editor" ? null : (
             <>
               <div className="card space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1273,6 +1557,84 @@ function BudgetSummaryCard({
       </div>
       <div className={`mt-3 text-xs text-white/50 ${compact ? "leading-5" : ""}`}>
         Full single-stat max is currently the required level. Slot profiles scale that max up or down, and each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity before any extra slot cost.
+      </div>
+    </div>
+  );
+}
+
+function GeneratorMetaCard({ mod }: { mod: ModDraft }) {
+  const meta = mod.generatorMeta;
+  if (!meta) return null;
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Generation Debug</h2>
+        <div className="text-xs text-white/50">Authoring-only metadata captured when this mod was auto-generated.</div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <Metric compact label="Class" value={meta.roleId} />
+        <Metric compact label="Slot" value={meta.slotId} />
+        <Metric compact label="Level" value={meta.level} />
+        <Metric compact label="Rarity" value={meta.rarity} />
+      </div>
+
+      <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
+        <div className="label mb-2">Primary Stat</div>
+        <div className="font-medium text-white">{meta.primaryStat}</div>
+        <div className="mt-3 label mb-2">Secondary Stats</div>
+        <div className="flex flex-wrap gap-2">
+          {meta.secondaryStats.length ? (
+            meta.secondaryStats.map((statId) => (
+              <span key={`secondary-${statId}`} className="rounded border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/70">
+                {statId}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-white/50">None</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
+        <div className="label mb-2">Ability Pool</div>
+        <div className="flex flex-wrap gap-2">
+          {meta.abilityPool.length ? (
+            meta.abilityPool.map((abilityId) => (
+              <span key={`ability-pool-${String(abilityId)}`} className="rounded border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/70">
+                {String(abilityId)}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-white/50">No abilities were eligible for this batch.</span>
+          )}
+        </div>
+        <div className="mt-3 label mb-2">Selected Abilities</div>
+        <div className="flex flex-wrap gap-2">
+          {meta.selectedAbilities.length ? (
+            meta.selectedAbilities.map((abilityId) => (
+              <span key={`selected-ability-${String(abilityId)}`} className="rounded border border-accent/30 bg-accent/10 px-2 py-1 text-xs text-accent">
+                {String(abilityId)}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-white/50">No ability rolled onto this mod.</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
+        <div className="label mb-2">Final Rolled Stat Values</div>
+        <div className="space-y-2">
+          {Object.entries(meta.finalRolledStats).map(([statId, value]) => (
+            <div key={`rolled-${statId}`} className="flex items-center justify-between gap-3 rounded border border-white/10 bg-black/20 px-3 py-2">
+              <span className="text-white/70">{statId}</span>
+              <span className="font-medium text-white">{value}</span>
+            </div>
+          ))}
+        </div>
+        {meta.threatSign ? <div className="mt-3 text-xs text-white/50">Threat sign: {meta.threatSign}</div> : null}
       </div>
     </div>
   );

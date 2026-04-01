@@ -39,6 +39,11 @@ Open **Settings** to view the currently loaded URLs and force a reload.
   - Shared Browser + Map filters for folder, category, arc, tag, faction, class, level range, mode, objective type, prerequisites, and repeatable state
   - Prerequisite graph view and focused top-to-bottom chain cards
   - Read-only mission detail drawer with step/objective structure, rewards, descriptions, conversations summary, and source path
+- Authoring Workspace:
+  - Seed or import mod drafts, edit them live, and export `Mods.json`
+  - Bulk create titled mod batches from a shared template
+  - Auto-generate mods from the slot/role affinity config with count, slot pool, level range, rarity, role pool, and ability-pool controls
+  - Preserve authoring-only generation debug metadata on generated drafts without changing the exported game JSON
 - Holes report (band × slot × rarity, colored, total, required=10 by default)
 - Outliers report with z-score explanation
 
@@ -100,6 +105,23 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
    - copying only the currently selected profile JSON.
 
 Merchant Lab is isolated from the console’s existing read-only item/mod explorers and from the separate mission/mob tools.
+
+## Mod Auto Generator Usage
+1. Open `/authoring` and switch to `Mod Builder`.
+2. Click `Auto Generate`.
+3. Choose:
+   - batch count,
+   - rarity,
+   - level min/max,
+   - allowed slot pool,
+   - allowed role/class pool,
+   - optional ability pool from the loaded console abilities list.
+4. Generate the batch. Each new draft:
+   - keeps the normal mod export shape,
+   - uses the existing level/rarity stat budget system for final values,
+   - stores authoring-only generation debug metadata for the selected role, slot, primary stat, secondary stats, ability picks, threat sign, and final rolled values.
+
+The auto generator is data-driven from `lib/mod-auto-generator-config.json`, so future balance tuning can be done in config without rewriting the generation logic.
 
 ## Config
 See `config.json` for level bands, thresholds, rarity labels, and weights.
