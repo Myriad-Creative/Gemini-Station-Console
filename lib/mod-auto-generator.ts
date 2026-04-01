@@ -61,6 +61,7 @@ const ABILITY_ROLL_CHANCE_BY_RARITY: Record<number, number> = {
   3: 0.2,
   4: 0.24,
 };
+const DEFAULT_GENERATED_MOD_ICON = "res://assets/mods/DEFAULT.png";
 
 const DEDICATED_PRIMARY_DEFAULT_MULTIPLIER = 3;
 
@@ -486,6 +487,22 @@ function applyThreatSigns(mod: ModDraft, selectedStats: GeneratedStatSelection[]
   });
 }
 
+function floorGeneratedStatValues(mod: ModDraft) {
+  return syncDerivedModFields({
+    ...mod,
+    stats: mod.stats.map((entry) => {
+      const numericValue = parseNumber(entry.value);
+      if (numericValue === undefined) return entry;
+      const flooredMagnitude = Math.floor(Math.abs(numericValue));
+      const nextValue = numericValue < 0 ? -flooredMagnitude : flooredMagnitude;
+      return {
+        ...entry,
+        value: String(nextValue),
+      };
+    }),
+  });
+}
+
 function collectFinalRolledStats(mod: ModDraft) {
   return Object.fromEntries(
     mod.stats
@@ -560,6 +577,7 @@ function generateOneMod(
     levelRequirement: String(level),
     rarity: String(request.rarity),
     durability: "100",
+    icon: DEFAULT_GENERATED_MOD_ICON,
     abilities: selectedAbilities.map((abilityId) => createModAbilityDraft(String(abilityId), "")),
     stats: selectedStats.map((entry) => ({
       key: entry.key,
@@ -574,6 +592,7 @@ function generateOneMod(
     syncAllStatValuesToMax: true,
   });
   draft = applyThreatSigns(draft, selectedStats);
+  draft = floorGeneratedStatValues(draft);
   draft = syncDerivedModFields({
     ...draft,
     generatorMeta: buildGeneratorMeta(request, roleId, slotId, level, primaryStatId, selectedStats, selectedAbilities, draft),
