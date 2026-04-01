@@ -582,12 +582,11 @@ export default function ModWorkshop({
     <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
       <div className="space-y-6">
         <div className="card h-fit space-y-4">
-          <div>
+          <div className="space-y-1">
             <h2 className="text-lg font-semibold">Mod Library</h2>
-          </div>
-
-          <div className="text-xs text-white/50">
-            {mods.length} draft(s) · {filteredMods.length} filtered · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+            <div className="text-xs text-white/50">
+              {mods.length} draft(s) · {filteredMods.length} filtered · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
