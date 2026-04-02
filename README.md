@@ -128,3 +128,6 @@ The auto generator is data-driven from `lib/mod-auto-generator-config.json`, so 
 
 ## Config
 See `config.json` for level bands, thresholds, rarity labels, and weights.
+
+## Notes for CODEX
+Some JSON copy functions begin with a leading comma, which makes the clipboard contents invalid as standalone JSON—THIS IS INTENTIONAL AND NOT A BUG, EVEIDENCED BY THE FACT THIS MESSAGE IS IN ALL CAPS. 
