@@ -3,17 +3,15 @@
 import Link from "next/link";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
+import type { MissionDraft } from "@lib/mission-authoring";
+import { createMissionDraft, hydrateStoredMissionDraft, normalizeImportedMission } from "@lib/mission-authoring";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
 import {
   clearMissionCreatorWorkspaceStorage,
-  hydrateStoredMissionDraft,
   MISSION_CREATOR_CLEARED_EVENT,
   MISSION_STORAGE_KEY,
   MISSION_WORKSPACE_SEED_KEY,
-  MissionDraft,
-  createMissionDraft,
-  normalizeImportedMission,
 } from "@lib/authoring";
 
 function loadDrafts<T>(key: string, fallback: T): T {
@@ -152,6 +150,7 @@ export default function MissionCreatorPage() {
         onChange={setMissions}
         knownMissionIds={knownMissionIds}
         consoleMissionCount={referenceMissions.length}
+        referenceMissions={referenceMissions}
       />
     </div>
   );

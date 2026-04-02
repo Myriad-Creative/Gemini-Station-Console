@@ -3,16 +3,14 @@
 import { startTransition, useEffect, useMemo, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
 import ModWorkshop from "@components/authoring/ModWorkshop";
+import type { MissionDraft } from "@lib/mission-authoring";
+import { createMissionDraft, hydrateStoredMissionDraft, normalizeImportedMission } from "@lib/mission-authoring";
 import {
-  hydrateStoredMissionDraft,
   hydrateStoredModDraft,
   MISSION_STORAGE_KEY,
   MOD_STORAGE_KEY,
-  MissionDraft,
   ModDraft,
-  createMissionDraft,
   createModDraft,
-  normalizeImportedMission,
   normalizeImportedMod,
 } from "@lib/authoring";
 
