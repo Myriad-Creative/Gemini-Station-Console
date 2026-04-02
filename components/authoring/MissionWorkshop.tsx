@@ -826,20 +826,6 @@ export default function MissionWorkshop({
                       placeholder="step1"
                     />
 
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-                        onClick={() =>
-                          updateConversation(conversationIndex, (current) => ({
-                            ...current,
-                            beats: [...current.beats, createMissionConversationBeatDraft()],
-                          }))
-                        }
-                      >
-                        Add Beat
-                      </button>
-                    </div>
-
                     <div className="mt-4 space-y-3">
                       {conversation.beats.map((beat, beatIndex) => (
                         <div key={beat.key} className="rounded border border-white/10 bg-black/20 p-3">
@@ -908,17 +894,31 @@ export default function MissionWorkshop({
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="label">Responses</div>
-                              <button
-                                className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
-                                onClick={() =>
-                                  updateBeat(conversationIndex, beatIndex, (current) => ({
-                                    ...current,
-                                    responses: [...current.responses, createMissionConversationResponseDraft()],
-                                  }))
-                                }
-                              >
-                                Add Response
-                              </button>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
+                                  onClick={() =>
+                                    updateBeat(conversationIndex, beatIndex, (current) => ({
+                                      ...current,
+                                      responses: [...current.responses, createMissionConversationResponseDraft()],
+                                    }))
+                                  }
+                                >
+                                  Add Response
+                                </button>
+                                <button
+                                  className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
+                                  onClick={() =>
+                                    updateConversation(conversationIndex, (current) => {
+                                      const next = [...current.beats];
+                                      next.splice(beatIndex + 1, 0, createMissionConversationBeatDraft());
+                                      return { ...current, beats: next };
+                                    })
+                                  }
+                                >
+                                  Add Beat
+                                </button>
+                              </div>
                             </div>
 
                             {beat.responses.length ? (
