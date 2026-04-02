@@ -214,7 +214,7 @@ export default function MissionWorkshop({
           <div>
             <h2 className="text-lg font-semibold">Mission Library</h2>
             <div className="text-xs text-white/50">
-              {missions.length} draft(s) · {consoleMissionCount} console mission id(s) available for prerequisites
+              {missions.length} draft(s) · {consoleMissionCount} reference mission id(s) available for prerequisites
             </div>
           </div>
           <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMission}>

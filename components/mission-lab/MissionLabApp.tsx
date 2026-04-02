@@ -1,7 +1,6 @@
 "use client";
 
-import type { InputHTMLAttributes } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   MissionFilterState,
   MissionGraphEdge,
@@ -11,6 +10,7 @@ import type {
   MissionSortKey,
   NormalizedMission,
 } from "@lib/mission-lab/types";
+import { useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import { createDefaultMissionFilterState } from "@lib/mission-lab/filters";
 import { humanizeToken } from "@lib/mission-lab/utils";
 import MissionFlow from "@components/mission-lab/MissionFlow";
@@ -37,7 +37,6 @@ type GraphFocus = {
   orderedNodeIds: string[];
 };
 
-const SESSION_STORAGE_KEY = "gemini.console.mission-lab.session.v1";
 const DEFAULT_FILTERS = createDefaultMissionFilterState();
 
 function buildFilterParams(filters: MissionFilterState) {
@@ -230,41 +229,21 @@ function exportMissionsToCsv(rows: NormalizedMission[]) {
 }
 
 export default function MissionLabApp() {
-  const zipInputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"import" | "browser" | "map" | "diagnostics">("import");
+  const sessionId = useMissionLabSessionId();
+  const [activeTab, setActiveTab] = useState<"browser" | "map" | "diagnostics">("browser");
   const [mapMode, setMapMode] = useState<"graph" | "chain">("graph");
   const [filters, setFilters] = useState<MissionFilterState>(DEFAULT_FILTERS);
   const [summary, setSummary] = useState<MissionImportSummary | null>(null);
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [rows, setRows] = useState<NormalizedMission[]>([]);
-  const [selectedMission, setSelectedMission] = useState<NormalizedMission | null>(null);
   const [detailMissionKey, setDetailMissionKey] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<MissionImportDiagnostics | null>(null);
   const [graphNodes, setGraphNodes] = useState<MissionGraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<MissionGraphEdge[]>([]);
   const [graphFocus, setGraphFocus] = useState<GraphFocus>({ nodeIds: [], edgeIds: [], orderedNodeIds: [] });
-  const [status, setStatus] = useState<{ tone: "neutral" | "success" | "error"; message: string }>({
-    tone: "neutral",
-    message: "Import a mission zip or folder to start a read-only Mission Lab workspace.",
-  });
+  const [status, setStatus] = useState<{ tone: "neutral" | "success" | "error"; message: string }>({ tone: "neutral", message: "" });
   const [isLoading, setIsLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [refreshToken, setRefreshToken] = useState(0);
   const [centerSignal, setCenterSignal] = useState(0);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (stored) {
-      setSessionId(stored);
-      return;
-    }
-
-    const nextSessionId = window.crypto?.randomUUID?.() ?? `mission-lab-${Date.now()}`;
-    window.localStorage.setItem(SESSION_STORAGE_KEY, nextSessionId);
-    setSessionId(nextSessionId);
-  }, []);
 
   useEffect(() => {
     const activeSessionId = sessionId;
@@ -293,12 +272,12 @@ export default function MissionLabApp() {
         setSummary(missionsJson.summary ?? null);
         setOptions(missionsJson.options ?? null);
         setRows(Array.isArray(missionsJson.rows) ? missionsJson.rows : []);
-        setSelectedMission(missionsJson.selectedMission ?? null);
         setDiagnostics(diagnosticsJson.diagnostics ?? null);
         setGraphNodes(Array.isArray(graphJson.nodes) ? graphJson.nodes : []);
         setGraphEdges(Array.isArray(graphJson.edges) ? graphJson.edges : []);
         setGraphFocus(graphJson.focus ?? { nodeIds: [], edgeIds: [], orderedNodeIds: [] });
         setFilters(missionsJson.filters ?? DEFAULT_FILTERS);
+        setStatus({ tone: "neutral", message: "" });
       } catch (error) {
         if (cancelled) return;
         setStatus({
@@ -315,107 +294,12 @@ export default function MissionLabApp() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, JSON.stringify(filters), refreshToken]);
+  }, [sessionId, JSON.stringify(filters)]);
 
   useEffect(() => {
     if (!detailMissionKey) return;
     if (!rows.some((mission) => mission.key === detailMissionKey)) setDetailMissionKey(null);
   }, [rows, detailMissionKey]);
-
-  async function importZip(file: File) {
-    const activeSessionId = sessionId;
-    if (!activeSessionId) return;
-    setImporting(true);
-    setStatus({ tone: "neutral", message: `Importing ${file.name}…` });
-
-    try {
-      const formData = new FormData();
-      formData.set("sourceType", "zip");
-      formData.set("file", file);
-      const response = await fetch("/api/mission-lab/import", {
-        method: "POST",
-        headers: { "x-mission-lab-session": activeSessionId as string },
-        body: formData,
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Zip import failed.");
-
-      setFilters(payload.filters ?? DEFAULT_FILTERS);
-      setStatus({
-        tone: "success",
-        message: `Imported ${payload.summary?.totalMissions ?? 0} missions from ${payload.summary?.sourceLabel ?? file.name}.`,
-      });
-      setActiveTab("browser");
-      setRefreshToken((value) => value + 1);
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setImporting(false);
-      if (zipInputRef.current) zipInputRef.current.value = "";
-    }
-  }
-
-  async function importFolder(fileList: FileList | null) {
-    const activeSessionId = sessionId;
-    if (!activeSessionId || !fileList?.length) return;
-    setImporting(true);
-    setStatus({ tone: "neutral", message: `Importing ${fileList.length} selected files…` });
-
-    try {
-      const formData = new FormData();
-      formData.set("sourceType", "folder");
-      const files = Array.from(fileList);
-      for (const file of files) {
-        const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-        formData.append("files", file);
-        formData.append("relativePaths", relativePath);
-      }
-
-      const response = await fetch("/api/mission-lab/import", {
-        method: "POST",
-        headers: { "x-mission-lab-session": activeSessionId as string },
-        body: formData,
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Folder import failed.");
-
-      setFilters(payload.filters ?? DEFAULT_FILTERS);
-      setStatus({
-        tone: "success",
-        message: `Imported ${payload.summary?.totalMissions ?? 0} missions from the selected folder.`,
-      });
-      setActiveTab("browser");
-      setRefreshToken((value) => value + 1);
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setImporting(false);
-      if (folderInputRef.current) folderInputRef.current.value = "";
-    }
-  }
-
-  async function clearWorkspace() {
-    const activeSessionId = sessionId;
-    if (!activeSessionId) return;
-    await fetch("/api/mission-lab/import", {
-      method: "DELETE",
-      headers: { "x-mission-lab-session": activeSessionId as string },
-    });
-    setFilters(DEFAULT_FILTERS);
-    setDetailMissionKey(null);
-    setActiveTab("import");
-    setStatus({
-      tone: "neutral",
-      message: "Cleared the current Mission Lab workspace.",
-    });
-    setRefreshToken((value) => value + 1);
-  }
 
   function updateArrayFilter(
     key: keyof Pick<MissionFilterState, "folders" | "categories" | "arcs" | "tags" | "factions" | "classes" | "modes" | "objectiveTypes">,
@@ -495,7 +379,7 @@ export default function MissionLabApp() {
           </table>
         </div>
       ) : (
-        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+        <EmptyState title="No shared workspace imported" body="Import a missions zip on the Missions dashboard to browse it here." />
       )
     ) : activeTab === "map" ? (
       summary ? (
@@ -590,13 +474,13 @@ export default function MissionLabApp() {
           )}
         </div>
       ) : (
-        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+        <EmptyState title="No shared workspace imported" body="Import a missions zip on the Missions dashboard to view its map here." />
       )
     ) : activeTab === "diagnostics" ? (
       summary ? (
         <MissionDiagnosticsPanel summary={summary} diagnostics={diagnostics} />
       ) : (
-        <EmptyState title="No workspace imported" body="Use the Import tab to load a mission zip or a missions folder." />
+        <EmptyState title="No shared workspace imported" body="Import a missions zip on the Missions dashboard to inspect diagnostics here." />
       )
     ) : null;
 
@@ -606,30 +490,30 @@ export default function MissionLabApp() {
         <div>
           <h1 className="page-title mb-1">Mission Lab</h1>
           <p className="max-w-3xl text-sm leading-6 text-white/65">
-            Import a mission zip or mission folder, normalize tolerant mission data in an isolated workspace, browse and filter the
-            full set, and inspect prerequisite chains in graph or chain form.
+            Browse the shared imported mission workspace, filter the normalized data set, and inspect prerequisite chains in graph or chain form.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <TabButton label="Import" active={activeTab === "import"} onClick={() => setActiveTab("import")} />
           <TabButton label="Browser" active={activeTab === "browser"} onClick={() => setActiveTab("browser")} />
           <TabButton label="Map" active={activeTab === "map"} onClick={() => setActiveTab("map")} />
           <TabButton label="Diagnostics" active={activeTab === "diagnostics"} onClick={() => setActiveTab("diagnostics")} />
         </div>
       </div>
 
-      <div
-        className={`rounded-xl border px-4 py-3 text-sm ${
-          status.tone === "error"
-            ? "border-red-400/30 bg-red-400/10 text-red-100"
-            : status.tone === "success"
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-              : "border-white/10 bg-white/5 text-white/70"
-        }`}
-      >
-        {status.message}
-      </div>
+      {status.message ? (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            status.tone === "error"
+              ? "border-red-400/30 bg-red-400/10 text-red-100"
+              : status.tone === "success"
+                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                : "border-white/10 bg-white/5 text-white/70"
+          }`}
+        >
+          {status.message}
+        </div>
+      ) : null}
 
       {summary ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -640,105 +524,9 @@ export default function MissionLabApp() {
         </div>
       ) : null}
 
-      {activeTab === "import" ? (
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="card space-y-5">
-            <div>
-              <div className="text-xl font-semibold text-white">Import Workspace</div>
-              <div className="mt-2 text-sm text-white/60">
-                Mission Lab is read-only. Imported data stays isolated from the manifest-backed console store and can be cleared at any
-                time.
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl border border-dashed border-cyan-300/25 bg-[#091321] px-6 py-12 text-center"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const zipFile = Array.from(event.dataTransfer.files).find((file) => file.name.toLowerCase().endsWith(".zip"));
-                if (zipFile) {
-                  void importZip(zipFile);
-                } else {
-                  setStatus({
-                    tone: "error",
-                    message: "Drag and drop expects a .zip file. Use the folder picker for direct mission-folder imports.",
-                  });
-                }
-              }}
-            >
-              <div className="text-2xl font-semibold text-white">Drop a missions zip here</div>
-              <div className="mt-2 text-sm text-white/55">Or use the controls below to import a zip file or a selected missions folder.</div>
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <button className="btn" onClick={() => zipInputRef.current?.click()} disabled={importing}>
-                  Choose Zip
-                </button>
-                <button
-                  className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-                  onClick={() => folderInputRef.current?.click()}
-                  disabled={importing}
-                >
-                  Choose Folder
-                </button>
-                <button
-                  className="rounded border border-red-400/25 px-4 py-2 text-sm text-red-100 hover:bg-red-400/10"
-                  onClick={() => void clearWorkspace()}
-                  disabled={importing}
-                >
-                  Clear Workspace
-                </button>
-              </div>
-            </div>
-
-            <input
-              ref={zipInputRef}
-              type="file"
-              accept=".zip,application/zip"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void importZip(file);
-              }}
-            />
-            <input
-              ref={folderInputRef}
-              type="file"
-              className="hidden"
-              multiple
-              {...({ webkitdirectory: "true", directory: "true" } as InputHTMLAttributes<HTMLInputElement> & {
-                webkitdirectory?: string;
-                directory?: string;
-              })}
-              onChange={(event) => void importFolder(event.target.files)}
-            />
-          </div>
-
-          <div className="card space-y-4">
-            <div className="text-xl font-semibold text-white">Workspace Summary</div>
-            {summary ? (
-              <div className="space-y-3 text-sm text-white/70">
-                <div>
-                  Source: <span className="text-white">{summary.sourceType}</span>
-                  {summary.sourceLabel ? <span className="text-white/60"> ({summary.sourceLabel})</span> : null}
-                </div>
-                <div>Imported: {new Date(summary.importedAt).toLocaleString()}</div>
-                <div>Missions: {summary.totalMissions}</div>
-                <div>Folders: {summary.totalFolders}</div>
-                <div>Prerequisite edges: {summary.totalPrerequisiteEdges}</div>
-                <div>Warnings: {summary.parseWarnings}</div>
-                <div>Errors: {summary.parseErrors}</div>
-              </div>
-            ) : (
-              <div className="text-sm text-white/55">No Mission Lab workspace is currently loaded.</div>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {activeTab !== "import" ? (
-        summary ? (
-          <div className="grid gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
-            <aside className="card h-fit space-y-4 xl:sticky xl:top-24">
+      {summary ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
+          <aside className="card h-fit space-y-4 xl:sticky xl:top-24">
               <div className="space-y-1">
                 <div className="text-xl font-semibold text-white">Shared Filters</div>
                 <div className="text-sm text-white/55">Browser, Map, and Diagnostics stay aligned to the same mission selection and filter set.</div>
@@ -898,14 +686,13 @@ export default function MissionLabApp() {
                   </select>
                 </div>
               </div>
-            </aside>
+          </aside>
 
-            <div className="min-w-0">{workspaceContent}</div>
-          </div>
-        ) : (
-          workspaceContent
-        )
-      ) : null}
+          <div className="min-w-0">{workspaceContent}</div>
+        </div>
+      ) : (
+        workspaceContent
+      )}
 
       <MissionDetailPanel
         mission={detailMission}

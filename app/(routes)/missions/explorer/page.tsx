@@ -1,96 +1,146 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
+import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
 
-type Mission = {
-  id: string;
-  title: string;
-  has_explicit_gating: boolean;
-  level_min?: number;
-  level_max?: number;
-  inferred_level?: number;
-  giver_id?: string;
-  faction?: string;
-  arcs?: string[];
-  tags?: string[];
-  objectives: any[];
+type WorkspacePayload = {
+  summary: MissionImportSummary | null;
+  missions: NormalizedMission[];
+  levelBands: [number, number][];
 };
 
 export default function MissionsExplorerPage() {
+  const sessionId = useMissionLabSessionId();
+  const [summary, setSummary] = useState<MissionImportSummary | null>(null);
+  const [rows, setRows] = useState<NormalizedMission[]>([]);
   const [bands, setBands] = useState<[number, number][]>([]);
   const [band, setBand] = useState("");
-  const [rows, setRows] = useState<Mission[]>([]);
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
+    if (!sessionId) return;
     let cancelled = false;
 
-    async function load() {
-      const response = await fetch(`/api/missions${band ? `?band=${band}` : ""}`);
-      const json = await response.json();
-      if (cancelled) return;
-      setRows(json.rows);
-      setBands(json.bands);
+    async function loadWorkspace() {
+      try {
+        const response = await fetch("/api/mission-lab/workspace", {
+          headers: buildMissionLabSessionHeaders(sessionId),
+        });
+        const payload = (await response.json()) as WorkspacePayload;
+        if (cancelled) return;
+        setSummary(payload.summary ?? null);
+        setRows(Array.isArray(payload.missions) ? payload.missions : []);
+        setBands(Array.isArray(payload.levelBands) ? payload.levelBands : []);
+        setStatus("");
+      } catch (error) {
+        if (cancelled) return;
+        setStatus(error instanceof Error ? error.message : String(error));
+      }
     }
 
-    void load();
+    void loadWorkspace();
     return () => {
       cancelled = true;
     };
-  }, [band]);
+  }, [sessionId]);
+
+  const filteredRows = useMemo(() => {
+    if (!band) return rows;
+    const [min, max] = band.split("-").map(Number);
+    return rows.filter((mission) => mission.level != null && mission.level >= min && mission.level <= max);
+  }, [band, rows]);
 
   return (
     <div className="space-y-4">
-      <h1 className="page-title">Missions Explorer</h1>
-      <div className="card flex items-end gap-2">
-        <div>
-          <div className="label">Band</div>
-          <select className="select" value={band} onChange={(event) => setBand(event.target.value)}>
-            <option value="">All</option>
-            {bands.map(([min, max]) => (
-              <option key={`${min}-${max}`} value={`${min}-${max}`}>
-                {min}-{max}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div>
+        <h1 className="page-title mb-1">Mission Explorer</h1>
+        <p className="max-w-3xl text-sm text-white/70">
+          Browse the missions currently loaded in the shared imported workspace from the Missions dashboard.
+        </p>
       </div>
 
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Level (explicit / inferred)</th>
-              <th>Faction</th>
-              <th>Giver</th>
-              <th>Objectives</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((mission) => (
-              <tr key={mission.id}>
-                <td className="font-medium">{mission.title}</td>
-                <td>
-                  {mission.has_explicit_gating ? (
-                    `${mission.level_min ?? "?"}-${mission.level_max ?? "?"}`
-                  ) : (
-                    <span className="badge">inferred: {mission.inferred_level ?? "?"}</span>
-                  )}
-                </td>
-                <td>{mission.faction || ""}</td>
-                <td>{mission.giver_id || ""}</td>
-                <td>
-                  {(mission.objectives || []).map((objective: any, index: number) => (
-                    <span key={index} className="badge mr-1">
-                      {objective.type}
-                    </span>
-                  ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {status ? <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-100">{status}</div> : null}
+
+      {!summary ? (
+        <div className="card py-10 text-center">
+          <div className="text-xl font-semibold text-white">No shared mission workspace loaded</div>
+          <div className="mt-2 text-sm text-white/55">Import a missions zip on the Missions dashboard before using Mission Explorer.</div>
+          <div className="mt-5">
+            <Link href="/missions" className="btn">
+              Go To Missions Dashboard
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="card flex flex-wrap items-end gap-4">
+            <div>
+              <div className="label">Level Band</div>
+              <select className="select mt-1" value={band} onChange={(event) => setBand(event.target.value)}>
+                <option value="">All</option>
+                {bands.map(([min, max]) => (
+                  <option key={`${min}-${max}`} value={`${min}-${max}`}>
+                    {min}-{max}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="text-sm text-white/55">
+              Showing <span className="text-white">{filteredRows.length}</span> of <span className="text-white">{summary.totalMissions}</span> imported
+              missions.
+            </div>
+          </div>
+
+          <div className="card overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>ID</th>
+                  <th>Level</th>
+                  <th>Folder</th>
+                  <th>Faction</th>
+                  <th>Giver</th>
+                  <th>Objectives</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.length ? (
+                  filteredRows.map((mission) => (
+                    <tr key={mission.key}>
+                      <td className="font-medium">{mission.title}</td>
+                      <td className="text-white/65">{mission.id}</td>
+                      <td>{mission.level ?? "?"}</td>
+                      <td>{mission.folderName}</td>
+                      <td>{mission.faction ?? "None"}</td>
+                      <td>{mission.giverId ?? ""}</td>
+                      <td>
+                        {mission.objectiveTypes.length ? (
+                          mission.objectiveTypes.map((type) => (
+                            <span key={`${mission.key}-${type}`} className="badge mr-1">
+                              {type}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-white/45">None</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-white/50">
+                      No imported missions match the selected level band.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

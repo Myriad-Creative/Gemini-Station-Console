@@ -1,26 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
+import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
+import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
 import {
   MISSION_STORAGE_KEY,
   MissionDraft,
   createMissionDraft,
   normalizeImportedMission,
 } from "@lib/authoring";
-
-type ExistingMissionRow = {
-  id: string;
-  title: string;
-  giver_id?: string;
-  faction?: string;
-  arcs?: string[];
-  tags?: string[];
-  repeatable?: boolean;
-  level_min?: number;
-  level_max?: number;
-  objectives?: unknown[];
-};
 
 function loadDrafts<T>(key: string, fallback: T): T {
   try {
@@ -33,8 +23,10 @@ function loadDrafts<T>(key: string, fallback: T): T {
 }
 
 export default function MissionCreatorPage() {
+  const sessionId = useMissionLabSessionId();
   const [missions, setMissions] = useState<MissionDraft[]>([createMissionDraft()]);
-  const [existingMissions, setExistingMissions] = useState<ExistingMissionRow[]>([]);
+  const [referenceMissions, setReferenceMissions] = useState<NormalizedMission[]>([]);
+  const [workspaceSummary, setWorkspaceSummary] = useState<MissionImportSummary | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
 
@@ -50,46 +42,51 @@ export default function MissionCreatorPage() {
   }, [hydrated, missions]);
 
   useEffect(() => {
+    if (!sessionId) return;
     let cancelled = false;
 
-    async function loadConsoleData() {
+    async function loadWorkspaceData() {
       try {
-        const response = await fetch("/api/missions");
-        const json = await response.json().catch(() => ({ rows: [] }));
+        const response = await fetch("/api/mission-lab/workspace", {
+          headers: buildMissionLabSessionHeaders(sessionId),
+        });
+        const json = await response.json().catch(() => ({ summary: null, missions: [] }));
         if (cancelled) return;
-        setExistingMissions(Array.isArray(json.rows) ? json.rows : []);
+        setWorkspaceSummary(json.summary ?? null);
+        setReferenceMissions(Array.isArray(json.missions) ? json.missions : []);
       } catch {
         if (cancelled) return;
-        setExistingMissions([]);
+        setWorkspaceSummary(null);
+        setReferenceMissions([]);
       }
     }
 
-    loadConsoleData();
+    void loadWorkspaceData();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionId]);
 
   const knownMissionIds = useMemo(() => {
     return Array.from(
       new Set([
-        ...existingMissions.map((mission) => mission.id.trim()).filter(Boolean),
+        ...referenceMissions.map((mission) => mission.id.trim()).filter(Boolean),
         ...missions.map((mission) => mission.id.trim()).filter(Boolean),
       ]),
     ).sort((left, right) => left.localeCompare(right));
-  }, [existingMissions, missions]);
+  }, [referenceMissions, missions]);
 
   function seedMissionDrafts() {
-    if (!existingMissions.length) {
-      setWorkspaceMessage("No mission data is currently loaded in the console.");
+    if (!referenceMissions.length) {
+      setWorkspaceMessage("No shared mission workspace is loaded. Import a missions zip on the Missions dashboard first.");
       return;
     }
 
-    const seeded = existingMissions.map((mission) => normalizeImportedMission(mission));
+    const seeded = referenceMissions.map((mission) => normalizeImportedMission(mission.raw));
     startTransition(() => {
       setMissions(seeded.length ? seeded : [createMissionDraft()]);
     });
-    setWorkspaceMessage(`Seeded ${seeded.length} mission draft(s) from the current console data.`);
+    setWorkspaceMessage(`Seeded ${seeded.length} mission draft(s) from the shared imported workspace.`);
   }
 
   function clearMissionDrafts() {
@@ -102,7 +99,7 @@ export default function MissionCreatorPage() {
       <div>
         <h1 className="page-title mb-1">Mission Creator</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Build mission drafts in the richer authoring model, validate them live, and export JSON you can drop into the game repo.
+          Build mission drafts in the richer authoring model, seeded from the shared imported mission workspace when needed.
         </p>
       </div>
 
@@ -110,26 +107,27 @@ export default function MissionCreatorPage() {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">
           <div className="space-y-3">
             <div className="text-sm text-white/70">
-              The console&apos;s read-only mission feed is normalized and may not contain every runtime field. This creator keeps richer
-              authoring data in `extra JSON` blocks and exports a compatibility-first mission shape.
+              Import a missions zip on the Missions dashboard to make its normalized mission data available here for draft seeding and prerequisite validation.
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded border border-white/10 bg-black/20 p-3">
                 <div className="label">Draft missions</div>
                 <div className="mt-1 text-2xl font-semibold">{missions.length}</div>
-                <div className="mt-1 text-xs text-white/50">Console mission seeds available: {existingMissions.length}</div>
+                <div className="mt-1 text-xs text-white/50">Imported mission seeds available: {referenceMissions.length}</div>
               </div>
               <div className="rounded border border-white/10 bg-black/20 p-3">
                 <div className="label">Known mission ids</div>
                 <div className="mt-1 text-2xl font-semibold">{knownMissionIds.length}</div>
-                <div className="mt-1 text-xs text-white/50">Used for prerequisite validation and duplicate checks.</div>
+                <div className="mt-1 text-xs text-white/50">
+                  {workspaceSummary ? `Shared workspace source: ${workspaceSummary.sourceLabel ?? workspaceSummary.sourceType}` : "Import a workspace to add reference mission ids."}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
             <button className="btn justify-center" onClick={seedMissionDrafts}>
-              Seed Mission Drafts
+              Seed Imported Missions
             </button>
             <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearMissionDrafts}>
               Clear Missions
@@ -137,6 +135,14 @@ export default function MissionCreatorPage() {
           </div>
         </div>
 
+        {!workspaceSummary ? (
+          <div className="text-sm text-white/55">
+            No shared mission workspace is loaded.{" "}
+            <Link href="/missions" className="text-cyan-100 hover:text-white">
+              Import one on the Missions dashboard.
+            </Link>
+          </div>
+        ) : null}
         {workspaceMessage ? <div className="text-sm text-accent">{workspaceMessage}</div> : null}
       </div>
 
@@ -144,7 +150,7 @@ export default function MissionCreatorPage() {
         missions={missions}
         onChange={setMissions}
         knownMissionIds={knownMissionIds}
-        consoleMissionCount={existingMissions.length}
+        consoleMissionCount={referenceMissions.length}
       />
     </div>
   );

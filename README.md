@@ -18,7 +18,7 @@ Open **Settings** to view the currently loaded URLs and force a reload.
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
 - Mods Explorer (icons, rarity coloring, **hover card** with full stats/desc, sorting)
 - Items Explorer (icons, filters, sorting)
-- Missions Explorer (filter by band)
+- Missions Explorer (shared imported workspace + band filter)
 - Mob Lab:
   - Import a `mobs.json` file with tolerant JSON5 parsing
   - Browse mobs by name, ID, level, faction, and AI type
@@ -34,7 +34,7 @@ Open **Settings** to view the currently loaded URLs and force a reload.
   - Preview item and mod offerings in a storefront-style layout with remove actions
   - Download the updated `merchant_profiles.json`, copy the full file JSON, or copy just the selected profile JSON
 - Mission Lab:
-  - Import a missions zip or a selected missions folder
+  - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
   - Shared Browser + Map filters for folder, category, arc, tag, faction, class, level range, mode, objective type, prerequisites, and repeatable state
   - Prerequisite graph view and focused top-to-bottom chain cards
@@ -48,15 +48,18 @@ Open **Settings** to view the currently loaded URLs and force a reload.
 - Outliers report with z-score explanation
 
 ## Mission Lab Usage
-1. Open `/mission-lab` from the top navigation.
+1. Open `/missions` from the top navigation.
 2. Import either:
    - a missions `.zip`, or
    - a missions folder selected in the browser via the folder picker.
-3. Use the Browser tab to search, sort, filter, and open mission details.
-4. Use the Map tab for:
+3. Open `/missions/explorer` to browse the imported mission workspace.
+4. Open `/missions/lab` to use the shared Browser, Map, and Diagnostics views.
+5. Open `/missions/creator` to seed mission drafts from the same imported workspace.
+6. In Mission Lab, use the Browser tab to search, sort, filter, and open mission details.
+7. Use the Map tab for:
    - the full filtered prerequisite graph, or
    - a focused top-to-bottom chain view for the selected mission.
-5. Use Diagnostics to review:
+8. Use Diagnostics to review:
    - successful imports,
    - files imported with warnings,
    - files that failed tolerant parsing,
@@ -66,7 +69,7 @@ Open **Settings** to view the currently loaded URLs and force a reload.
    - placeholder arcs/tags,
    - graph cycles.
 
-Mission Lab is intentionally isolated from the manifest/data URL loader used by the rest of the console. Imports are read-only and held in a separate in-memory Mission Lab workspace until cleared.
+Mission Lab is intentionally isolated from the manifest/data URL loader used by the rest of the console. Imports are read-only and held in a separate in-memory shared mission workspace until cleared.
 
 ## Mob Lab Usage
 1. Open `/mob-lab` from the top navigation.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import MissionWorkspaceManager from "@components/mission-lab/MissionWorkspaceManager";
 
 const missionLinks = [
   {
@@ -24,9 +25,11 @@ export default function MissionsPage() {
       <div>
         <h1 className="page-title mb-1">Missions</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Mission tooling is now grouped here. This dashboard is a placeholder entry point for the mission explorer, mission lab, and mission creator.
+          Import a shared missions workspace here, then use that same normalized mission data across Mission Explorer, Mission Lab, and Mission Creator.
         </p>
       </div>
+
+      <MissionWorkspaceManager />
 
       <div className="grid gap-4 lg:grid-cols-3">
         {missionLinks.map((link) => (
