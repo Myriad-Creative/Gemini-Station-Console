@@ -362,8 +362,27 @@ export function stringifyMerchantWorkspace(workspace: MerchantLabWorkspace) {
   return JSON.stringify(serializeMerchantWorkspace(workspace), null, 2);
 }
 
+function indentJsonBlock(value: string, prefix: string) {
+  return value
+    .split("\n")
+    .map((line, index) => (index === 0 ? line : `${prefix}${line}`))
+    .join("\n");
+}
+
 export function stringifySingleMerchantProfile(profile: MerchantProfileDraft) {
-  return JSON.stringify(serializeMerchantProfile(profile), null, 2);
+  const serialized = serializeMerchantProfile(profile);
+  const entries = Object.entries(serialized);
+  if (!entries.length) return "{}";
+
+  return `{\n${entries
+    .map(([key, value]) => {
+      const valueString =
+        (key === "items" || key === "mods") && Array.isArray(value)
+          ? JSON.stringify(value)
+          : JSON.stringify(value, null, 2);
+      return `  ${JSON.stringify(key)}: ${indentJsonBlock(valueString, "  ")}`;
+    })
+    .join(",\n")}\n}`;
 }
 
 export function updateMerchantProfileAt(

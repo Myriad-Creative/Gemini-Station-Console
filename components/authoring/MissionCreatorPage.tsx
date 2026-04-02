@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
 import {
+  clearMissionCreatorWorkspaceStorage,
+  hydrateStoredMissionDraft,
+  MISSION_CREATOR_CLEARED_EVENT,
   MISSION_STORAGE_KEY,
+  MISSION_WORKSPACE_SEED_KEY,
   MissionDraft,
   createMissionDraft,
   normalizeImportedMission,
@@ -29,10 +33,11 @@ export default function MissionCreatorPage() {
   const [workspaceSummary, setWorkspaceSummary] = useState<MissionImportSummary | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const lastAutoSeedRef = useRef<string | null>(null);
 
   useEffect(() => {
     const stored = loadDrafts<MissionDraft[]>(MISSION_STORAGE_KEY, []);
-    setMissions(stored.length ? stored : [createMissionDraft()]);
+    setMissions(stored.length ? stored.map((mission) => hydrateStoredMissionDraft(mission)) : [createMissionDraft()]);
     setHydrated(true);
   }, []);
 
@@ -40,6 +45,21 @@ export default function MissionCreatorPage() {
     if (!hydrated) return;
     window.localStorage.setItem(MISSION_STORAGE_KEY, JSON.stringify(missions));
   }, [hydrated, missions]);
+
+  useEffect(() => {
+    function handleWorkspaceCleared() {
+      lastAutoSeedRef.current = null;
+      setReferenceMissions([]);
+      setWorkspaceSummary(null);
+      setMissions([createMissionDraft()]);
+      setWorkspaceMessage("Cleared mission drafts because the shared missions workspace was cleared.");
+    }
+
+    window.addEventListener(MISSION_CREATOR_CLEARED_EVENT, handleWorkspaceCleared);
+    return () => {
+      window.removeEventListener(MISSION_CREATOR_CLEARED_EVENT, handleWorkspaceCleared);
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -76,75 +96,56 @@ export default function MissionCreatorPage() {
     ).sort((left, right) => left.localeCompare(right));
   }, [referenceMissions, missions]);
 
-  function seedMissionDrafts() {
-    if (!referenceMissions.length) {
-      setWorkspaceMessage("No shared mission workspace is loaded. Import a missions zip on the Missions dashboard first.");
+  useEffect(() => {
+    if (hydrated && !workspaceSummary && !referenceMissions.length) {
+      const storedFingerprint = window.localStorage.getItem(MISSION_WORKSPACE_SEED_KEY);
+      if (storedFingerprint) {
+        clearMissionCreatorWorkspaceStorage();
+        return;
+      }
+    }
+
+    if (!hydrated || !workspaceSummary || !referenceMissions.length) return;
+
+    const fingerprint = `${workspaceSummary.importedAt}:${referenceMissions.length}`;
+    const storedFingerprint = window.localStorage.getItem(MISSION_WORKSPACE_SEED_KEY);
+    if (storedFingerprint === fingerprint) {
+      lastAutoSeedRef.current = fingerprint;
       return;
     }
+    if (lastAutoSeedRef.current === fingerprint) return;
 
     const seeded = referenceMissions.map((mission) => normalizeImportedMission(mission.raw));
     startTransition(() => {
       setMissions(seeded.length ? seeded : [createMissionDraft()]);
     });
-    setWorkspaceMessage(`Seeded ${seeded.length} mission draft(s) from the shared imported workspace.`);
-  }
-
-  function clearMissionDrafts() {
-    setMissions([createMissionDraft()]);
-    setWorkspaceMessage("Cleared mission drafts.");
-  }
+    setWorkspaceMessage(`Auto-seeded ${seeded.length} mission draft(s) from the shared imported workspace.`);
+    window.localStorage.setItem(MISSION_WORKSPACE_SEED_KEY, fingerprint);
+    lastAutoSeedRef.current = fingerprint;
+  }, [hydrated, referenceMissions, workspaceSummary]);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="page-title mb-1">Mission Creator</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Build mission drafts in the richer authoring model, seeded from the shared imported mission workspace when needed.
+          Build mission drafts in the richer authoring model. When a shared missions zip is loaded on the Missions dashboard, this page auto-seeds from it.
         </p>
+        {workspaceMessage ? <div className="mt-3 text-sm text-accent">{workspaceMessage}</div> : null}
       </div>
 
-      <div className="card space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">
-          <div className="space-y-3">
-            <div className="text-sm text-white/70">
-              Import a missions zip on the Missions dashboard to make its normalized mission data available here for draft seeding and prerequisite validation.
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded border border-white/10 bg-black/20 p-3">
-                <div className="label">Draft missions</div>
-                <div className="mt-1 text-2xl font-semibold">{missions.length}</div>
-                <div className="mt-1 text-xs text-white/50">Imported mission seeds available: {referenceMissions.length}</div>
-              </div>
-              <div className="rounded border border-white/10 bg-black/20 p-3">
-                <div className="label">Known mission ids</div>
-                <div className="mt-1 text-2xl font-semibold">{knownMissionIds.length}</div>
-                <div className="mt-1 text-xs text-white/50">
-                  {workspaceSummary ? `Shared workspace source: ${workspaceSummary.sourceLabel ?? workspaceSummary.sourceType}` : "Import a workspace to add reference mission ids."}
-                </div>
-              </div>
-            </div>
+      {!workspaceSummary ? (
+        <div className="card space-y-3">
+          <div className="text-sm text-white/70">
+            No shared mission workspace is loaded yet. Import a missions zip on the Missions dashboard first, and the creator will auto-seed from it.
           </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button className="btn justify-center" onClick={seedMissionDrafts}>
-              Seed Imported Missions
-            </button>
-            <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearMissionDrafts}>
-              Clear Missions
-            </button>
-          </div>
-        </div>
-
-        {!workspaceSummary ? (
-          <div className="text-sm text-white/55">
-            No shared mission workspace is loaded.{" "}
-            <Link href="/missions" className="text-cyan-100 hover:text-white">
-              Import one on the Missions dashboard.
+          <div>
+            <Link href="/missions" className="btn">
+              Go To Missions Dashboard
             </Link>
           </div>
-        ) : null}
-        {workspaceMessage ? <div className="text-sm text-accent">{workspaceMessage}</div> : null}
-      </div>
+        </div>
+      ) : null}
 
       <MissionWorkshop
         missions={missions}

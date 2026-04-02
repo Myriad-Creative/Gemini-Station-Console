@@ -34,6 +34,7 @@ import {
 import { parseLooseJson } from "@lib/json";
 
 const OBJECTIVE_TYPES = ["talk", "travel", "kill", "collect", "deliver", "custom"];
+const FILTER_ALL = "__all__";
 
 export default function MissionWorkshop({
   missions,
@@ -48,6 +49,10 @@ export default function MissionWorkshop({
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
+  const [factionFilter, setFactionFilter] = useState(FILTER_ALL);
+  const [levelFilter, setLevelFilter] = useState(FILTER_ALL);
+  const [arcFilter, setArcFilter] = useState(FILTER_ALL);
+  const [tagFilter, setTagFilter] = useState(FILTER_ALL);
   const [status, setStatus] = useState("");
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
@@ -60,21 +65,37 @@ export default function MissionWorkshop({
   const selectedMission = missions[clampedSelectedIndex] ?? null;
 
   const validation = useMemo(() => validateMissionDrafts(missions, knownMissionIds), [knownMissionIds, missions]);
+  const factionOptions = useMemo(() => buildSortedOptions(missions.map((mission) => mission.faction)), [missions]);
+  const levelOptions = useMemo(
+    () =>
+      Array.from(new Set(missions.map((mission) => mission.level.trim()).filter(Boolean))).sort(
+        (left, right) => Number(left) - Number(right),
+      ),
+    [missions],
+  );
+  const arcOptions = useMemo(() => buildSortedOptions(missions.flatMap((mission) => mission.arcs)), [missions]);
+  const tagOptions = useMemo(() => buildSortedOptions(missions.flatMap((mission) => mission.tags)), [missions]);
   const filteredMissions = useMemo(() => {
     return missions
       .map((mission, index) => ({ mission, index }))
       .filter(({ mission }) => {
-        if (!deferredSearch) return true;
-        const target = `${mission.id} ${mission.title}`.toLowerCase();
-        return target.includes(deferredSearch);
+        const target = `${mission.id} ${mission.title} ${mission.faction} ${mission.arcs.join(" ")} ${mission.tags.join(" ")}`.toLowerCase();
+        if (deferredSearch && !target.includes(deferredSearch)) return false;
+        if (factionFilter !== FILTER_ALL && mission.faction.trim() !== factionFilter) return false;
+        if (levelFilter !== FILTER_ALL && mission.level.trim() !== levelFilter) return false;
+        if (arcFilter !== FILTER_ALL && !mission.arcs.includes(arcFilter)) return false;
+        if (tagFilter !== FILTER_ALL && !mission.tags.includes(tagFilter)) return false;
+        return true;
       });
-  }, [deferredSearch, missions]);
+  }, [arcFilter, deferredSearch, factionFilter, levelFilter, missions, tagFilter]);
   const selectedValidation = useMemo(() => {
     return validation.filter((message) => message.draftIndex === clampedSelectedIndex);
   }, [clampedSelectedIndex, validation]);
 
   const errorCount = validation.filter((message) => message.level === "error").length;
   const warningCount = validation.length - errorCount;
+  const hasActiveFilters =
+    factionFilter !== FILTER_ALL || levelFilter !== FILTER_ALL || arcFilter !== FILTER_ALL || tagFilter !== FILTER_ALL;
 
   function setMissionAt(index: number, next: MissionDraft) {
     onChange(missions.map((mission, missionIndex) => (missionIndex === index ? next : mission)));
@@ -207,71 +228,105 @@ export default function MissionWorkshop({
     setStatus(didCopy ? "Copied the selected mission JSON to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
+  function resetFilters() {
+    setFactionFilter(FILTER_ALL);
+    setLevelFilter(FILTER_ALL);
+    setArcFilter(FILTER_ALL);
+    setTagFilter(FILTER_ALL);
+  }
+
   return (
     <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
-      <div className="card h-fit space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Mission Library</h2>
-            <div className="text-xs text-white/50">
-              {missions.length} draft(s) · {consoleMissionCount} reference mission id(s) available for prerequisites
+      <div className="space-y-6">
+        <div className="card h-fit space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Mission Library</h2>
+              <div className="text-xs text-white/50">
+                {missions.length} draft(s) · {filteredMissions.length} shown · {consoleMissionCount} reference mission id(s) available for prerequisites
+              </div>
+            </div>
+            <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMission}>
+              New
+            </button>
+          </div>
+
+          <input
+            className="input"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search mission id, title, faction, arc, or tag"
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <label className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
+              Import JSON
+              <input className="hidden" type="file" multiple accept=".json,application/json" onChange={importMissionFiles} />
+            </label>
+            <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={exportAllMissions}>
+              Export ZIP
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-100">
+              <div className="label text-red-100/80">Errors</div>
+              <div className="mt-1 text-lg font-semibold">{errorCount}</div>
+            </div>
+            <div className="rounded border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-yellow-100">
+              <div className="label text-yellow-100/80">Warnings</div>
+              <div className="mt-1 text-lg font-semibold">{warningCount}</div>
             </div>
           </div>
-          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={addMission}>
-            New
-          </button>
-        </div>
 
-        <input
-          className="input"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search mission id or title"
-        />
-
-        <div className="flex flex-wrap gap-2">
-          <label className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
-            Import JSON
-            <input className="hidden" type="file" multiple accept=".json,application/json" onChange={importMissionFiles} />
-          </label>
-          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={exportAllMissions}>
-            Export ZIP
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-100">
-            <div className="label text-red-100/80">Errors</div>
-            <div className="mt-1 text-lg font-semibold">{errorCount}</div>
-          </div>
-          <div className="rounded border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-yellow-100">
-            <div className="label text-yellow-100/80">Warnings</div>
-            <div className="mt-1 text-lg font-semibold">{warningCount}</div>
-          </div>
-        </div>
-
-        {status ? <div className="text-sm text-accent">{status}</div> : null}
-
-        <div className="max-h-[70vh] space-y-2 overflow-auto pr-1">
-          {filteredMissions.length ? (
-            filteredMissions.map(({ mission, index }) => (
+          <div className="space-y-3 rounded border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold">Filters</div>
               <button
-                key={`${mission.id || "mission"}-${index}`}
-                className={`w-full rounded border px-3 py-2 text-left transition ${
-                  index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
-                }`}
-                onClick={() => setSelectedIndex(index)}
+                className="text-xs text-white/60 transition hover:text-white disabled:cursor-default disabled:opacity-40"
+                disabled={!hasActiveFilters}
+                onClick={resetFilters}
               >
-                <div className="truncate font-medium">{mission.title || "Untitled mission"}</div>
-                <div className="truncate text-xs text-white/60">{mission.id || "missing-id"}</div>
+                Reset
               </button>
-            ))
-          ) : (
-            <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
-              No mission drafts match the current search.
             </div>
-          )}
+            <div className="grid gap-3">
+              <SelectField label="Faction" value={factionFilter} options={factionOptions} onChange={setFactionFilter} allLabel="All factions" />
+              <SelectField label="Level" value={levelFilter} options={levelOptions} onChange={setLevelFilter} allLabel="All levels" />
+              <SelectField label="Arc" value={arcFilter} options={arcOptions} onChange={setArcFilter} allLabel="All arcs" />
+              <SelectField label="Tag" value={tagFilter} options={tagOptions} onChange={setTagFilter} allLabel="All tags" />
+            </div>
+          </div>
+
+          {status ? <div className="text-sm text-accent">{status}</div> : null}
+
+          <div className="max-h-[50vh] space-y-2 overflow-auto pr-1">
+            {filteredMissions.length ? (
+              filteredMissions.map(({ mission, index }) => (
+                <button
+                  key={`${mission.id || "mission"}-${index}`}
+                  className={`w-full rounded border px-3 py-2 text-left transition ${
+                    index === clampedSelectedIndex ? "border-accent bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  }`}
+                  onClick={() => setSelectedIndex(index)}
+                >
+                  <div className="truncate font-medium">{mission.title || "Untitled mission"}</div>
+                  <div className="truncate text-xs text-white/60">{mission.id || "missing-id"}</div>
+                  <div className="mt-1 truncate text-[11px] text-white/45">
+                    {(mission.faction.trim() || "No faction") + " · "}Level {mission.level.trim() || "?"}
+                    {mission.arcs.length ? ` · ${mission.arcs[0]}` : ""}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                No mission drafts match the current filters.
+              </div>
+            )}
+          </div>
         </div>
+
+        <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mission." />
       </div>
 
       {!selectedMission ? null : (
@@ -312,16 +367,10 @@ export default function MissionWorkshop({
                 onChange={(value) => updateSelected((draft) => ({ ...draft, faction: value }))}
               />
               <Field
-                label="Level Min"
-                value={selectedMission.level_min}
+                label="Level"
+                value={selectedMission.level}
                 inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, level_min: value }))}
-              />
-              <Field
-                label="Level Max"
-                value={selectedMission.level_max}
-                inputMode="numeric"
-                onChange={(value) => updateSelected((draft) => ({ ...draft, level_max: value }))}
+                onChange={(value) => updateSelected((draft) => ({ ...draft, level: value }))}
               />
               <Field
                 label="Arcs (comma separated)"
@@ -629,15 +678,11 @@ export default function MissionWorkshop({
             </div>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
-            <div className="card">
-              <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
-              <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
-                {JSON.stringify(exportMissionDraft(selectedMission), null, 2)}
-              </pre>
-            </div>
-
-            <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mission." />
+          <div className="card">
+            <h2 className="mb-3 text-lg font-semibold">Export Preview</h2>
+            <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
+              {JSON.stringify(exportMissionDraft(selectedMission), null, 2)}
+            </pre>
           </div>
         </div>
       )}
@@ -832,7 +877,7 @@ function ValidationPanel({
     <div className="card">
       <h2 className="mb-3 text-lg font-semibold">Validation</h2>
       {messages.length ? (
-        <div className="space-y-2">
+        <div className="max-h-[36vh] space-y-2 overflow-auto pr-1">
           {messages.map((message, index) => (
             <div
               key={`${message.message}-${index}`}
@@ -851,6 +896,34 @@ function ValidationPanel({
         <div className="text-sm text-white/60">{noIssuesText}</div>
       )}
     </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+  allLabel,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  allLabel: string;
+}) {
+  return (
+    <label>
+      <div className="label mb-2">{label}</div>
+      <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value={FILTER_ALL}>{allLabel}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -908,4 +981,10 @@ async function copyText(value: string) {
   } finally {
     document.body.removeChild(textarea);
   }
+}
+
+function buildSortedOptions(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right),
+  );
 }

@@ -55,8 +55,7 @@ export interface MissionDraft {
   giver_id: string;
   faction: string;
   repeatable: boolean;
-  level_min: string;
-  level_max: string;
+  level: string;
   arcs: string[];
   tags: string[];
   prerequisites: string[];
@@ -129,7 +128,16 @@ export interface BulkModTemplateDraft {
 type JsonObject = Record<string, unknown>;
 
 export const MISSION_STORAGE_KEY = "gemini.console.authoring.missions.v1";
+export const MISSION_WORKSPACE_SEED_KEY = `${MISSION_STORAGE_KEY}.workspace-seed`;
 export const MOD_STORAGE_KEY = "gemini.console.authoring.mods.v1";
+export const MISSION_CREATOR_CLEARED_EVENT = "gemini:mission-creator-workspace-cleared";
+
+export function clearMissionCreatorWorkspaceStorage() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(MISSION_STORAGE_KEY);
+  window.localStorage.removeItem(MISSION_WORKSPACE_SEED_KEY);
+  window.dispatchEvent(new CustomEvent(MISSION_CREATOR_CLEARED_EVENT));
+}
 
 function incrementTrailingNumber(value: string) {
   const trimmed = value.trim();
@@ -599,8 +607,7 @@ export function createMissionDraft(): MissionDraft {
     giver_id: "",
     faction: "",
     repeatable: false,
-    level_min: "",
-    level_max: "",
+    level: "",
     arcs: [],
     tags: [],
     prerequisites: [],
@@ -632,6 +639,16 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     extraJson: "",
     generatorMeta: undefined,
   });
+}
+
+export function hydrateStoredMissionDraft(raw: unknown): MissionDraft {
+  const source = asObject(raw);
+  const normalized = normalizeImportedMission(source);
+  return {
+    ...normalized,
+    notes: String(source.notes ?? normalized.notes ?? ""),
+    extraJson: normalizeStoredExtraJson(source.extraJson ?? normalized.extraJson),
+  };
 }
 
 export function hydrateStoredModDraft(raw: unknown): ModDraft {
@@ -807,6 +824,7 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     "faction",
     "repeatable",
     "availability",
+    "level",
     "level_min",
     "level_max",
     "arcs",
@@ -825,8 +843,14 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     giver_id: String(source.giver_id ?? ""),
     faction: String(source.faction ?? ""),
     repeatable: Boolean(source.repeatable),
-    level_min: numberString(asObject(source.availability).level_min ?? source.level_min),
-    level_max: numberString(asObject(source.availability).level_max ?? source.level_max),
+    level: numberString(
+      source.level ??
+        asObject(source.availability).level ??
+        asObject(source.availability).level_min ??
+        source.level_min ??
+        asObject(source.availability).level_max ??
+        source.level_max,
+    ),
     arcs: stringList(source.arcs),
     tags: stringList(source.tags),
     prerequisites: extractPrerequisiteIds(source),
@@ -1000,10 +1024,6 @@ function exportMissionStep(step: MissionStepDraft) {
 
 export function exportMissionDraft(draft: MissionDraft) {
   const extra = safeExtraJson(draft.extraJson);
-  const availability = cleanObject({
-    level_min: parseNumber(draft.level_min),
-    level_max: parseNumber(draft.level_max),
-  });
   const steps = draft.steps.map((step) => exportMissionStep(step));
   const objectives = steps.flatMap((step) => (Array.isArray(step.objectives) ? step.objectives : []));
 
@@ -1014,7 +1034,7 @@ export function exportMissionDraft(draft: MissionDraft) {
     giver_id: draft.giver_id.trim() || undefined,
     faction: draft.faction.trim() || undefined,
     repeatable: draft.repeatable,
-    availability: Object.keys(availability).length ? availability : undefined,
+    level: parseNumber(draft.level),
     arcs: draft.arcs.map((entry) => entry.trim()).filter(Boolean),
     tags: draft.tags.map((entry) => entry.trim()).filter(Boolean),
     prerequisites: draft.prerequisites.length
@@ -1113,15 +1133,14 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
       messages.push({ level: "error", scope: "missions", draftIndex, itemId: id || undefined, message: "Mission title is required." });
     }
 
-    const min = parseNumber(mission.level_min);
-    const max = parseNumber(mission.level_max);
-    if (min !== undefined && max !== undefined && min > max) {
+    const level = parseNumber(mission.level);
+    if (mission.level.trim() && level === undefined) {
       messages.push({
         level: "error",
         scope: "missions",
         draftIndex,
         itemId: id || undefined,
-        message: `Level min (${min}) is greater than level max (${max}).`,
+        message: "Mission level must be a valid number.",
       });
     }
 

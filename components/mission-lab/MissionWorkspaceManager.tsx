@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { InputHTMLAttributes } from "react";
 import { useEffect, useRef, useState } from "react";
+import { clearMissionCreatorWorkspaceStorage } from "@lib/authoring";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionImportDiagnostics, MissionImportSummary } from "@lib/mission-lab/types";
 
@@ -140,6 +141,7 @@ export default function MissionWorkspaceManager() {
       method: "DELETE",
       headers: buildMissionLabSessionHeaders(sessionId),
     });
+    clearMissionCreatorWorkspaceStorage();
     setSummary(null);
     setDiagnostics(null);
     setStatus({

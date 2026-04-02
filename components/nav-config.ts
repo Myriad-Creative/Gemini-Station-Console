@@ -17,12 +17,14 @@ export const MAIN_NAV_LINKS: NavLink[] = [
 ];
 
 const MISSION_SECTION_LINKS: NavLink[] = [
+  { href: "/missions", label: "Missions Dashboard" },
   { href: "/missions/explorer", label: "Explorer" },
   { href: "/missions/lab", label: "Lab", aliases: ["/mission-lab"] },
   { href: "/missions/creator", label: "Creator" },
 ];
 
 const MOD_SECTION_LINKS: NavLink[] = [
+  { href: "/mods", label: "Mods Dashboard" },
   { href: "/mods/explorer", label: "Explorer" },
   { href: "/mods/builder", label: "Builder", aliases: ["/authoring"] },
 ];
