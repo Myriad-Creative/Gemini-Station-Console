@@ -58,6 +58,16 @@ function incrementTrailingNumber(value: string) {
   return `${trimmed}_001`;
 }
 
+function slugifyContactName(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+
+  return slug || "contact";
+}
+
 function normalizeImportedContact(source: JsonObject, fallbackId: string, sourceIndex: number): CommsContactDraft {
   const meta = asObject(source.meta);
   return {
@@ -112,6 +122,15 @@ export function resolvedPortraitPath(value: string) {
 export function nextGeneratedCommsId(existingIds: string[], previousId?: string) {
   const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
   let candidate = incrementTrailingNumber(previousId || "contact_000");
+  while (taken.has(candidate)) {
+    candidate = incrementTrailingNumber(candidate);
+  }
+  return candidate;
+}
+
+export function generateCommsIdFromName(name: string, existingIds: string[]) {
+  const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
+  let candidate = slugifyContactName(name);
   while (taken.has(candidate)) {
     candidate = incrementTrailingNumber(candidate);
   }

@@ -10,6 +10,7 @@ import {
   createBlankCommsWorkspace,
   deleteCommsContactAt,
   duplicateCommsIdMap,
+  generateCommsIdFromName,
   importCommsWorkspace,
   insertCommsContactAfter,
   resolvedPortraitPath,
@@ -618,8 +619,27 @@ export default function CommsManagerApp() {
                           className="input mt-1"
                           value={selectedContact.name}
                           placeholder="Ava Ray"
-                          onChange={(event) => updateSelectedContact((current) => ({ ...current, name: event.target.value }))}
+                          onChange={(event) =>
+                            updateSelectedContact((current) => {
+                              const nextName = event.target.value;
+                              const otherIds = (workspace?.contacts ?? [])
+                                .filter((entry) => entry.key !== current.key)
+                                .map((entry) => entry.id);
+                              const currentAutoId = generateCommsIdFromName(current.name, otherIds);
+                              const nextAutoId = generateCommsIdFromName(nextName, otherIds);
+                              const shouldAutoUpdateId = !current.id.trim() || current.id.trim() === currentAutoId;
+
+                              return {
+                                ...current,
+                                name: nextName,
+                                id: shouldAutoUpdateId ? nextAutoId : current.id,
+                              };
+                            })
+                          }
                         />
+                        <div className="mt-2 text-xs text-white/50">
+                          Entering a name auto-generates a lowercase ID with underscores and no special characters. You can still edit the ID manually.
+                        </div>
                       </div>
                       <div className="lg:col-span-2">
                         <div className="label">Portrait</div>
