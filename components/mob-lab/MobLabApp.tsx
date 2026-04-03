@@ -186,6 +186,8 @@ function mergeTextareaPaste(currentValue: string, pastedText: string, selectionS
 
 export default function MobLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sharedImportAttemptedRef = useRef(false);
+  const workspaceRef = useRef<MobLabWorkspace | null>(null);
   const [workspace, setWorkspace] = useState<MobLabWorkspace | null>(null);
   const [selectedMobKey, setSelectedMobKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -211,6 +213,10 @@ export default function MobLabApp() {
   }, [validation]);
   const duplicateIds = useMemo(() => duplicateMobIdMap(workspace?.mobs ?? []), [workspace]);
   const summary = useMemo(() => summarizeMobWorkspace(workspace, validation), [workspace, validation]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
 
   const factionOptions = useMemo(() => {
     return Array.from(new Set((workspace?.mobs ?? []).map((mob) => mob.faction.trim()).filter(Boolean))).sort((left, right) =>
@@ -266,6 +272,28 @@ export default function MobLabApp() {
       setSelectedMobKey(filteredMobs[0]?.key ?? mobs[0]?.key ?? null);
     }
   }, [filteredMobs, selectedMobKey, workspace]);
+
+  useEffect(() => {
+    if (sharedImportAttemptedRef.current || workspace) return;
+    sharedImportAttemptedRef.current = true;
+
+    let cancelled = false;
+    async function loadSharedWorkspace() {
+      try {
+        const response = await fetch("/api/settings/data/source?kind=mobs");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok || !payload.text || cancelled || workspaceRef.current) return;
+        importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
+      } catch {
+        // Shared uploaded data is optional.
+      }
+    }
+
+    void loadSharedWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace]);
 
   const selectedMob = useMemo(() => {
     const mobs = workspace?.mobs ?? [];

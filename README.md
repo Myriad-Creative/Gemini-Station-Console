@@ -44,7 +44,10 @@ Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data
 - Settings:
   - Import the full `/assets` folder once and let the console resolve uploaded images before repo-root or remote fallbacks
   - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, and mob image previews
-  - Import a shared `data.zip` or unzipped `/data` folder once and let the console prefer uploaded mods, items, mobs, abilities, comms, and merchant profile data before URL-backed sources
+  - Import a shared `data.zip` or unzipped `/data` folder once and let the console prefer uploaded mods, items, mobs, abilities, comms, merchant profile data, map data, routes, tutorial data, and systems JSON before URL-backed sources
+- Data:
+  - Use the shared uploaded `/data` workspace from Settings to manage map POIs, map regions, trade routes, NPC traffic, tutorial entries, tutorial triggers, ship stat descriptions, zones, stages, and hazard barrier profiles
+  - Create, clone, edit, delete, copy, and download the runtime JSON for each dataset without touching the Godot repo directly
 - Mission Lab:
   - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
@@ -88,6 +91,7 @@ Mission Lab is intentionally isolated from the manifest/data URL loader used by 
 2. Either:
    - import an existing `mobs.json` file, or
    - start a blank workspace for new mob creation.
+   If shared uploaded data is active in Settings and includes `data/database/mobs/mobs.json`, Mob Lab auto-seeds from that file on first load.
 3. Use the left browser to search, sort, filter, and select mobs.
 4. Edit the selected mob’s:
    - ID, display name, level, faction, AI type, scene, and sprite
@@ -144,8 +148,20 @@ Merchant Lab is isolated from the console’s existing read-only item/mod explor
 
 Comms Manager is isolated from the existing mission, merchant, mob, and mod tools.
 
+## Data Tools Usage
+1. Open `/data` from the top navigation.
+2. Import a shared `data.zip` or `/data` folder once in `/settings`.
+3. Open the grouped editors:
+   - `/data/map` for `poi.json` and `regions.json`
+   - `/data/routes` for `trade_routes.json` and `npc_traffic.json`
+   - `/data/tutorial` for `info_entries.json` and `info_triggers.json`
+   - `/data/systems` for `ShipStatDescriptions.json`, `Zones.json`, `Stages.json`, and `HazardBarrierProfiles.json`
+4. Each editor auto-loads from the shared uploaded data workspace when the corresponding file exists.
+5. Use the library sidebar in each tool to create, clone, delete, and select records.
+6. Use the export actions to copy or download the updated runtime JSON for the active dataset.
+
 ## Mod Auto Generator Usage
-1. Open `/authoring` and switch to `Mod Builder`.
+1. Open `/mods/builder`.
 2. Click `Auto Generate`.
 3. Choose:
    - batch count,

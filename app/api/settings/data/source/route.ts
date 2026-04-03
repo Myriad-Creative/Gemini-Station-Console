@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readUploadedDataFileText } from "@lib/uploaded-data";
+import { readUploadedDataFileText, type UploadedDataFileKind } from "@lib/uploaded-data";
 
 export const runtime = "nodejs";
 
-type SupportedKind = "comms" | "merchantProfiles";
+const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
+  "mobs",
+  "comms",
+  "merchantProfiles",
+  "poi",
+  "regions",
+  "tradeRoutes",
+  "npcTraffic",
+  "tutorialEntries",
+  "tutorialTriggers",
+  "shipStatDescriptions",
+  "zones",
+  "stages",
+  "hazardBarrierProfiles",
+]);
 
-function isSupportedKind(value: string): value is SupportedKind {
-  return value === "comms" || value === "merchantProfiles";
+function isSupportedKind(value: string): value is UploadedDataFileKind {
+  return SUPPORTED_KINDS.has(value as UploadedDataFileKind);
 }
 
 export async function GET(req: NextRequest) {
@@ -15,8 +29,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unsupported shared data source kind." }, { status: 400 });
   }
 
-  const mappedKind = kind === "comms" ? "comms" : "merchantProfiles";
-  const text = await readUploadedDataFileText(mappedKind);
+  const text = await readUploadedDataFileText(kind);
   if (!text) {
     return NextResponse.json({ ok: false, error: "Shared uploaded data source not available for that file." }, { status: 404 });
   }

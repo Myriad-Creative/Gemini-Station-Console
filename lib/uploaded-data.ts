@@ -9,6 +9,16 @@ export type UploadedDataAvailability = {
   abilities: boolean;
   comms: boolean;
   merchantProfiles: boolean;
+  poi: boolean;
+  regions: boolean;
+  tradeRoutes: boolean;
+  npcTraffic: boolean;
+  tutorialEntries: boolean;
+  tutorialTriggers: boolean;
+  shipStatDescriptions: boolean;
+  zones: boolean;
+  stages: boolean;
+  hazardBarrierProfiles: boolean;
 };
 
 export type UploadedDataState = {
@@ -36,7 +46,23 @@ type UploadedDataEntry = {
   buffer: Buffer;
 };
 
-export type UploadedDataFileKind = "mods" | "items" | "mobs" | "abilitiesIndex" | "comms" | "merchantProfiles";
+export type UploadedDataFileKind =
+  | "mods"
+  | "items"
+  | "mobs"
+  | "abilitiesIndex"
+  | "comms"
+  | "merchantProfiles"
+  | "poi"
+  | "regions"
+  | "tradeRoutes"
+  | "npcTraffic"
+  | "tutorialEntries"
+  | "tutorialTriggers"
+  | "shipStatDescriptions"
+  | "zones"
+  | "stages"
+  | "hazardBarrierProfiles";
 
 const UPLOADED_DATA_ROOT = path.resolve(process.cwd(), ".gemini-uploaded-data");
 const UPLOADED_DATA_DIR = path.join(UPLOADED_DATA_ROOT, "data");
@@ -49,6 +75,16 @@ const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
   abilitiesIndex: path.join("data", "database", "abilities", "json", "_AbilityIndex.json"),
   comms: path.join("data", "database", "comms", "Comms.json"),
   merchantProfiles: path.join("data", "database", "vendor", "merchant_profiles.json"),
+  poi: path.join("data", "map", "poi.json"),
+  regions: path.join("data", "map", "regions.json"),
+  tradeRoutes: path.join("data", "routes", "trade_routes.json"),
+  npcTraffic: path.join("data", "traffic", "npc_traffic.json"),
+  tutorialEntries: path.join("data", "tutorial", "info_entries.json"),
+  tutorialTriggers: path.join("data", "tutorial", "info_triggers.json"),
+  shipStatDescriptions: path.join("data", "ui", "ShipStatDescriptions.json"),
+  zones: path.join("data", "database", "zones", "Zones.json"),
+  stages: path.join("data", "database", "stages", "Stages.json"),
+  hazardBarrierProfiles: path.join("data", "database", "environment", "HazardBarrierProfiles.json"),
 };
 
 function emptyAvailability(): UploadedDataAvailability {
@@ -59,6 +95,16 @@ function emptyAvailability(): UploadedDataAvailability {
     abilities: false,
     comms: false,
     merchantProfiles: false,
+    poi: false,
+    regions: false,
+    tradeRoutes: false,
+    npcTraffic: false,
+    tutorialEntries: false,
+    tutorialTriggers: false,
+    shipStatDescriptions: false,
+    zones: false,
+    stages: false,
+    hazardBarrierProfiles: false,
   };
 }
 
@@ -85,6 +131,16 @@ function detectAvailability(root: string): UploadedDataAvailability {
     abilities: fs.existsSync(path.join(root, DATA_FILE_PATHS.abilitiesIndex)),
     comms: fs.existsSync(path.join(root, DATA_FILE_PATHS.comms)),
     merchantProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.merchantProfiles)),
+    poi: fs.existsSync(path.join(root, DATA_FILE_PATHS.poi)),
+    regions: fs.existsSync(path.join(root, DATA_FILE_PATHS.regions)),
+    tradeRoutes: fs.existsSync(path.join(root, DATA_FILE_PATHS.tradeRoutes)),
+    npcTraffic: fs.existsSync(path.join(root, DATA_FILE_PATHS.npcTraffic)),
+    tutorialEntries: fs.existsSync(path.join(root, DATA_FILE_PATHS.tutorialEntries)),
+    tutorialTriggers: fs.existsSync(path.join(root, DATA_FILE_PATHS.tutorialTriggers)),
+    shipStatDescriptions: fs.existsSync(path.join(root, DATA_FILE_PATHS.shipStatDescriptions)),
+    zones: fs.existsSync(path.join(root, DATA_FILE_PATHS.zones)),
+    stages: fs.existsSync(path.join(root, DATA_FILE_PATHS.stages)),
+    hazardBarrierProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.hazardBarrierProfiles)),
   };
 }
 

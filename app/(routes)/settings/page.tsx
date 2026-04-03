@@ -25,6 +25,16 @@ type UploadedDataState = {
     abilities: boolean;
     comms: boolean;
     merchantProfiles: boolean;
+    poi: boolean;
+    regions: boolean;
+    tradeRoutes: boolean;
+    npcTraffic: boolean;
+    tutorialEntries: boolean;
+    tutorialTriggers: boolean;
+    shipStatDescriptions: boolean;
+    zones: boolean;
+    stages: boolean;
+    hazardBarrierProfiles: boolean;
   };
 };
 
@@ -62,6 +72,16 @@ const EMPTY_UPLOADED_DATA: UploadedDataState = {
     abilities: false,
     comms: false,
     merchantProfiles: false,
+    poi: false,
+    regions: false,
+    tradeRoutes: false,
+    npcTraffic: false,
+    tutorialEntries: false,
+    tutorialTriggers: false,
+    shipStatDescriptions: false,
+    zones: false,
+    stages: false,
+    hazardBarrierProfiles: false,
   },
 };
 
@@ -303,7 +323,7 @@ export default function SettingsPage() {
         <div className="md:col-span-4">
           <div className="text-lg font-semibold text-white">Shared Data Library</div>
           <div className="mt-1 text-sm text-white/55">
-            Import the full <code>/data</code> directory here as either a zip or the unzipped folder. The console will prefer the uploaded data source for mods, items, mobs, abilities, comms, and merchant profiles. Missions stay separate and continue to use the Missions dashboard upload.
+            Import the full <code>/data</code> directory here as either a zip or the unzipped folder. The console will prefer the uploaded data source for mods, items, mobs, abilities, comms, merchant profiles, map data, routes, tutorial data, and systems JSON. Missions stay separate and continue to use the Missions dashboard upload.
           </div>
         </div>
 
@@ -339,6 +359,16 @@ export default function SettingsPage() {
               ["Abilities", settings.uploadedData.available.abilities],
               ["Comms", settings.uploadedData.available.comms],
               ["Merchant Profiles", settings.uploadedData.available.merchantProfiles],
+              ["POIs", settings.uploadedData.available.poi],
+              ["Regions", settings.uploadedData.available.regions],
+              ["Trade Routes", settings.uploadedData.available.tradeRoutes],
+              ["NPC Traffic", settings.uploadedData.available.npcTraffic],
+              ["Tutorial Entries", settings.uploadedData.available.tutorialEntries],
+              ["Tutorial Triggers", settings.uploadedData.available.tutorialTriggers],
+              ["Ship Stat Descriptions", settings.uploadedData.available.shipStatDescriptions],
+              ["Zones", settings.uploadedData.available.zones],
+              ["Stages", settings.uploadedData.available.stages],
+              ["Hazard Barriers", settings.uploadedData.available.hazardBarrierProfiles],
             ].map(([label, active]) => (
               <span
                 key={String(label)}
@@ -352,7 +382,7 @@ export default function SettingsPage() {
 
         <div className="md:col-span-4">
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-            This shared upload is meant for the main <code>data/</code> directory and will automatically feed the console’s non-mission datasets. If you upload a complete data tree, you should not need to separately import mods, items, mobs, comms, or merchant profiles.
+            This shared upload is meant for the main <code>data/</code> directory and will automatically feed the console’s non-mission datasets. If you upload a complete data tree, you should not need to separately import mods, items, mobs, comms, merchant profiles, map data, routes, tutorial data, or systems JSON.
           </div>
         </div>
 
