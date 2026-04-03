@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { parseTresFields } from "./tres";
 import { Ability } from "@lib/types";
-import { exists, listFilesRecursive } from "./fileutils";
+import { exists, listFilesRecursive, readJson } from "./fileutils";
 
 export function parseAbilityRegistry(repoRoot: string): Map<string | number, string> {
   const registryCandidates = [
@@ -66,4 +66,47 @@ export function parseAbilitiesFromData(raw: Array<any> | Record<string, any> | n
     energy_cost: typeof a.energy_cost === "number" ? a.energy_cost : undefined,
     resource: a.resource
   }));
+}
+
+export function parseAbilitiesFromDataDirectory(repoRoot: string): Ability[] {
+  const jsonDir = path.join(repoRoot, "data", "database", "abilities", "json");
+  const indexPath = path.join(jsonDir, "_AbilityIndex.json");
+  const indexData = readJson<Record<string, string>>(indexPath) || {};
+  const files = new Set<string>();
+  const idByPath = new Map<string, string | number>();
+
+  for (const [id, rawPath] of Object.entries(indexData)) {
+    const cleaned = String(rawPath).replace(/^res:\/\//, "").replace(/^\/+/, "");
+    const absolute = path.join(repoRoot, cleaned.startsWith("data/") ? cleaned : path.join("data", "database", "abilities", "json", path.basename(cleaned)));
+    files.add(absolute);
+    idByPath.set(path.resolve(absolute), /^\d+$/.test(id) ? Number(id) : id);
+  }
+
+  for (const file of listFilesRecursive(jsonDir, [".json"])) {
+    if (path.basename(file) === "_AbilityIndex.json") continue;
+    files.add(file);
+  }
+
+  const abilities: Ability[] = [];
+  const seen = new Set<string | number>();
+  for (const file of Array.from(files)) {
+    try {
+      const raw = readJson<any>(file);
+      if (!raw || typeof raw !== "object") continue;
+      const properties = raw.properties && typeof raw.properties === "object" ? raw.properties : raw;
+      const resolvedId = idByPath.get(path.resolve(file)) ?? raw.id ?? path.basename(file, ".json");
+      if (seen.has(resolvedId)) continue;
+      abilities.push({
+        id: resolvedId,
+        name: properties.name,
+        description: properties.description,
+        cooldown: typeof properties.cooldown === "number" ? properties.cooldown : undefined,
+        energy_cost: typeof properties.energy_cost === "number" ? properties.energy_cost : undefined,
+        resource: file,
+      });
+      seen.add(resolvedId);
+    } catch {}
+  }
+
+  return abilities;
 }

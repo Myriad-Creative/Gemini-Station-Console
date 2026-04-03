@@ -3,6 +3,7 @@ import { getConfig, saveConfig } from "@lib/config";
 import { getStore, loadAll, warmupLoadIfNeeded } from "@lib/datastore";
 import { parseLooseJson } from "@lib/json";
 import { getUploadedAssetsState } from "@lib/uploaded-assets";
+import { getUploadedDataState } from "@lib/uploaded-data";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ function buildResponse() {
     modsOverrideJson: cfg.mods_override_json ?? "",
     modsOverrideActive: !!cfg.mods_override_json?.trim(),
     uploadedAssets: getUploadedAssetsState(),
+    uploadedData: getUploadedDataState(),
   };
 }
 

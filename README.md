@@ -14,6 +14,7 @@ The console now loads directly from fixed JSON endpoints:
 - Items: `https://json-service-production-e4bb.up.railway.app/json/items.json`
 Open **Settings** to view the currently loaded URLs and force a reload.
 Open **Settings** to import a shared `/assets` folder; uploaded assets are stored locally and resolved first for `res://assets/...` image paths across the console.
+Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data is stored locally and used across the console for non-mission datasets.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
@@ -43,6 +44,7 @@ Open **Settings** to import a shared `/assets` folder; uploaded assets are store
 - Settings:
   - Import the full `/assets` folder once and let the console resolve uploaded images before repo-root or remote fallbacks
   - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, and mob image previews
+  - Import a shared `data.zip` or unzipped `/data` folder once and let the console prefer uploaded mods, items, mobs, abilities, comms, and merchant profile data before URL-backed sources
 - Mission Lab:
   - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
@@ -104,6 +106,7 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
    - import an existing `merchant_profiles.json` file,
    - paste the JSON contents and load them, or
    - start a blank workspace.
+   If shared uploaded data is active in Settings and includes `data/database/vendor/merchant_profiles.json`, Merchant Lab auto-seeds from that file on first load.
 3. Use the left sidebar to:
    - search and switch merchant profiles,
    - create or clone profiles,
@@ -125,6 +128,7 @@ Merchant Lab is isolated from the console’s existing read-only item/mod explor
    - import an existing comms JSON file,
    - paste the JSON contents and let it auto-load, or
    - start a blank workspace.
+   If shared uploaded data is active in Settings and includes `data/database/comms/Comms.json`, Comms Manager auto-seeds from that file on first load.
 3. Use the left sidebar to search and switch contacts, create new ones, or clone/delete the selected contact.
 4. Edit the selected contact’s:
    - unique contact ID

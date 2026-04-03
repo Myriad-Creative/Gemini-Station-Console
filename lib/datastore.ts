@@ -1,13 +1,14 @@
 import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
 import { DataUrls, getConfig } from "@lib/config";
-import { parseModsFromData } from "@parser/mods";
-import { parseAbilitiesFromData } from "@parser/abilities";
-import { parseMobsFromData } from "@parser/mobs";
+import { parseMods, parseModsFromData } from "@parser/mods";
+import { parseItems, parseItemsFromData } from "@parser/items";
+import { parseMobs, parseMobsFromData } from "@parser/mobs";
+import { parseAbilitiesFromData, parseAbilitiesFromDataDirectory } from "@parser/abilities";
 import { parseMissionsFromData } from "@parser/missions";
-import { parseItemsFromData } from "@parser/items";
 import { computeOutliers } from "@parser/stats";
 import { readJsonFromUrl } from "@parser/fileutils";
 import { parseLooseJson } from "@lib/json";
+import { getUploadedDataState, getUploadedDataRoot } from "@lib/uploaded-data";
 
 type Store = {
   manifestUrl: string | null;
@@ -70,52 +71,99 @@ export async function loadAll(): Promise<Store> {
   const cfg = getConfig();
   const dataUrls: DataUrls = { ...(cfg.data_urls || {}) };
   const usingModsOverride = !!cfg.mods_override_json?.trim();
+  const uploadedDataState = getUploadedDataState();
+  const uploadedDataRoot = getUploadedDataRoot();
   STORE.manifestUrl = null;
   STORE.dataUrls = dataUrls;
   const missingRequired = ["mods", "items"].filter(k => {
     if (k === "mods" && usingModsOverride) return false;
+    if (k === "mods" && uploadedDataState.available.mods) return false;
+    if (k === "items" && uploadedDataState.available.items) return false;
     return !(dataUrls as any)?.[k];
   });
   if (missingRequired.length) {
     STORE.errors.push(`Missing URLs for: ${missingRequired.join(", ")}`);
   }
   try {
+    const shouldFetchMods = !usingModsOverride && !uploadedDataState.available.mods;
+    const shouldFetchItems = !uploadedDataState.available.items;
+    const shouldFetchMobs = !uploadedDataState.available.mobs;
+    const shouldFetchAbilities = !uploadedDataState.available.abilities;
+
     const fetchResults = await Promise.all([
-      loadModsData(dataUrls?.mods, cfg.mods_override_json ?? null),
-      fetchJson(dataUrls?.items),
-      fetchJson(dataUrls?.mobs),
+      usingModsOverride ? loadModsData(dataUrls?.mods, cfg.mods_override_json ?? null) : shouldFetchMods ? fetchJson(dataUrls?.mods) : Promise.resolve({ data: null }),
+      shouldFetchItems ? fetchJson(dataUrls?.items) : Promise.resolve({ data: null }),
+      shouldFetchMobs ? fetchJson(dataUrls?.mobs) : Promise.resolve({ data: null }),
       fetchJson(dataUrls?.missions),
-      fetchJson(dataUrls?.abilities)
+      shouldFetchAbilities ? fetchJson(dataUrls?.abilities) : Promise.resolve({ data: null })
     ]);
     const [modsRes, itemsRes, mobsRes, missionsRes, abilitiesRes] = fetchResults;
-    const [modsData, itemsData, mobsData, missionsData, abilitiesData] = [modsRes.data, itemsRes.data, mobsRes.data, missionsRes.data, abilitiesRes.data];
-    const urlMap: Array<[keyof DataUrls, { data: any; error?: string }]> = [
-      ["mods", modsRes],
-      ["items", itemsRes],
-      ["mobs", mobsRes],
-      ["missions", missionsRes],
-      ["abilities", abilitiesRes]
+    const missionsData = missionsRes.data;
+    const urlMap: Array<[keyof DataUrls, { data: any; error?: string }, boolean]> = [
+      ["mods", modsRes, shouldFetchMods || usingModsOverride],
+      ["items", itemsRes, shouldFetchItems],
+      ["mobs", mobsRes, shouldFetchMobs],
+      ["missions", missionsRes, true],
+      ["abilities", abilitiesRes, shouldFetchAbilities]
     ];
     for (const [k, res] of urlMap) {
       if (res.error && (dataUrls as any)?.[k]) STORE.errors.push(res.error);
     }
 
-    const mobs = parseMobsFromData(mobsData);
-    if (dataUrls?.mobs && !mobs.length) STORE.errors.push(`Loaded zero mobs from ${dataUrls.mobs}`);
+    let mods: Mod[] = [];
+    if (usingModsOverride) {
+      mods = parseModsFromData(modsRes.data);
+      if (!mods.length) STORE.errors.push("Loaded zero mods from the saved Mods.json override.");
+    } else if (uploadedDataRoot && uploadedDataState.available.mods) {
+      mods = parseMods(uploadedDataRoot);
+      if (!mods.length) {
+        STORE.errors.push("Uploaded data source contains Mods.json but yielded zero parsed mods.");
+        mods = parseModsFromData(modsRes.data);
+      }
+    } else {
+      mods = parseModsFromData(modsRes.data);
+      if (dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
+    }
+
+    let items: Item[] = [];
+    if (uploadedDataRoot && uploadedDataState.available.items) {
+      items = parseItems(uploadedDataRoot);
+      if (!items.length) {
+        STORE.errors.push("Uploaded data source contains items.json but yielded zero parsed items.");
+        items = parseItemsFromData(itemsRes.data);
+      }
+    } else {
+      items = parseItemsFromData(itemsRes.data);
+    }
+    if (!items.length && dataUrls?.items && shouldFetchItems) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);
+
+    let mobs: Mob[] = [];
+    if (uploadedDataRoot && uploadedDataState.available.mobs) {
+      mobs = parseMobs(uploadedDataRoot);
+      if (!mobs.length) {
+        STORE.errors.push("Uploaded data source contains mobs.json but yielded zero parsed mobs.");
+        mobs = parseMobsFromData(mobsRes.data);
+      }
+    } else {
+      mobs = parseMobsFromData(mobsRes.data);
+    }
+    if (!mobs.length && dataUrls?.mobs && shouldFetchMobs) STORE.errors.push(`Loaded zero mobs from ${dataUrls.mobs}`);
     const mobIndex = new Map(mobs.map(m => [String(m.id), m]));
 
     const missions = parseMissionsFromData(missionsData, mobIndex);
     if (dataUrls?.missions && !missions.length) STORE.errors.push(`Loaded zero missions from ${dataUrls.missions}`);
 
-    const abilities = parseAbilitiesFromData(abilitiesData);
-    if (dataUrls?.abilities && !abilities.length) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
-
-    const mods = parseModsFromData(modsData);
-    if (usingModsOverride && !mods.length) STORE.errors.push("Loaded zero mods from the saved Mods.json override.");
-    else if (dataUrls?.mods && !mods.length) STORE.errors.push(`Loaded zero mods from ${dataUrls.mods}`);
-
-    const items = parseItemsFromData(itemsData);
-    if (dataUrls?.items && !items.length) STORE.errors.push(`Loaded zero items from ${dataUrls.items}`);
+    let abilities: Ability[] = [];
+    if (uploadedDataRoot && uploadedDataState.available.abilities) {
+      abilities = parseAbilitiesFromDataDirectory(uploadedDataRoot);
+      if (!abilities.length) {
+        STORE.errors.push("Uploaded data source contains abilities but yielded zero parsed abilities.");
+        abilities = parseAbilitiesFromData(abilitiesRes.data);
+      }
+    } else {
+      abilities = parseAbilitiesFromData(abilitiesRes.data);
+    }
+    if (!abilities.length && dataUrls?.abilities && shouldFetchAbilities) STORE.errors.push(`Loaded zero abilities from ${dataUrls.abilities}`);
 
     STORE.mods = mods;
     STORE.items = items;

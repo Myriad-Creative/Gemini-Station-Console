@@ -150,6 +150,8 @@ function DialogLineEditor({
 
 export default function CommsManagerApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sharedImportAttemptedRef = useRef(false);
+  const workspaceRef = useRef<CommsLabWorkspace | null>(null);
   const [workspace, setWorkspace] = useState<CommsLabWorkspace | null>(null);
   const [selectedContactKey, setSelectedContactKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -171,6 +173,10 @@ export default function CommsManagerApp() {
   }, [validation]);
   const duplicateIds = useMemo(() => duplicateCommsIdMap(workspace?.contacts ?? []), [workspace]);
   const summary = useMemo(() => summarizeCommsWorkspace(workspace, validation), [workspace, validation]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
 
   const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -196,6 +202,28 @@ export default function CommsManagerApp() {
       setSelectedContactKey(filteredContacts[0]?.key ?? contacts[0]?.key ?? null);
     }
   }, [filteredContacts, selectedContactKey, workspace]);
+
+  useEffect(() => {
+    if (sharedImportAttemptedRef.current || workspace) return;
+    sharedImportAttemptedRef.current = true;
+
+    let cancelled = false;
+    async function loadSharedWorkspace() {
+      try {
+        const response = await fetch("/api/settings/data/source?kind=comms");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok || !payload.text || cancelled || workspaceRef.current) return;
+        importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
+      } catch {
+        // Shared uploaded data is optional.
+      }
+    }
+
+    void loadSharedWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace]);
 
   const selectedContact = useMemo(() => {
     const contacts = workspace?.contacts ?? [];
@@ -674,7 +702,7 @@ export default function CommsManagerApp() {
                     </div>
                   </Section>
 
-                  <Section title="Preview" description="Portrait preview with the resolved portrait path and current greeting/dialog content.">
+                  <Section title="Preview">
                     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                       <div className="flex items-start gap-4">
                         <div className="h-28 w-28 overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
@@ -685,29 +713,8 @@ export default function CommsManagerApp() {
                         </div>
                         <div className="min-w-0 space-y-2">
                           <div className="text-lg font-semibold text-white">{selectedContact.name || selectedContact.id || "Unnamed Contact"}</div>
-                          <div className="text-xs text-white/45">{selectedContact.id || "missing-id"}</div>
-                          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                            {selectedContact.greeting || "[No greeting set]"}
-                          </div>
+                          <div className="text-sm text-white/80">{selectedContact.greeting || "[No greeting set]"}</div>
                         </div>
-                      </div>
-                      <div className="mt-4 space-y-2">
-                        <div className="label">Resolved Portrait Path</div>
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70">{resolvedPortrait}</div>
-                      </div>
-                      <div className="mt-4 space-y-2">
-                        <div className="label">Dialog</div>
-                        {selectedContact.dialog.length ? (
-                          <div className="space-y-2">
-                            {selectedContact.dialog.map((line, index) => (
-                              <div key={`preview-dialog-${index}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/75">
-                                {line || <span className="text-white/35">[Blank line]</span>}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No dialog lines on this contact.</div>
-                        )}
                       </div>
                     </div>
                   </Section>
