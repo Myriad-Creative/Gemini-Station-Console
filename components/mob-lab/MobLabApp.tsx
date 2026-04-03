@@ -40,6 +40,16 @@ function SummaryCard({ label, value, accent }: { label: string; value: string | 
   );
 }
 
+function buildIconSrc(icon: string | undefined, id: string, name: string) {
+  if (!icon) return null;
+  const params = new URLSearchParams({
+    res: icon,
+    id,
+    name,
+  });
+  return `/api/icon?${params.toString()}`;
+}
+
 function Section({
   title,
   description,
@@ -265,6 +275,10 @@ export default function MobLabApp() {
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const selectedDuplicateKeys =
     selectedMob && selectedMob.id.trim() ? (duplicateIds.get(selectedMob.id.trim()) ?? []).filter((key) => key !== selectedMob.key) : [];
+  const spritePreviewSrc = selectedMob ? buildIconSrc(selectedMob.sprite || undefined, selectedMob.id || "mob", selectedMob.display_name || "Mob") : null;
+  const hailPortraitPreviewSrc = selectedMob
+    ? buildIconSrc(selectedMob.hail_portrait || undefined, selectedMob.id || "mob", selectedMob.hail_name || selectedMob.display_name || "Mob")
+    : null;
 
   function updateSelectedMob(updater: (current: MobDraft) => MobDraft) {
     if (!workspace || !selectedMob) return;
@@ -803,6 +817,14 @@ export default function MobLabApp() {
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, mob_end: event.target.value }))}
                       />
                     </div>
+                    {spritePreviewSrc ? (
+                      <div className="xl:col-span-2">
+                        <div className="label">Sprite Preview</div>
+                        <div className="mt-1 flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                          <img src={spritePreviewSrc} alt={selectedMob.display_name || selectedMob.id || "Mob sprite"} className="h-full w-full object-contain" />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </Section>
 
@@ -907,6 +929,18 @@ export default function MobLabApp() {
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, hail_portrait: event.target.value }))}
                       />
                     </div>
+                    {hailPortraitPreviewSrc ? (
+                      <div>
+                        <div className="label">Portrait Preview</div>
+                        <div className="mt-1 flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                          <img
+                            src={hailPortraitPreviewSrc}
+                            alt={selectedMob.hail_name || selectedMob.display_name || selectedMob.id || "Hail portrait"}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="lg:col-span-2 xl:col-span-3">
                       <div className="label">Hail Greeting</div>
                       <textarea

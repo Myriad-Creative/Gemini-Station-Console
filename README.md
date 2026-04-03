@@ -13,6 +13,7 @@ The console now loads directly from fixed JSON endpoints:
 - Mods: `https://json-service-production-e4bb.up.railway.app/json/Mods.json`
 - Items: `https://json-service-production-e4bb.up.railway.app/json/items.json`
 Open **Settings** to view the currently loaded URLs and force a reload.
+Open **Settings** to import a shared `/assets` folder; uploaded assets are stored locally and resolved first for `res://assets/...` image paths across the console.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
@@ -39,6 +40,9 @@ Open **Settings** to view the currently loaded URLs and force a reload.
   - Edit contact name, portrait, greeting, dialog lines, and authoring-only `meta.notes`
   - Use `res://assets/comms/temp.png` automatically whenever the portrait field is blank
   - Download the updated JSON, copy the full file JSON, or copy just the selected contact entry
+- Settings:
+  - Import the full `/assets` folder once and let the console resolve uploaded images before repo-root or remote fallbacks
+  - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, and mob image previews
 - Mission Lab:
   - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures

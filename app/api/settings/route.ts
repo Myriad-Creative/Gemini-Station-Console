@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getConfig, saveConfig } from "@lib/config";
 import { getStore, loadAll, warmupLoadIfNeeded } from "@lib/datastore";
 import { parseLooseJson } from "@lib/json";
+import { getUploadedAssetsState } from "@lib/uploaded-assets";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,7 @@ function buildResponse() {
     errors: store.errors,
     modsOverrideJson: cfg.mods_override_json ?? "",
     modsOverrideActive: !!cfg.mods_override_json?.trim(),
+    uploadedAssets: getUploadedAssetsState(),
   };
 }
 

@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getConfig } from "@lib/config";
 import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
+import { getUploadedAssetsRoot } from "@lib/uploaded-assets";
 
 function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 function searchRecursive(dir: string, name: string): string | null {
@@ -20,6 +21,65 @@ function searchRecursive(dir: string, name: string): string | null {
   return null;
 }
 
+function resolveFromRoot(root: string, cleaned: string, id: string, name: string): string | null {
+  const direct = path.join(root, cleaned);
+  if (fs.existsSync(direct)) return direct;
+
+  const base = path.basename(cleaned);
+  const assetRelative = cleaned.toLowerCase().startsWith("assets/") ? cleaned.slice("assets/".length) : cleaned;
+  const tries = [
+    path.join(root, "assets", assetRelative),
+    path.join(root, "assets", base),
+    path.join(root, "assets", "mods", base),
+    path.join(root, "assets", "items", base),
+    path.join(root, "assets", "comms", base),
+    path.join(root, "assets", "missions", base),
+    path.join(root, "assets", "ships", base),
+    path.join(root, "assets", "mods", assetRelative),
+    path.join(root, "assets", "items", assetRelative),
+    path.join(root, "assets", "comms", assetRelative),
+    path.join(root, "assets", "missions", assetRelative),
+    path.join(root, "assets", "ships", assetRelative),
+  ];
+
+  for (const candidate of tries) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  const scopedSearchDirs = [
+    path.join(root, "assets", "mods"),
+    path.join(root, "assets", "items"),
+    path.join(root, "assets", "comms"),
+    path.join(root, "assets", "missions"),
+    path.join(root, "assets", "ships"),
+  ];
+
+  for (const dir of scopedSearchDirs) {
+    const match = searchRecursive(dir, base);
+    if (match) return match;
+  }
+
+  const bases = Array.from(
+    new Set([
+      base,
+      slugify(id) + ".png",
+      slugify(name) + ".png",
+      slugify(id) + ".webp",
+      slugify(name) + ".webp",
+      slugify(id) + ".jpg",
+      slugify(name) + ".jpg",
+    ]),
+  ).filter(Boolean);
+
+  const assetsRoot = path.join(root, "assets");
+  for (const lookup of bases) {
+    const found = searchRecursive(assetsRoot, lookup);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
@@ -29,35 +89,16 @@ export async function GET(req: NextRequest) {
   if (!resParam) return new NextResponse("Missing res", { status: 400 });
   const store = getStore();
   const repo = (store as any).repoRoot as string | undefined;
+  const id = url.searchParams.get("id") || "";
+  const name = url.searchParams.get("name") || "";
 
   let p = resParam;
   if (p.startsWith("res://")) p = p.slice("res://".length);
   const cleaned = p.replace(/^\/+/, "");
-  let abs: string | null = repo ? path.join(repo, cleaned) : null;
-
-  if (repo && abs && !fs.existsSync(abs)) {
-    const base = path.basename(cleaned);
-    const tries = [
-      path.join(repo, "assets", "mods", base),
-      path.join(repo, "assets", "items", base),
-      path.join(repo, "assets", cleaned),
-      path.join(repo, "assets", "mods", cleaned),
-      path.join(repo, "assets", "items", cleaned)
-    ];
-    for (const t of tries) { if (fs.existsSync(t)) { abs = t; break; } }
-    if (!fs.existsSync(abs)) {
-      const m = searchRecursive(path.join(repo, "assets", "mods"), base) || searchRecursive(path.join(repo, "assets", "items"), base);
-      if (m) abs = m;
-    }
-    if (!fs.existsSync(abs)) {
-      const id = url.searchParams.get("id") || "";
-      const name = url.searchParams.get("name") || "";
-      const bases = Array.from(new Set([base, slugify(id)+".png", slugify(name)+".png", slugify(id)+".webp", slugify(name)+".webp"])).filter(Boolean);
-      for (const b of bases) {
-        const found = searchRecursive(path.join(repo, "assets"), b);
-        if (found) { abs = found; break; }
-      }
-    }
+  const uploadedAssetsRoot = getUploadedAssetsRoot();
+  let abs: string | null = uploadedAssetsRoot ? resolveFromRoot(uploadedAssetsRoot, cleaned, id, name) : null;
+  if (!abs && repo) {
+    abs = resolveFromRoot(repo, cleaned, id, name);
   }
 
   if (abs && fs.existsSync(abs)) {
