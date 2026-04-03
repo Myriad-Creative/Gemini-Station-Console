@@ -11,6 +11,7 @@ export const MAIN_NAV_LINKS: NavLink[] = [
   { href: "/missions", label: "Missions" },
   { href: "/mob-lab", label: "Mobs" },
   { href: "/merchant-lab", label: "Merchant Profiles" },
+  { href: "/comms", label: "Comms" },
   { href: "/reports/holes", label: "Holes" },
   { href: "/reports/outliers", label: "Outliers" },
   { href: "/settings", label: "Settings" },

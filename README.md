@@ -33,6 +33,12 @@ Open **Settings** to view the currently loaded URLs and force a reload.
   - Click catalog entries to attach them to the selected merchant profile
   - Preview item and mod offerings in a storefront-style layout with remove actions
   - Download the updated `merchant_profiles.json`, copy the full file JSON, or copy just the selected profile JSON
+- Comms Manager:
+  - Import or paste the comms JSON object map with tolerant JSON parsing
+  - Create, clone, delete, and validate unique contact IDs
+  - Edit contact name, portrait, greeting, dialog lines, and authoring-only `meta.notes`
+  - Use `res://assets/comms/temp.png` automatically whenever the portrait field is blank
+  - Download the updated JSON, copy the full file JSON, or copy just the selected contact entry
 - Mission Lab:
   - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
@@ -108,6 +114,27 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
    - copying only the currently selected profile JSON.
 
 Merchant Lab is isolated from the console’s existing read-only item/mod explorers and from the separate mission/mob tools.
+
+## Comms Manager Usage
+1. Open `/comms` from the top navigation.
+2. Either:
+   - import an existing comms JSON file,
+   - paste the JSON contents and let it auto-load, or
+   - start a blank workspace.
+3. Use the left sidebar to search and switch contacts, create new ones, or clone/delete the selected contact.
+4. Edit the selected contact’s:
+   - unique contact ID
+   - name
+   - portrait path
+   - greeting
+   - dialog lines
+   - authoring notes stored in `meta.notes`
+5. Use the export actions to:
+   - download the updated comms JSON,
+   - copy the whole updated file JSON, or
+   - copy only the current contact entry JSON.
+
+Comms Manager is isolated from the existing mission, merchant, mob, and mod tools.
 
 ## Mod Auto Generator Usage
 1. Open `/authoring` and switch to `Mod Builder`.
