@@ -1,24 +1,18 @@
 import fs from "fs";
 import path from "path";
 import { getLocalGameSourceState } from "@lib/local-game-source";
-import {
-  DATA_FILE_PATHS,
-  getUploadedDataRoot,
-  readUploadedDataFileText,
-  type UploadedDataFileKind,
-} from "@lib/uploaded-data";
-import { getUploadedAssetsRoot } from "@lib/uploaded-assets";
+import { DATA_FILE_PATHS, type UploadedDataFileKind } from "@lib/uploaded-data";
 
 export function getPreferredDataRepoRoot(): string | null {
   const local = getLocalGameSourceState();
   if (local.active && local.gameRootPath && local.available.data) return local.gameRootPath;
-  return getUploadedDataRoot();
+  return null;
 }
 
 export function getPreferredAssetsRepoRoot(): string | null {
   const local = getLocalGameSourceState();
   if (local.active && local.gameRootPath && local.available.assets) return local.gameRootPath;
-  return getUploadedAssetsRoot();
+  return null;
 }
 
 export function getPreferredMissionRoot(): string | null {
@@ -40,7 +34,7 @@ export async function readPreferredDataFileText(kind: UploadedDataFileKind): Pro
   }
 
   return {
-    text: await readUploadedDataFileText(kind),
-    sourceLabel: "Shared uploaded data",
+    text: null,
+    sourceLabel: null,
   };
 }

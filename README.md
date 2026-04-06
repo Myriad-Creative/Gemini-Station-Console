@@ -11,31 +11,26 @@ Then open <http://localhost:3000>.
 ## Data sources
 The console now starts empty on first load. No missions, items, mobs, mods, comms, merchant profiles, or other game JSON ship with the console build.
 
-Open **Settings** and either:
-- set a **Local Game Root** pointing at your Gemini Station folder so the console reads:
-  - `/data`
-  - `/assets`
-  - `/scripts/system/missions/missions`
-- or use the upload-based fallbacks:
-  - a shared `data.zip` or `/data` folder for non-mission datasets
-  - a shared missions zip or missions folder for all mission pages
-  - a shared `/assets` folder for `res://assets/...` image resolution
+Open **Settings** and set a **Local Game Root** pointing at your Gemini Station folder so the console reads:
+- `/data`
+- `/assets`
+- `/scripts/system/missions/missions`
 
-When a local game root is active, it takes precedence over uploaded fallbacks. There is no manifest URL or external JSON fallback path anymore.
+There is no manifest URL, no bundled runtime data, and no separate upload-based fallback path anymore.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
 - Mods Explorer (icons, rarity coloring, **hover card** with full stats/desc, sorting)
 - Items Explorer (icons, filters, sorting)
-- Missions Explorer (shared imported workspace + band filter)
+- Missions Explorer (shared mission workspace + band filter)
 - Mob Lab:
-  - Import a `mobs.json` file with tolerant JSON5 parsing
+  - Read `mobs.json` directly from the active local game root
   - Browse mobs by name, ID, level, faction, and AI type
   - Clone mobs, create blank mobs, edit runtime fields, and manage stat blocks
   - Live duplicate-ID alerts plus validation for invalid JSON blocks
   - Download the updated `mobs.json`, copy the full file JSON, or copy the current mob JSON
 - Merchant Lab:
-  - Import or paste `merchant_profiles.json`
+  - Read `merchant_profiles.json` directly from the active local game root
   - Create, clone, delete, and validate merchant profiles with unique profile IDs
   - Add authoring-only `name` and `description` metadata for management notes while keeping `id` as the primary identifier
   - Browse the live console item/mod catalog with filters for rarity, level range, slot, type, and class restriction
@@ -43,21 +38,20 @@ When a local game root is active, it takes precedence over uploaded fallbacks. T
   - Preview item and mod offerings in a storefront-style layout with remove actions
   - Download the updated `merchant_profiles.json`, copy the full file JSON, or copy just the selected profile JSON
 - Comms Manager:
-  - Import or paste the comms JSON object map with tolerant JSON parsing
+  - Read `Comms.json` directly from the active local game root
   - Create, clone, delete, and validate unique contact IDs
   - Edit contact name, portrait, greeting, dialog lines, and authoring-only `meta.notes`
   - Use `res://assets/comms/temp.png` automatically whenever the portrait field is blank
   - Download the updated JSON, copy the full file JSON, or copy just the selected contact entry
 - Settings:
   - Set a local Gemini Station game root and let the console read `/data`, `/assets`, and `/scripts/system/missions/missions` directly from that folder
-  - Use upload-based data/assets/missions fallbacks only when you are not using a local game root
-  - Reuse the active data and asset source automatically for items, mods, merchant previews, comms portraits, mission headers, and mob image previews
-  - Populate Mission Explorer, Mission Lab, Mission Creator, dashboard mission summaries, and the grouped Data tools from the active local or uploaded source
+  - Reuse that active source automatically for items, mods, merchant previews, comms portraits, mission headers, and mob image previews
+  - Populate Mission Explorer, Mission Lab, Mission Creator, dashboard mission summaries, and the grouped Data tools from the active local source
 - Data:
-  - Use the shared uploaded `/data` workspace from Settings to manage map POIs, map regions, trade routes, NPC traffic, tutorial entries, tutorial triggers, ship stat descriptions, zones, stages, and hazard barrier profiles
+  - Use the active local game root to manage map POIs, map regions, trade routes, NPC traffic, tutorial entries, tutorial triggers, ship stat descriptions, zones, stages, and hazard barrier profiles
   - Create, clone, edit, delete, copy, and download the runtime JSON for each dataset without touching the Godot repo directly
 - Mission Lab:
-  - Import a missions zip or a selected missions folder once from the Missions dashboard, then reuse that shared workspace across Mission Explorer, Mission Lab, and Mission Creator
+  - Read missions directly from the active local game root
   - Tolerant mission parsing with per-file diagnostics for trailing commas, control-character cleanup, and parse failures
   - Shared Browser + Map filters for folder, category, arc, tag, faction, class, level range, mode, objective type, prerequisites, and repeatable state
   - Prerequisite graph view and focused top-to-bottom chain cards
@@ -72,10 +66,7 @@ When a local game root is active, it takes precedence over uploaded fallbacks. T
 
 ## Mission Lab Usage
 1. Open `/settings` from the top navigation.
-2. Either:
-   - set a local game root that includes `/scripts/system/missions/missions`, or
-   - import a missions `.zip`, or
-   - import a missions folder selected in the browser via the folder picker.
+2. Set a local game root that includes `/scripts/system/missions/missions`.
 3. Open `/missions/explorer` to browse the imported shared mission workspace.
 4. Open `/missions/lab` to use the shared Browser, Map, and Diagnostics views.
 5. Open `/missions/creator` to seed mission drafts from the same imported workspace.
@@ -93,14 +84,11 @@ When a local game root is active, it takes precedence over uploaded fallbacks. T
    - placeholder arcs/tags,
    - graph cycles.
 
-Mission Lab is read-only and uses the same shared mission workspace that powers the other mission pages until cleared or replaced in Settings.
+Mission Lab is read-only and uses the same shared mission workspace that powers the other mission pages until the local game root changes.
 
 ## Mob Lab Usage
 1. Open `/mob-lab` from the top navigation.
-2. Either:
-   - import an existing `mobs.json` file, or
-   - start a blank workspace for new mob creation.
-   If the active Settings source includes `data/database/mobs/mobs.json`, Mob Lab auto-seeds from that file on first load.
+2. Set a local game root in `/settings`. If it includes `data/database/mobs/mobs.json`, Mob Lab auto-seeds from that file.
 3. Use the left browser to search, sort, filter, and select mobs.
 4. Edit the selected mob’s:
    - ID, display name, level, faction, AI type, scene, and sprite
@@ -115,11 +103,7 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
 
 ## Merchant Lab Usage
 1. Open `/merchant-lab` from the top navigation.
-2. Either:
-   - import an existing `merchant_profiles.json` file,
-   - paste the JSON contents and load them, or
-   - start a blank workspace.
-   If the active Settings source includes `data/database/vendor/merchant_profiles.json`, Merchant Lab auto-seeds from that file on first load.
+2. Set a local game root in `/settings`. If it includes `data/database/vendor/merchant_profiles.json`, Merchant Lab auto-seeds from that file.
 3. Use the left sidebar to:
    - search and switch merchant profiles,
    - create or clone profiles,
@@ -137,11 +121,7 @@ Merchant Lab is isolated from the console’s existing read-only item/mod explor
 
 ## Comms Manager Usage
 1. Open `/comms` from the top navigation.
-2. Either:
-   - import an existing comms JSON file,
-   - paste the JSON contents and let it auto-load, or
-   - start a blank workspace.
-   If the active Settings source includes `data/database/comms/Comms.json`, Comms Manager auto-seeds from that file on first load.
+2. Set a local game root in `/settings`. If it includes `data/database/comms/Comms.json`, Comms Manager auto-seeds from that file.
 3. Use the left sidebar to search and switch contacts, create new ones, or clone/delete the selected contact.
 4. Edit the selected contact’s:
    - unique contact ID
@@ -159,13 +139,13 @@ Comms Manager is isolated from the existing mission, merchant, mob, and mod tool
 
 ## Data Tools Usage
 1. Open `/data` from the top navigation.
-2. In `/settings`, either set a local game root or import a shared `data.zip` or `/data` folder.
+2. In `/settings`, set a local game root.
 3. Open the grouped editors:
    - `/data/map` for `poi.json` and `regions.json`
    - `/data/routes` for `trade_routes.json` and `npc_traffic.json`
    - `/data/tutorial` for `info_entries.json` and `info_triggers.json`
    - `/data/systems` for `ShipStatDescriptions.json`, `Zones.json`, `Stages.json`, and `HazardBarrierProfiles.json`
-4. Each editor auto-loads from the active Settings data source when the corresponding file exists.
+4. Each editor auto-loads from the active local game root when the corresponding file exists.
 5. Use the library sidebar in each tool to create, clone, delete, and select records.
 6. Use the export actions to copy or download the updated runtime JSON for the active dataset.
 

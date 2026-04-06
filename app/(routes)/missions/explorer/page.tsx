@@ -59,7 +59,7 @@ export default function MissionsExplorerPage() {
       <div>
         <h1 className="page-title mb-1">Mission Explorer</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Browse the missions currently loaded in the shared imported workspace from Settings.
+          Browse the missions currently loaded from the active local game root in Settings.
         </p>
       </div>
 
@@ -68,7 +68,7 @@ export default function MissionsExplorerPage() {
       {!summary ? (
         <div className="card py-10 text-center">
           <div className="text-xl font-semibold text-white">No shared mission workspace loaded</div>
-          <div className="mt-2 text-sm text-white/55">Set a local game root or import a missions workspace in Settings before using Mission Explorer.</div>
+          <div className="mt-2 text-sm text-white/55">Set a local game root in Settings before using Mission Explorer.</div>
           <div className="mt-5">
             <Link href="/settings" className="btn">
               Go To Settings

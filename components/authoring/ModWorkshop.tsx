@@ -608,10 +608,6 @@ export default function ModWorkshop({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <label className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10">
-              Import Mods.json
-              <input className="hidden" type="file" accept=".json,application/json" onChange={importModsJson} />
-            </label>
             <button
               className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
               disabled={anyValidationErrors}

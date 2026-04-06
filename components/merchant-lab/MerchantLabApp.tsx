@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -49,9 +50,8 @@ function labelize(value: string) {
 }
 
 function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  if (!icon) return null;
   const params = new URLSearchParams({
-    res: icon,
+    res: icon || "icon_lootbox.png",
     id,
     name,
   });
@@ -210,7 +210,7 @@ export default function MerchantLabApp() {
   const [mods, setMods] = useState<Mod[]>([]);
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Import or paste a merchant_profiles.json file, then build out vendor assortments with the live catalog browser.",
+    message: "Merchant Lab reads merchant_profiles.json directly from the active local game root in Settings.",
   });
 
   useEffect(() => {
@@ -323,16 +323,16 @@ export default function MerchantLabApp() {
             setSelectedProfileKey(null);
             setStatus({
               tone: "neutral",
-              message: "No shared merchant profile data is currently available. Import /data in Settings or load a file here.",
+              message: "No merchant_profiles.json was found under the active local game root. Set a valid Gemini Station folder in Settings first.",
             });
           }
           return;
         }
         if (cancelled) return;
         if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
-        importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
+        importText(payload.text, payload.sourceLabel || "Local game source", "uploaded");
       } catch {
-        // Shared uploaded data is optional.
+        // Local game source may not be configured yet.
       }
     }
 
@@ -608,8 +608,8 @@ export default function MerchantLabApp() {
   const hasWorkspaceErrors = validation.some((issue) => issue.level === "error");
   const workspaceSourceLabel =
     workspace?.sourceType === "blank"
-      ? "Blank workspace"
-      : `${workspace?.sourceLabel ?? "merchant_profiles.json"} (${workspace?.parseStrategy === "strict" ? "strict JSON" : "loose JSON"})`;
+      ? "Manual workspace"
+      : `${workspace?.sourceLabel ?? "Local game source"} (${workspace?.parseStrategy === "strict" ? "strict JSON" : "loose JSON"})`;
 
   return (
     <div className="space-y-6">
@@ -618,26 +618,11 @@ export default function MerchantLabApp() {
           <h1 className="page-title mb-1">Merchant Lab</h1>
           <p className="max-w-3xl text-sm leading-6 text-white/65">
             Build and maintain vendor merchant profiles with a live storefront preview, click-to-add catalog browser,
-            duplicate-ID validation, and import/export for `merchant_profiles.json`.
+            duplicate-ID validation, and export tooling for `merchant_profiles.json`.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button className="btn" onClick={() => fileInputRef.current?.click()}>
-            Import merchant_profiles.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={loadPastedJson}
-          >
-            Load Pasted JSON
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={startBlankWorkspace}
-          >
-            Start Blank Workspace
-          </button>
           <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
             Download merchant_profiles.json
           </button>
@@ -649,17 +634,6 @@ export default function MerchantLabApp() {
             Copy Updated JSON
           </button>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,application/json,text/json"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void importFile(file);
-          }}
-        />
       </div>
 
       <div
@@ -696,47 +670,17 @@ export default function MerchantLabApp() {
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="card space-y-5">
-            <div>
-              <div className="text-xl font-semibold text-white">Import Existing Merchant Profiles</div>
-              <div className="mt-2 text-sm text-white/60">
-                Upload `merchant_profiles.json` or paste its contents in the JSON box. Merchant Lab accepts strict JSON and
-                tolerant JSON with trailing commas.
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl border border-dashed border-cyan-300/25 bg-[#091321] px-6 py-12 text-center"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const file = Array.from(event.dataTransfer.files).find((entry) => entry.name.toLowerCase().endsWith(".json"));
-                if (file) {
-                  void importFile(file);
-                }
-              }}
-            >
-              <div className="text-2xl font-semibold text-white">Drop a merchant_profiles.json file here</div>
-              <div className="mt-2 text-sm text-white/55">Or use the import button above to choose the file manually.</div>
-            </div>
-          </div>
-
           <div className="card space-y-4">
-            <div>
-              <div className="text-xl font-semibold text-white">Paste merchant_profiles.json</div>
-              <div className="mt-2 text-sm text-white/60">
-                Pasting will auto-load immediately, and the Load Pasted JSON button remains available if you want to trigger it manually.
-              </div>
+            <div className="text-xl font-semibold text-white">Local Game Root Required</div>
+            <div className="text-sm leading-6 text-white/65">
+              Merchant Lab no longer loads separate `merchant_profiles.json` files. Set the Gemini Station local game root in Settings and the
+              editor will automatically read `data/database/vendor/merchant_profiles.json` from that folder.
             </div>
-            <textarea
-              className="input min-h-[260px] font-mono text-sm"
-              value={pasteJson}
-              placeholder='[\n  { "id": "utf_support_vendor", "items": [6, 7], "mods": [9] }\n]'
-              onChange={(event) => setPasteJson(event.target.value)}
-              onPaste={handlePasteJsonPaste}
-            />
-          </div>
+            <div>
+              <Link href="/settings" className="btn">
+                Open Settings
+              </Link>
+            </div>
           </div>
         </>
       ) : (

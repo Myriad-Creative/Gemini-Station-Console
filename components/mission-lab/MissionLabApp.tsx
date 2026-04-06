@@ -381,7 +381,7 @@ export default function MissionLabApp() {
           </table>
         </div>
       ) : (
-        <EmptyState title="No shared workspace imported" body="Import a missions zip in Settings to browse it here." />
+        <EmptyState title="No shared workspace loaded" body="Set a local game root in Settings to browse missions here." />
       )
     ) : activeTab === "map" ? (
       summary ? (
@@ -476,13 +476,13 @@ export default function MissionLabApp() {
           )}
         </div>
       ) : (
-        <EmptyState title="No shared workspace imported" body="Import a missions zip in Settings to view its map here." />
+        <EmptyState title="No shared workspace loaded" body="Set a local game root in Settings to view the mission map here." />
       )
     ) : activeTab === "diagnostics" ? (
       summary ? (
         <MissionDiagnosticsPanel summary={summary} diagnostics={diagnostics} />
       ) : (
-        <EmptyState title="No shared workspace imported" body="Import a missions zip in Settings to inspect diagnostics here." />
+        <EmptyState title="No shared workspace loaded" body="Set a local game root in Settings to inspect mission diagnostics here." />
       )
     ) : null;
 

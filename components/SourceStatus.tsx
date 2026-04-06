@@ -10,12 +10,6 @@ type SourceStatusPayload = {
     gameRootPath: string | null;
     lastValidated: string | null;
   };
-  uploadedData?: {
-    active: boolean;
-  };
-  uploadedAssets?: {
-    active: boolean;
-  };
 };
 
 const EMPTY_PAYLOAD: SourceStatusPayload = {
@@ -24,15 +18,9 @@ const EMPTY_PAYLOAD: SourceStatusPayload = {
     gameRootPath: null,
     lastValidated: null,
   },
-  uploadedData: {
-    active: false,
-  },
-  uploadedAssets: {
-    active: false,
-  },
 };
 
-export default function SourceStatus() {
+export default function SourceStatus({ showSettingsLink = true }: { showSettingsLink?: boolean }) {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [payload, setPayload] = useState<SourceStatusPayload>(EMPTY_PAYLOAD);
 
@@ -46,8 +34,6 @@ export default function SourceStatus() {
         if (!cancelled) {
           setPayload({
             localGameSource: nextPayload.localGameSource ?? EMPTY_PAYLOAD.localGameSource,
-            uploadedData: nextPayload.uploadedData ?? EMPTY_PAYLOAD.uploadedData,
-            uploadedAssets: nextPayload.uploadedAssets ?? EMPTY_PAYLOAD.uploadedAssets,
           });
         }
       } catch {
@@ -64,8 +50,6 @@ export default function SourceStatus() {
   }, [sharedDataVersion]);
 
   const localSource = payload.localGameSource ?? EMPTY_PAYLOAD.localGameSource!;
-  const uploadedData = payload.uploadedData ?? EMPTY_PAYLOAD.uploadedData!;
-  const uploadedAssets = payload.uploadedAssets ?? EMPTY_PAYLOAD.uploadedAssets!;
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/65 md:flex-row md:items-center md:justify-between">
@@ -79,9 +63,6 @@ export default function SourceStatus() {
           >
             {localSource.active ? "Local Game Root Active" : "No Local Game Root"}
           </span>
-          {!localSource.active && (uploadedData.active || uploadedAssets.active) ? (
-            <span className="rounded-full bg-cyan-300/15 px-2 py-1 text-[11px] text-cyan-100">Using Uploaded Fallbacks</span>
-          ) : null}
         </div>
 
         <div className="mt-1 min-w-0 font-mono text-[11px] text-white/75">
@@ -93,11 +74,13 @@ export default function SourceStatus() {
         ) : null}
       </div>
 
-      <div className="shrink-0">
-        <Link href="/settings" className="rounded border border-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5 hover:text-white">
-          Open Settings
-        </Link>
-      </div>
+      {showSettingsLink ? (
+        <div className="shrink-0">
+          <Link href="/settings" className="rounded border border-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5 hover:text-white">
+            Open Settings
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }

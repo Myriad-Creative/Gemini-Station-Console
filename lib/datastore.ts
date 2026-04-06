@@ -5,7 +5,6 @@ import { parseItems } from "@parser/items";
 import { parseMobs } from "@parser/mobs";
 import { parseAbilitiesFromDataDirectory } from "@parser/abilities";
 import { computeOutliers } from "@parser/stats";
-import { getUploadedDataState } from "@lib/uploaded-data";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { getPreferredDataRepoRoot } from "@lib/shared-source";
 
@@ -47,33 +46,32 @@ export async function warmupLoadIfNeeded(): Promise<void> {
 
 export async function loadAll(): Promise<Store> {
   STORE.errors = [];
-  const uploadedDataState = getUploadedDataState();
   const localGameSource = getLocalGameSourceState();
   const preferredDataRoot = getPreferredDataRepoRoot();
 
   try {
     let mods: Mod[] = [];
-    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.mods)) {
+    if (preferredDataRoot && localGameSource.available.data) {
       mods = parseMods(preferredDataRoot);
-      if (!mods.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains Mods.json but yielded zero parsed mods.`);
+      if (!mods.length) STORE.errors.push("Local game source contains Mods.json but yielded zero parsed mods.");
     }
 
     let items: Item[] = [];
-    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.items)) {
+    if (preferredDataRoot && localGameSource.available.data) {
       items = parseItems(preferredDataRoot);
-      if (!items.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains items.json but yielded zero parsed items.`);
+      if (!items.length) STORE.errors.push("Local game source contains items.json but yielded zero parsed items.");
     }
 
     let mobs: Mob[] = [];
-    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.mobs)) {
+    if (preferredDataRoot && localGameSource.available.data) {
       mobs = parseMobs(preferredDataRoot);
-      if (!mobs.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains mobs.json but yielded zero parsed mobs.`);
+      if (!mobs.length) STORE.errors.push("Local game source contains mobs.json but yielded zero parsed mobs.");
     }
 
     let abilities: Ability[] = [];
-    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.abilities)) {
+    if (preferredDataRoot && localGameSource.available.data) {
       abilities = parseAbilitiesFromDataDirectory(preferredDataRoot);
-      if (!abilities.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains abilities but yielded zero parsed abilities.`);
+      if (!abilities.length) STORE.errors.push("Local game source contains abilities but yielded zero parsed abilities.");
     }
 
     STORE.mods = mods;
@@ -85,7 +83,7 @@ export async function loadAll(): Promise<Store> {
     if (!preferredDataRoot) {
       STORE.errors = [];
     } else if (!mods.length && !mobs.length && !items.length && !abilities.length) {
-      STORE.errors.push(`Parsed zero console records from the ${localGameSource.active ? "local game source" : "uploaded /data workspace"}.`);
+      STORE.errors.push("Parsed zero console records from the local game source.");
     }
   } catch (e: any) {
     STORE.errors.push(String(e?.message || e));

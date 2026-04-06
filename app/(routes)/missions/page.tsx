@@ -24,15 +24,15 @@ export default function MissionsPage() {
       <div>
         <h1 className="page-title mb-1">Missions</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Mission source configuration now lives in Settings. Once you set a local game root or import a missions zip or folder there, the same shared mission
-          workspace is available across Mission Explorer, Mission Lab, and Mission Creator.
+          Mission source configuration now lives in Settings. Once you set a local game root there, the same shared mission workspace is available across
+          Mission Explorer, Mission Lab, and Mission Creator.
         </p>
       </div>
 
       <div className="card flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
           <div className="text-lg font-semibold text-white">Shared Mission Workspace</div>
-          <div className="text-sm text-white/60">Use Settings to point at a local game root or import a missions workspace for this browser session.</div>
+          <div className="text-sm text-white/60">Use Settings to point at a local Gemini Station game root.</div>
         </div>
         <Link href="/settings" className="btn">
           Open Settings

@@ -33,25 +33,17 @@ function RewardPill({ label, value }: { label: string; value: number }) {
 }
 
 function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
-  if (reward.icon) {
-    return (
-      <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
-        <img
-          src={`/api/icon?res=${encodeURIComponent(reward.icon)}&id=${encodeURIComponent(reward.id)}&name=${encodeURIComponent(
-            reward.name ?? reward.id,
-          )}`}
-          alt={reward.name ?? reward.id}
-          width={72}
-          height={72}
-          className="h-[72px] w-[72px] rounded-md object-cover"
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-2 text-center text-[11px] text-white/75">
-      {reward.name ?? reward.id}
+    <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
+      <img
+        src={`/api/icon?res=${encodeURIComponent(reward.icon || "icon_lootbox.png")}&id=${encodeURIComponent(reward.id)}&name=${encodeURIComponent(
+          reward.name ?? reward.id,
+        )}`}
+        alt={reward.name ?? reward.id}
+        width={72}
+        height={72}
+        className="h-[72px] w-[72px] rounded-md object-cover"
+      />
     </div>
   );
 }

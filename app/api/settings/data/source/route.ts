@@ -28,12 +28,12 @@ function isSupportedKind(value: string): value is UploadedDataFileKind {
 export async function GET(req: NextRequest) {
   const kind = req.nextUrl.searchParams.get("kind") || "";
   if (!isSupportedKind(kind)) {
-    return NextResponse.json({ ok: false, error: "Unsupported shared data source kind." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Unsupported local game data kind." }, { status: 400 });
   }
 
   const { text, sourceLabel } = await readPreferredDataFileText(kind);
   if (!text) {
-    return NextResponse.json({ ok: false, error: "Shared uploaded data source not available for that file." }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Local game source is not available for that file." }, { status: 404 });
   }
 
   return NextResponse.json({

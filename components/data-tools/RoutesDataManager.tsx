@@ -35,7 +35,7 @@ export default function RoutesDataManager() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Loading shared routes data from Settings…",
+    message: "Loading routes data from the local game root…",
   });
 
   useEffect(() => {
@@ -44,8 +44,8 @@ export default function RoutesDataManager() {
       try {
         const [routesText, trafficText] = await Promise.all([loadSharedText("tradeRoutes"), loadSharedText("npcTraffic")]);
         if (cancelled) return;
-        const nextRoutes = routesText ? importTradeRoutesWorkspace(routesText, "Shared uploaded data") : createBlankTradeRoutesWorkspace();
-        const nextTraffic = trafficText ? importNpcTrafficWorkspace(trafficText, "Shared uploaded data") : createBlankNpcTrafficWorkspace();
+        const nextRoutes = routesText ? importTradeRoutesWorkspace(routesText, "Local game source") : createBlankTradeRoutesWorkspace();
+        const nextTraffic = trafficText ? importNpcTrafficWorkspace(trafficText, "Local game source") : createBlankNpcTrafficWorkspace();
         setRoutesWorkspace(nextRoutes);
         setTrafficWorkspace(nextTraffic);
         setSelectedRouteKey(nextRoutes.routes[0]?.key ?? null);
@@ -53,8 +53,8 @@ export default function RoutesDataManager() {
           tone: routesText || trafficText ? "success" : "neutral",
           message:
             routesText || trafficText
-              ? "Loaded trade_routes.json and npc_traffic.json from the shared uploaded /data workspace."
-              : "No shared routes data was found. This editor started with blank route and traffic workspaces.",
+              ? "Loaded trade_routes.json and npc_traffic.json from the local game root."
+              : "No routes data was found under the active local game root. This editor started with blank route and traffic workspaces.",
         });
       } catch (error) {
         if (cancelled) return;
@@ -155,7 +155,7 @@ export default function RoutesDataManager() {
       <div>
         <h1 className="page-title mb-2">Routes</h1>
         <p className="max-w-4xl text-white/65">
-          Edit trade route geometry and NPC traffic configuration loaded from the shared uploaded <code>/data</code> workspace in Settings.
+          Edit trade route geometry and NPC traffic configuration loaded from the active local game root in Settings.
         </p>
       </div>
 

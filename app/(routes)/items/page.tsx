@@ -4,7 +4,7 @@ import { RARITY_COLOR } from "@lib/constants";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type Item = { id:string; name:string; levelRequirement:number; rarity:number; icon?:string; type?:string; };
-const DEFAULT_ITEM_ICON = "res://assets/items/icon_lootbox.png";
+const DEFAULT_ITEM_ICON = "icon_lootbox.png";
 
 function rarityStyle(r:number) { return { color: RARITY_COLOR[r] || "#C0C0C0" }; }
 

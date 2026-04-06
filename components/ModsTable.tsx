@@ -45,7 +45,7 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
   const columns = useMemo(() => [
     { key: "name", header: "Name", render: (r: Row) => (
       <div className="relative group flex items-center gap-2">
-        {r.icon ? <img src={`/api/icon?res=${encodeURIComponent(r.icon)}&id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`} width={28} height={28} style={{borderRadius:4}} alt="" /> : <div style={{width:28,height:28,background:"#222",borderRadius:4}}/>}
+        <img src={`/api/icon?res=${encodeURIComponent(r.icon || "icon_lootbox.png")}&id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`} width={28} height={28} style={{borderRadius:4}} alt="" />
         <span className="font-medium" style={rarityStyle(r.rarity)}>{r.name}</span>
         <div className="tooltip group-hover:block hidden"><HoverCard row={r} /></div>
       </div>

@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   await loadAll();
-  return NextResponse.json({ ok: true, via: "uploaded-sources" });
+  return NextResponse.json({ ok: true, via: "local-game-root" });
 }

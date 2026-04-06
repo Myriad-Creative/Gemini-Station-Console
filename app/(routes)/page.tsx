@@ -59,7 +59,7 @@ export default function DashboardPage() {
           <CardTitle>Data Source</CardTitle>
           <div className="text-sm text-white/80">
             <div><span className="label">Last loaded:</span> {data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
-            <div className="mt-1 text-white/60">This dashboard is populated only from uploaded Settings workspaces.</div>
+            <div className="mt-1 text-white/60">This dashboard is populated only from the active local game root set in Settings.</div>
             <div className="mt-1 space-y-1">
               <div className="label">Parsed records</div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">

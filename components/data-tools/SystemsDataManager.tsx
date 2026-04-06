@@ -64,7 +64,7 @@ export default function SystemsDataManager() {
   const [selectedHazardKey, setSelectedHazardKey] = useState<string | null>(null);
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Loading shared systems data from Settings…",
+    message: "Loading systems data from the local game root…",
   });
 
   useEffect(() => {
@@ -78,10 +78,10 @@ export default function SystemsDataManager() {
           loadSharedText("hazardBarrierProfiles"),
         ]);
         if (cancelled) return;
-        const nextShipStats = shipStatsText ? importShipStatsWorkspace(shipStatsText, "Shared uploaded data") : createBlankShipStatsWorkspace();
-        const nextZones = zonesText ? importZonesWorkspace(zonesText, "Shared uploaded data") : createBlankZonesWorkspace();
-        const nextStages = stagesText ? importStagesWorkspace(stagesText, "Shared uploaded data") : createBlankStagesWorkspace();
-        const nextHazards = hazardsText ? importHazardBarrierProfilesWorkspace(hazardsText, "Shared uploaded data") : createBlankHazardBarrierProfilesWorkspace();
+        const nextShipStats = shipStatsText ? importShipStatsWorkspace(shipStatsText, "Local game source") : createBlankShipStatsWorkspace();
+        const nextZones = zonesText ? importZonesWorkspace(zonesText, "Local game source") : createBlankZonesWorkspace();
+        const nextStages = stagesText ? importStagesWorkspace(stagesText, "Local game source") : createBlankStagesWorkspace();
+        const nextHazards = hazardsText ? importHazardBarrierProfilesWorkspace(hazardsText, "Local game source") : createBlankHazardBarrierProfilesWorkspace();
         setShipStatsWorkspace(nextShipStats);
         setZonesWorkspace(nextZones);
         setStagesWorkspace(nextStages);
@@ -94,8 +94,8 @@ export default function SystemsDataManager() {
           tone: shipStatsText || zonesText || stagesText || hazardsText ? "success" : "neutral",
           message:
             shipStatsText || zonesText || stagesText || hazardsText
-              ? "Loaded systems data from the shared uploaded /data workspace."
-              : "No shared systems data was found. This editor started with blank workspaces.",
+              ? "Loaded systems data from the local game root."
+              : "No systems data was found under the active local game root. This editor started with blank workspaces.",
         });
       } catch (error) {
         if (cancelled) return;

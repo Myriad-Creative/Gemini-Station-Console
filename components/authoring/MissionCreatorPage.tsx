@@ -117,7 +117,7 @@ export default function MissionCreatorPage() {
     startTransition(() => {
       setMissions(seeded.length ? seeded : [createMissionDraft()]);
     });
-    setWorkspaceMessage(`Auto-seeded ${seeded.length} mission draft(s) from the shared imported workspace.`);
+    setWorkspaceMessage(`Auto-seeded ${seeded.length} mission draft(s) from the active local game root.`);
     window.localStorage.setItem(MISSION_WORKSPACE_SEED_KEY, fingerprint);
     lastAutoSeedRef.current = fingerprint;
   }, [hydrated, referenceMissions, workspaceSummary]);
@@ -127,7 +127,7 @@ export default function MissionCreatorPage() {
       <div>
         <h1 className="page-title mb-1">Mission Creator</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Build mission drafts in the richer authoring model. When a shared missions zip is loaded in Settings, this page auto-seeds from it.
+          Build mission drafts in the richer authoring model. When a local game root is set in Settings, this page auto-seeds from it.
         </p>
         {workspaceMessage ? <div className="mt-3 text-sm text-accent">{workspaceMessage}</div> : null}
       </div>
@@ -135,7 +135,7 @@ export default function MissionCreatorPage() {
       {!workspaceSummary ? (
         <div className="card space-y-3">
           <div className="text-sm text-white/70">
-            No shared mission workspace is loaded yet. Set a local game root or import a missions workspace in Settings first, and the creator will auto-seed from it.
+            No shared mission workspace is loaded yet. Set a local game root in Settings first, and the creator will auto-seed from it.
           </div>
           <div>
             <Link href="/settings" className="btn">

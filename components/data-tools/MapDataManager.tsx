@@ -36,7 +36,7 @@ export default function MapDataManager() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Loading shared map data from Settings…",
+    message: "Loading map data from the local game root…",
   });
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function MapDataManager() {
       try {
         const [poiText, regionsText] = await Promise.all([loadSharedText("poi"), loadSharedText("regions")]);
         if (cancelled) return;
-        const nextWorkspace = poiText || regionsText ? importMapWorkspace(poiText, regionsText, "Shared uploaded data") : createBlankMapWorkspace();
+        const nextWorkspace = poiText || regionsText ? importMapWorkspace(poiText, regionsText, "Local game source") : createBlankMapWorkspace();
         setWorkspace(nextWorkspace);
         setSelectedPoiKey(nextWorkspace.pois[0]?.key ?? null);
         setSelectedRegionKey(nextWorkspace.regions[0]?.key ?? null);
@@ -53,8 +53,8 @@ export default function MapDataManager() {
           tone: poiText || regionsText ? "success" : "neutral",
           message:
             poiText || regionsText
-              ? "Loaded map data from the shared uploaded /data workspace."
-              : "No shared map data was found. This editor started with blank POI and region workspaces.",
+              ? "Loaded map data from the local game root."
+              : "No map data was found under the active local game root. This editor started with blank POI and region workspaces.",
         });
       } catch (error) {
         if (cancelled) return;
@@ -202,8 +202,8 @@ export default function MapDataManager() {
       <div>
         <h1 className="page-title mb-2">Map</h1>
         <p className="max-w-4xl text-white/65">
-          Edit the shared uploaded map POIs and region rectangles used by the Godot map systems. This tool reads from the Settings data upload and exports back to
-          the original runtime JSON shapes.
+          Edit the map POIs and region rectangles used by the Godot map systems. This tool reads from the active local game root and exports back to the
+          original runtime JSON shapes.
         </p>
       </div>
 

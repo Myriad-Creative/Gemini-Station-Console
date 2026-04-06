@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { CommsContactDraft, CommsContactValidationIssue, CommsLabWorkspace } from "@lib/comms-manager/types";
@@ -159,7 +160,7 @@ export default function CommsManagerApp() {
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Import or paste a comms JSON file, or start a blank workspace to begin building contacts.",
+    message: "Comms Manager reads Comms.json directly from the active local game root in Settings.",
   });
 
   const validation = useMemo(() => validateCommsContacts(workspace?.contacts ?? []), [workspace]);
@@ -216,16 +217,16 @@ export default function CommsManagerApp() {
             setSelectedContactKey(null);
             setStatus({
               tone: "neutral",
-              message: "No shared comms data is currently available. Import /data in Settings or load a file here.",
+              message: "No Comms.json was found under the active local game root. Set a valid Gemini Station folder in Settings first.",
             });
           }
           return;
         }
         if (cancelled) return;
         if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
-        importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
+        importText(payload.text, payload.sourceLabel || "Local game source", "uploaded");
       } catch {
-        // Shared uploaded data is optional.
+        // Local game source may not be configured yet.
       }
     }
 
@@ -250,8 +251,8 @@ export default function CommsManagerApp() {
 
   const workspaceSourceLabel = useMemo(() => {
     if (!workspace) return "";
-    if (workspace.sourceType === "blank") return "Blank workspace";
-    return `${workspace.sourceLabel ?? "Imported JSON"} · ${workspace.strictJsonValid ? "strict JSON" : "tolerant JSON"}`;
+    if (workspace.sourceType === "blank") return "Manual workspace";
+    return `${workspace.sourceLabel ?? "Local game source"} · ${workspace.strictJsonValid ? "strict JSON" : "tolerant JSON"}`;
   }, [workspace]);
 
   function updateSelectedContact(updater: (current: CommsContactDraft) => CommsContactDraft) {
@@ -394,21 +395,6 @@ export default function CommsManagerApp() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button className="btn" onClick={() => fileInputRef.current?.click()}>
-            Import comms.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={loadPastedJson}
-          >
-            Load Pasted JSON
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={startBlankWorkspace}
-          >
-            Start Blank Workspace
-          </button>
           <button
             className="btn disabled:cursor-default disabled:opacity-40"
             disabled={!workspace || workspaceHasErrors}
@@ -423,16 +409,6 @@ export default function CommsManagerApp() {
           >
             Copy Updated JSON
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importFile(file);
-            }}
-          />
         </div>
       </div>
 
@@ -470,53 +446,16 @@ export default function CommsManagerApp() {
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-            <div className="card space-y-5">
-              <div>
-                <div className="text-xl font-semibold text-white">Import Existing Comms JSON</div>
-                <div className="mt-2 text-sm text-white/60">
-                  Upload the comms JSON file or paste its contents in the JSON box. Comms Manager accepts strict JSON and tolerant JSON with trailing commas.
-                </div>
-              </div>
-
-              <div
-                className="rounded-2xl border border-dashed border-cyan-300/25 bg-[#091321] px-6 py-12 text-center"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const file = Array.from(event.dataTransfer.files).find((entry) => entry.name.toLowerCase().endsWith(".json"));
-                  if (file) {
-                    void importFile(file);
-                  }
-                }}
-              >
-                <div className="text-2xl font-semibold text-white">Drop a comms JSON file here</div>
-                <div className="mt-2 text-sm text-white/55">Or use the import button above to choose the file manually.</div>
-              </div>
+          <div className="card space-y-4">
+            <div className="text-xl font-semibold text-white">Local Game Root Required</div>
+            <div className="text-sm leading-6 text-white/65">
+              Comms Manager no longer loads separate comms JSON files. Set the Gemini Station local game root in Settings and the editor will
+              automatically read `data/database/comms/Comms.json` from that folder.
             </div>
-
-            <div className="card space-y-4">
-              <div>
-                <div className="text-xl font-semibold text-white">Paste comms.json</div>
-                <div className="mt-2 text-sm text-white/60">
-                  Pasting will auto-load immediately, and the Load Pasted JSON button remains available if you want to trigger it manually.
-                </div>
-              </div>
-              <textarea
-                className="input min-h-[260px] font-mono text-sm"
-                value={pasteJson}
-                placeholder={`{
-  "ava_ray": {
-    "name": "Ava Ray",
-    "portrait": "res://assets/comms/ava.png",
-    "greeting": "Well?",
-    "dialog": ["I'm glad you're here."],
-    "meta": { "notes": "Main early-game contact" }
-  }
-}`}
-                onChange={(event) => setPasteJson(event.target.value)}
-                onPaste={handlePasteJsonPaste}
-              />
+            <div>
+              <Link href="/settings" className="btn">
+                Open Settings
+              </Link>
             </div>
           </div>
         </>

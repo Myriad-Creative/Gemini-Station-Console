@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { getPreferredAssetsRepoRoot } from "@lib/shared-source";
 
+const FALLBACK_ICON = "icon_lootbox.png";
+
 function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 function searchRecursive(dir: string, name: string): string | null {
   try {
@@ -83,8 +85,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const resParam = url.searchParams.get("res");
-  if (!resParam) return new NextResponse("Missing res", { status: 400 });
+  const resParam = url.searchParams.get("res") || FALLBACK_ICON;
   const id = url.searchParams.get("id") || "";
   const name = url.searchParams.get("name") || "";
 
@@ -93,6 +94,9 @@ export async function GET(req: NextRequest) {
   const cleaned = p.replace(/^\/+/, "");
   const preferredAssetsRoot = getPreferredAssetsRepoRoot();
   let abs: string | null = preferredAssetsRoot ? resolveFromRoot(preferredAssetsRoot, cleaned, id, name) : null;
+  if (!abs && preferredAssetsRoot) {
+    abs = resolveFromRoot(preferredAssetsRoot, FALLBACK_ICON, id, name);
+  }
 
   if (abs && fs.existsSync(abs)) {
     const ext = path.extname(abs).toLowerCase();

@@ -90,7 +90,7 @@ export default function TutorialDataManager() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Loading shared tutorial data from Settings…",
+    message: "Loading tutorial data from the local game root…",
   });
 
   useEffect(() => {
@@ -99,8 +99,8 @@ export default function TutorialDataManager() {
       try {
         const [entriesText, triggersText] = await Promise.all([loadSharedText("tutorialEntries"), loadSharedText("tutorialTriggers")]);
         if (cancelled) return;
-        const nextEntries = entriesText ? importTutorialEntriesWorkspace(entriesText, "Shared uploaded data") : createBlankTutorialEntriesWorkspace();
-        const nextTriggers = triggersText ? importTutorialTriggersWorkspace(triggersText, "Shared uploaded data") : createBlankTutorialTriggersWorkspace();
+        const nextEntries = entriesText ? importTutorialEntriesWorkspace(entriesText, "Local game source") : createBlankTutorialEntriesWorkspace();
+        const nextTriggers = triggersText ? importTutorialTriggersWorkspace(triggersText, "Local game source") : createBlankTutorialTriggersWorkspace();
         setEntriesWorkspace(nextEntries);
         setTriggersWorkspace(nextTriggers);
         setSelectedEntryKey(nextEntries.entries[0]?.key ?? null);
@@ -111,8 +111,8 @@ export default function TutorialDataManager() {
           tone: entriesText || triggersText ? "success" : "neutral",
           message:
             entriesText || triggersText
-              ? "Loaded tutorial entries and trigger config from the shared uploaded /data workspace."
-              : "No shared tutorial data was found. This editor started with blank entry and trigger workspaces.",
+              ? "Loaded tutorial entries and trigger config from the local game root."
+              : "No tutorial data was found under the active local game root. This editor started with blank entry and trigger workspaces.",
         });
       } catch (error) {
         if (cancelled) return;
@@ -306,7 +306,7 @@ export default function TutorialDataManager() {
       <div>
         <h1 className="page-title mb-2">Tutorial</h1>
         <p className="max-w-4xl text-white/65">
-          Manage tutorial codex entries and their trigger mappings from the shared uploaded <code>/data</code> workspace.
+          Manage tutorial codex entries and their trigger mappings from the active local game root.
         </p>
       </div>
 

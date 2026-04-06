@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -42,9 +43,8 @@ function SummaryCard({ label, value, accent }: { label: string; value: string | 
 }
 
 function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  if (!icon) return null;
   const params = new URLSearchParams({
-    res: icon,
+    res: icon || "icon_lootbox.png",
     id,
     name,
   });
@@ -199,7 +199,7 @@ export default function MobLabApp() {
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
-    message: "Import or paste a mobs.json file, or start a blank workspace to begin building mobs.",
+    message: "Mob Lab reads mobs.json directly from the active local game root in Settings.",
   });
 
   const validation = useMemo(() => validateMobDrafts(workspace?.mobs ?? []), [workspace]);
@@ -286,16 +286,16 @@ export default function MobLabApp() {
             setSelectedMobKey(null);
             setStatus({
               tone: "neutral",
-              message: "No shared mobs.json is currently available. Import /data in Settings or load a file here.",
+              message: "No mobs.json was found under the active local game root. Set a valid Gemini Station folder in Settings first.",
             });
           }
           return;
         }
         if (cancelled) return;
         if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
-        importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
+        importText(payload.text, payload.sourceLabel || "Local game source", "uploaded");
       } catch {
-        // Shared uploaded data is optional.
+        // Local game source may not be configured yet.
       }
     }
 
@@ -467,8 +467,8 @@ export default function MobLabApp() {
   const hasWorkspaceErrors = validation.some((issue) => issue.level === "error");
   const workspaceSourceLabel =
     workspace?.sourceType === "uploaded" || workspace?.sourceType === "pasted"
-      ? `${workspace.sourceLabel ?? "mobs.json"} (${workspace.parseStrategy === "strict" ? "strict JSON" : "JSON5"})`
-      : "Blank workspace";
+      ? `${workspace.sourceLabel ?? "Local game source"} (${workspace.parseStrategy === "strict" ? "strict JSON" : "JSON5"})`
+      : "Manual workspace";
 
   return (
     <div className="space-y-6">
@@ -476,27 +476,12 @@ export default function MobLabApp() {
         <div>
           <h1 className="page-title mb-1">Mob Lab</h1>
           <p className="max-w-3xl text-sm leading-6 text-white/65">
-            Import a `mobs.json` file, browse and manage the full mob roster, clone and edit existing mobs, create new mob IDs with
+            Browse and manage the full mob roster from the active local game root, clone and edit existing mobs, create new mob IDs with
             collision alerts, and export the updated runtime file or copy JSON directly to the clipboard.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button className="btn" onClick={() => fileInputRef.current?.click()}>
-            Import mobs.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={loadPastedJson}
-          >
-            Load Pasted JSON
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
-            onClick={startBlankWorkspace}
-          >
-            Start Blank Workspace
-          </button>
           <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
             Download Updated mobs.json
           </button>
@@ -508,17 +493,6 @@ export default function MobLabApp() {
             Copy Updated JSON
           </button>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,application/json,text/json"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void importFile(file);
-          }}
-        />
       </div>
 
       <div
@@ -556,47 +530,17 @@ export default function MobLabApp() {
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="card space-y-5">
-            <div>
-              <div className="text-xl font-semibold text-white">Import Existing Mobs</div>
-              <div className="mt-2 text-sm text-white/60">
-                Upload the runtime `mobs.json` file or paste its contents in the JSON box. Mob Lab uses tolerant JSON5 parsing, so files
-                with trailing commas or unquoted keys will still import.
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl border border-dashed border-cyan-300/25 bg-[#091321] px-6 py-12 text-center"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const file = Array.from(event.dataTransfer.files).find((entry) => entry.name.toLowerCase().endsWith(".json"));
-                if (file) {
-                  void importFile(file);
-                }
-              }}
-            >
-              <div className="text-2xl font-semibold text-white">Drop a mobs.json file here</div>
-              <div className="mt-2 text-sm text-white/55">Or use the import button above to choose the file manually.</div>
-            </div>
-          </div>
-
           <div className="card space-y-4">
-            <div>
-              <div className="text-xl font-semibold text-white">Paste mobs.json</div>
-              <div className="mt-2 text-sm text-white/60">
-                Pasting will auto-load immediately, and the Load Pasted JSON button remains available if you want to trigger it manually.
-              </div>
+            <div className="text-xl font-semibold text-white">Local Game Root Required</div>
+            <div className="text-sm leading-6 text-white/65">
+              Mob Lab no longer loads separate `mobs.json` files. Set the Gemini Station local game root in Settings and the editor will
+              automatically read `data/database/mobs/mobs.json` from that folder.
             </div>
-            <textarea
-              className="input min-h-[260px] font-mono text-sm"
-              value={pasteJson}
-              placeholder='[\n  { "id": "PirateFighter", "display_name": "Pirate Raider", "level": 3 }\n]'
-              onChange={(event) => setPasteJson(event.target.value)}
-              onPaste={handlePasteJsonPaste}
-            />
-          </div>
+            <div>
+              <Link href="/settings" className="btn">
+                Open Settings
+              </Link>
+            </div>
           </div>
         </>
       ) : (

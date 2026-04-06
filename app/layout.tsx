@@ -4,7 +4,6 @@ import Link from "next/link";
 import GlobalBeforeUnload from "@components/GlobalBeforeUnload";
 import Nav from "@components/Nav";
 import SectionNav from "@components/SectionNav";
-import SourceStatus from "@components/SourceStatus";
 import packageJson from "../package.json";
 
 export const metadata = {
@@ -26,7 +25,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Nav />
             </div>
             <SectionNav />
-            <SourceStatus />
           </div>
         </header>
         <main className="container py-6">{children}</main>
