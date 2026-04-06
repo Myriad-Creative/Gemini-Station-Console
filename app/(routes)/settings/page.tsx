@@ -361,6 +361,18 @@ export default function SettingsPage() {
         </div>
 
         <div className="md:col-span-4">
+          <div className="label">Current Local Game Root</div>
+          <div className="input mt-1 break-all bg-white/5 font-mono text-xs">
+            {settings.localGameSource.gameRootPath || "No Gemini Station root is currently configured."}
+          </div>
+          <div className="mt-2 text-xs text-white/55">
+            {settings.localGameSource.lastValidated
+              ? `Last validated ${new Date(settings.localGameSource.lastValidated).toLocaleString()}`
+              : "Set the local game root to point the console at your Gemini Station folder."}
+          </div>
+        </div>
+
+        <div className="md:col-span-4">
           <div className="label">Gemini Station Game Root Path</div>
           <input
             className="input mt-1"
