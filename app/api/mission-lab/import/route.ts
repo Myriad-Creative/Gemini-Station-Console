@@ -14,6 +14,7 @@ import {
 } from "@lib/mission-lab/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const sessionId = resolveMissionLabSessionId(req);

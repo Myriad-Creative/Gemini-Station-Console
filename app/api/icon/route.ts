@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getUploadedAssetsRoot } from "@lib/uploaded-assets";
+import { getPreferredAssetsRepoRoot } from "@lib/shared-source";
 
 function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 function searchRecursive(dir: string, name: string): string | null {
@@ -79,6 +79,7 @@ function resolveFromRoot(root: string, cleaned: string, id: string, name: string
 }
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -90,8 +91,8 @@ export async function GET(req: NextRequest) {
   let p = resParam;
   if (p.startsWith("res://")) p = p.slice("res://".length);
   const cleaned = p.replace(/^\/+/, "");
-  const uploadedAssetsRoot = getUploadedAssetsRoot();
-  let abs: string | null = uploadedAssetsRoot ? resolveFromRoot(uploadedAssetsRoot, cleaned, id, name) : null;
+  const preferredAssetsRoot = getPreferredAssetsRepoRoot();
+  let abs: string | null = preferredAssetsRoot ? resolveFromRoot(preferredAssetsRoot, cleaned, id, name) : null;
 
   if (abs && fs.existsSync(abs)) {
     const ext = path.extname(abs).toLowerCase();

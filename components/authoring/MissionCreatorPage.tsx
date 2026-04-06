@@ -135,7 +135,7 @@ export default function MissionCreatorPage() {
       {!workspaceSummary ? (
         <div className="card space-y-3">
           <div className="text-sm text-white/70">
-            No shared mission workspace is loaded yet. Import a missions zip in Settings first, and the creator will auto-seed from it.
+            No shared mission workspace is loaded yet. Set a local game root or import a missions workspace in Settings first, and the creator will auto-seed from it.
           </div>
           <div>
             <Link href="/settings" className="btn">

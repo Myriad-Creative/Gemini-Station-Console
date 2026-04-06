@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type Item = { id:string; name:string; levelRequirement:number; rarity:number; icon?:string; type?:string; };
 const DEFAULT_ITEM_ICON = "res://assets/items/icon_lootbox.png";
@@ -8,6 +9,7 @@ const DEFAULT_ITEM_ICON = "res://assets/items/icon_lootbox.png";
 function rarityStyle(r:number) { return { color: RARITY_COLOR[r] || "#C0C0C0" }; }
 
 export default function ItemsPage() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [rows, setRows] = useState<Item[]>([]);
   const [rarities, setRarities] = useState<number[]>([]);
   const [q, setQ] = useState(""); const [min,setMin]=useState(""); const [max,setMax]=useState(""); const [rsel,setRsel]=useState<string[]>([]);
@@ -21,7 +23,7 @@ export default function ItemsPage() {
     const j = await r.json();
     setRows(j.data); setRarities(j.rarities);
   };
-  useEffect(()=>{ load(); }, [q,min,max,JSON.stringify(rsel)]);
+  useEffect(()=>{ load(); }, [q,min,max,JSON.stringify(rsel),sharedDataVersion]);
 
   const [sortKey, setSortKey] = useState<string>("name");
   const [asc, setAsc] = useState<boolean>(true);

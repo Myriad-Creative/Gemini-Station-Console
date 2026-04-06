@@ -4,6 +4,7 @@ import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 import { computeOutliers } from "@parser/stats";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   await warmupLoadIfNeeded();

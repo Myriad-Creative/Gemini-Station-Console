@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@lib/config";
 import { queryMissions, warmupLoadIfNeeded } from "@lib/datastore";
-import { getMissionLabWorkspace, resolveMissionLabSessionId } from "@lib/mission-lab/store";
+import { getResolvedMissionLabWorkspace } from "@lib/mission-lab/resolved-workspace";
+import { resolveMissionLabSessionId } from "@lib/mission-lab/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   await warmupLoadIfNeeded();
@@ -16,7 +18,7 @@ export async function GET(req: NextRequest) {
     band = [a,b];
   }
   const sessionId = resolveMissionLabSessionId(req);
-  const workspace = getMissionLabWorkspace(sessionId);
+  const workspace = await getResolvedMissionLabWorkspace(sessionId);
 
   if (workspace.summary) {
     let rows = workspace.missions.map((mission) => ({

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type WorkspacePayload = {
   summary: MissionImportSummary | null;
@@ -13,6 +14,7 @@ type WorkspacePayload = {
 
 export default function MissionsExplorerPage() {
   const sessionId = useMissionLabSessionId();
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [summary, setSummary] = useState<MissionImportSummary | null>(null);
   const [rows, setRows] = useState<NormalizedMission[]>([]);
   const [bands, setBands] = useState<[number, number][]>([]);
@@ -44,7 +46,7 @@ export default function MissionsExplorerPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, sharedDataVersion]);
 
   const filteredRows = useMemo(() => {
     if (!band) return rows;
@@ -66,7 +68,7 @@ export default function MissionsExplorerPage() {
       {!summary ? (
         <div className="card py-10 text-center">
           <div className="text-xl font-semibold text-white">No shared mission workspace loaded</div>
-          <div className="mt-2 text-sm text-white/55">Import a missions zip in Settings before using Mission Explorer.</div>
+          <div className="mt-2 text-sm text-white/55">Set a local game root or import a missions workspace in Settings before using Mission Explorer.</div>
           <div className="mt-5">
             <Link href="/settings" className="btn">
               Go To Settings

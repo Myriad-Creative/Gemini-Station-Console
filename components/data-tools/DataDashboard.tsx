@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatusBanner, SummaryCard } from "@components/data-tools/shared";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type UploadedDataStatus = {
   active: boolean;
@@ -13,6 +14,16 @@ type UploadedDataStatus = {
   available: Record<string, boolean>;
 };
 
+type LocalGameSourceStatus = {
+  active: boolean;
+  gameRootPath: string | null;
+  available: {
+    data: boolean;
+    assets: boolean;
+    missions: boolean;
+  };
+};
+
 const EMPTY_STATUS: UploadedDataStatus = {
   active: false,
   sourceLabel: null,
@@ -20,6 +31,16 @@ const EMPTY_STATUS: UploadedDataStatus = {
   jsonCount: 0,
   lastImported: null,
   available: {},
+};
+
+const EMPTY_LOCAL_STATUS: LocalGameSourceStatus = {
+  active: false,
+  gameRootPath: null,
+  available: {
+    data: false,
+    assets: false,
+    missions: false,
+  },
 };
 
 const DATA_SECTIONS = [
@@ -50,7 +71,9 @@ const DATA_SECTIONS = [
 ];
 
 export default function DataDashboard() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [status, setStatus] = useState<UploadedDataStatus>(EMPTY_STATUS);
+  const [localStatus, setLocalStatus] = useState<LocalGameSourceStatus>(EMPTY_LOCAL_STATUS);
   const [message, setMessage] = useState("Checking shared uploaded data workspace…");
 
   useEffect(() => {
@@ -61,15 +84,20 @@ export default function DataDashboard() {
         const payload = await response.json().catch(() => ({}));
         if (cancelled) return;
         const nextStatus = payload.uploadedData || EMPTY_STATUS;
+        const nextLocalStatus = payload.localGameSource || EMPTY_LOCAL_STATUS;
         setStatus(nextStatus);
-        if (nextStatus.active) {
+        setLocalStatus(nextLocalStatus);
+        if (nextLocalStatus.active && nextLocalStatus.available.data) {
+          setMessage("Local game source is active. The Data tools below are reading directly from that Gemini Station folder.");
+        } else if (nextStatus.active) {
           setMessage("Shared uploaded data is active. The Data tools below will auto-seed from that workspace.");
         } else {
-          setMessage("No shared uploaded data is active. Upload `/data` in Settings first, or start blank in each editor.");
+          setMessage("No local game source or shared uploaded data is active. Configure Settings first, or start blank in each editor.");
         }
       } catch {
         if (!cancelled) {
           setStatus(EMPTY_STATUS);
+          setLocalStatus(EMPTY_LOCAL_STATUS);
           setMessage("Unable to read shared uploaded data status. You can still open the editors, but they may start blank.");
         }
       }
@@ -78,7 +106,7 @@ export default function DataDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sharedDataVersion]);
 
   return (
     <div className="space-y-6">
@@ -93,10 +121,13 @@ export default function DataDashboard() {
       <StatusBanner tone={status.active ? "success" : "neutral"} message={message} />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <SummaryCard label="Shared Data Status" value={status.active ? "Active" : "Missing"} />
+        <SummaryCard label="Source" value={localStatus.active ? "Local Game Root" : status.active ? "Uploaded Data" : "Missing"} />
         <SummaryCard label="Files" value={status.fileCount} />
         <SummaryCard label="JSON Files" value={status.jsonCount} />
-        <SummaryCard label="Last Imported" value={status.lastImported ? new Date(status.lastImported).toLocaleDateString() : "—"} />
+        <SummaryCard
+          label={localStatus.active ? "Game Root" : "Last Imported"}
+          value={localStatus.active ? localStatus.gameRootPath || "—" : status.lastImported ? new Date(status.lastImported).toLocaleDateString() : "—"}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

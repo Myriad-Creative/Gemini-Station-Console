@@ -6,3 +6,8 @@ pnpm-lock.yaml
 dist
 .next
 .vercel
+.gemini-uploaded-data
+.gemini-uploaded-data.tmp
+.gemini-uploaded-assets
+.gemini-uploaded-assets.tmp
+.gemini-local-source.json

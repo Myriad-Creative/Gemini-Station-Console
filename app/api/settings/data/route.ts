@@ -4,6 +4,7 @@ import { loadAll } from "@lib/datastore";
 import { clearUploadedData, getUploadedDataState, importUploadedData } from "@lib/uploaded-data";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json({ ok: true, data: getUploadedDataState() });

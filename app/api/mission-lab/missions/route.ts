@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyMissionFilters, buildMissionFilterOptions } from "@lib/mission-lab/filters";
 import { readMissionFilterState } from "@lib/mission-lab/filter-query";
-import { getMissionLabWorkspace, resolveMissionLabSessionId, updateMissionLabFilters } from "@lib/mission-lab/store";
+import { getResolvedMissionLabWorkspace } from "@lib/mission-lab/resolved-workspace";
+import { resolveMissionLabSessionId, updateMissionLabFilters } from "@lib/mission-lab/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const sessionId = resolveMissionLabSessionId(req);
-  const workspace = getMissionLabWorkspace(sessionId);
+  const workspace = await getResolvedMissionLabWorkspace(sessionId);
   const searchParams = new URL(req.url).searchParams;
   const nextFilters = readMissionFilterState(searchParams, workspace.filters);
   const rows = applyMissionFilters(workspace.missions, nextFilters);

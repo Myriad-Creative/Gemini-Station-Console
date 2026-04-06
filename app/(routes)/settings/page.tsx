@@ -40,8 +40,24 @@ type UploadedDataState = {
   };
 };
 
+type LocalGameSourceState = {
+  active: boolean;
+  gameRootPath: string | null;
+  dataRootPath: string | null;
+  assetsRootPath: string | null;
+  missionsRootPath: string | null;
+  lastValidated: string | null;
+  available: {
+    data: boolean;
+    assets: boolean;
+    missions: boolean;
+  };
+  errors: string[];
+};
+
 type SettingsData = {
   errors: string[];
+  localGameSource: LocalGameSourceState;
   uploadedAssets: UploadedAssetsState;
   uploadedData: UploadedDataState;
 };
@@ -83,12 +99,29 @@ const EMPTY_UPLOADED_DATA: UploadedDataState = {
   },
 };
 
+const EMPTY_LOCAL_GAME_SOURCE: LocalGameSourceState = {
+  active: false,
+  gameRootPath: null,
+  dataRootPath: null,
+  assetsRootPath: null,
+  missionsRootPath: null,
+  lastValidated: null,
+  available: {
+    data: false,
+    assets: false,
+    missions: false,
+  },
+  errors: [],
+};
+
 export default function SettingsPage() {
   const assetsFolderInputRef = useRef<HTMLInputElement | null>(null);
   const dataFolderInputRef = useRef<HTMLInputElement | null>(null);
   const dataZipInputRef = useRef<HTMLInputElement | null>(null);
+  const [gameRootPath, setGameRootPath] = useState("");
   const [settings, setSettings] = useState<SettingsData>({
     errors: [],
+    localGameSource: EMPTY_LOCAL_GAME_SOURCE,
     uploadedAssets: EMPTY_UPLOADED_ASSETS,
     uploadedData: EMPTY_UPLOADED_DATA,
   });
@@ -100,13 +133,16 @@ export default function SettingsPage() {
       const j = await r.json();
       const next = {
         errors: j.errors || [],
+        localGameSource: j.localGameSource || EMPTY_LOCAL_GAME_SOURCE,
         uploadedAssets: j.uploadedAssets || EMPTY_UPLOADED_ASSETS,
         uploadedData: j.uploadedData || EMPTY_UPLOADED_DATA,
       };
       setSettings(next);
+      setGameRootPath((current) => current || next.localGameSource.gameRootPath || "");
     } catch (e:any) {
       setSettings({
         errors: [String(e?.message || e)],
+        localGameSource: EMPTY_LOCAL_GAME_SOURCE,
         uploadedAssets: EMPTY_UPLOADED_ASSETS,
         uploadedData: EMPTY_UPLOADED_DATA,
       });
@@ -254,14 +290,110 @@ export default function SettingsPage() {
     }
   };
 
+  const saveLocalGameSource = async () => {
+    setStatus("Saving local game root…");
+    try {
+      const r = await fetch("/api/settings/game-source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ gameRootPath }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
+        return;
+      }
+
+      await loadSettings();
+      publishSharedDataWorkspaceUpdate();
+      setStatus("Local game root is active. The console now reads data, assets, and missions directly from that Gemini Station folder.");
+    } catch (e: any) {
+      setStatus(`Error: ${e?.message || e}`);
+    }
+  };
+
+  const clearLocalGameSource = async () => {
+    setStatus("Clearing local game root…");
+    try {
+      const r = await fetch("/api/settings/game-source", { method: "DELETE" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
+        return;
+      }
+
+      await loadSettings();
+      publishSharedDataWorkspaceUpdate();
+      setStatus("Cleared the local game root. Upload-based sources are available again if you want to use them.");
+    } catch (e: any) {
+      setStatus(`Error: ${e?.message || e}`);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h1 className="page-title">Settings</h1>
       <div className="card grid gap-4 md:grid-cols-4">
         <div className="md:col-span-4">
+          <div className="text-lg font-semibold text-white">Local Game Root</div>
+          <div className="mt-1 text-sm text-white/55">
+            Preferred for local use. Point the console at the Gemini Station game root and it will read <code>/data</code>, <code>/assets</code>, and
+            <code> /scripts/system/missions/missions</code> directly from that folder.
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="label">Status</div>
+          <div className="mt-2 text-lg font-semibold text-white">{settings.localGameSource.active ? "Local source active" : "No local source"}</div>
+          <div className="mt-1 text-xs text-white/55">{settings.localGameSource.gameRootPath || "No game root configured yet"}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="label">Data</div>
+          <div className="mt-2 text-lg font-semibold text-white">{settings.localGameSource.available.data ? "Found" : "Missing"}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="label">Assets</div>
+          <div className="mt-2 text-lg font-semibold text-white">{settings.localGameSource.available.assets ? "Found" : "Missing"}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="label">Missions</div>
+          <div className="mt-2 text-lg font-semibold text-white">{settings.localGameSource.available.missions ? "Found" : "Missing"}</div>
+        </div>
+
+        <div className="md:col-span-4">
+          <div className="label">Gemini Station Game Root Path</div>
+          <input
+            className="input mt-1"
+            value={gameRootPath}
+            onChange={(event) => setGameRootPath(event.target.value)}
+            placeholder="/Users/you/.../Gemini-Station"
+          />
+          <div className="mt-2 text-xs text-white/55">
+            Because this runs in the browser, the clean local-server approach is to paste the absolute path to the game root folder here.
+          </div>
+        </div>
+
+        {settings.localGameSource.errors.length ? (
+          <div className="md:col-span-4 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">
+            {settings.localGameSource.errors.join(" ")}
+          </div>
+        ) : null}
+
+        <div className="md:col-span-4 flex flex-wrap gap-2">
+          <button className="btn" onClick={saveLocalGameSource}>
+            Set Local Game Root
+          </button>
+          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearLocalGameSource}>
+            Clear Local Game Root
+          </button>
+        </div>
+      </div>
+
+      <div className="card grid gap-4 md:grid-cols-4">
+        <div className="md:col-span-4">
           <div className="text-lg font-semibold text-white">Shared Data Library</div>
           <div className="mt-1 text-sm text-white/55">
-            Import the full <code>/data</code> directory here as either a zip or the unzipped folder. The console will read non-mission runtime data only from this uploaded shared data workspace.
+            Optional fallback for non-local use. Import the full <code>/data</code> directory here as either a zip or the unzipped folder. When a local game root is active above, that local source takes precedence.
           </div>
         </div>
 
@@ -351,13 +483,25 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <MissionWorkspaceManager />
+      {settings.localGameSource.active && settings.localGameSource.available.missions ? (
+        <div className="card space-y-3">
+          <div className="text-lg font-semibold text-white">Mission Source</div>
+          <div className="text-sm text-white/60">
+            Missions are currently being read directly from the configured local game root at:
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3 font-mono text-xs text-white/75">
+            {settings.localGameSource.missionsRootPath}
+          </div>
+        </div>
+      ) : (
+        <MissionWorkspaceManager />
+      )}
 
       <div className="card grid gap-4 md:grid-cols-4">
         <div className="md:col-span-4">
           <div className="text-lg font-semibold text-white">Shared Asset Library</div>
           <div className="mt-1 text-sm text-white/55">
-            Import the full <code>/assets</code> folder here. The console stores that uploaded asset tree locally and resolves <code>res://assets/...</code> paths only against this uploaded asset workspace.
+            Optional fallback for non-local use. Import the full <code>/assets</code> folder here. When a local game root is active above, the console resolves <code>res://assets/...</code> directly from that local source first.
           </div>
         </div>
 

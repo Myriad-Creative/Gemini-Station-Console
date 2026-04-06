@@ -4,6 +4,7 @@ import { getStore, queryMods, warmupLoadIfNeeded } from "@lib/datastore";
 import { computeCompositeScore } from "@parser/stats";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   await warmupLoadIfNeeded();

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@lib/config";
 import { getSummary, getStore, warmupLoadIfNeeded } from "@lib/datastore";
-import { getMissionLabWorkspace, resolveMissionLabSessionId } from "@lib/mission-lab/store";
+import { getResolvedMissionLabWorkspace } from "@lib/mission-lab/resolved-workspace";
+import { resolveMissionLabSessionId } from "@lib/mission-lab/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,7 +13,7 @@ export async function GET(req: NextRequest) {
     const store = getStore();
     const summary = getSummary();
     const sessionId = resolveMissionLabSessionId(req);
-    const missionWorkspace = getMissionLabWorkspace(sessionId);
+    const missionWorkspace = await getResolvedMissionLabWorkspace(sessionId);
     const cfg = getConfig();
 
     const missionRows = missionWorkspace.summary ? missionWorkspace.missions : [];

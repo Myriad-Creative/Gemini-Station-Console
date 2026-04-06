@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { clearUploadedAssets, getUploadedAssetsState, importUploadedAssets } from "@lib/uploaded-assets";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json({ ok: true, assets: getUploadedAssetsState() });

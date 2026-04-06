@@ -1,4 +1,6 @@
 import JSZip from "jszip";
+import fs from "fs";
+import path from "path";
 import type { ImportedMissionFile, MissionDuplicateIdIssue, MissionLabWorkspace, MissionUploadSource } from "@lib/mission-lab/types";
 import { buildMissionFilterOptions, createDefaultMissionFilterState } from "@lib/mission-lab/filters";
 import { buildMissionGraph } from "@lib/mission-lab/graph";
@@ -95,6 +97,38 @@ export async function createMissionUploadSourceFromFolder(files: File[], relativ
   return {
     kind: "folder",
     label: relativePaths[0]?.split("/")[0] ?? null,
+    files: uploadedFiles,
+  } satisfies MissionUploadSource;
+}
+
+export async function createMissionUploadSourceFromDirectoryPath(directoryPath: string, label: string | null = null): Promise<MissionUploadSource> {
+  const uploadedFiles: MissionUploadSource["files"] = [];
+
+  function walk(currentPath: string) {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolutePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const relativePath = normalizePath(path.relative(directoryPath, absolutePath));
+      if (!relativePath || shouldIgnoreEntry(relativePath) || !isJsonFile(relativePath)) continue;
+      uploadedFiles.push({
+        relativePath,
+        fileName: entry.name,
+        text: fs.readFileSync(absolutePath, "utf-8"),
+      });
+    }
+  }
+
+  walk(directoryPath);
+
+  return {
+    kind: "folder",
+    label: label ?? directoryPath,
     files: uploadedFiles,
   } satisfies MissionUploadSource;
 }

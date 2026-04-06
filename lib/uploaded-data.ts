@@ -68,7 +68,7 @@ const UPLOADED_DATA_ROOT = path.resolve(process.cwd(), ".gemini-uploaded-data");
 const UPLOADED_DATA_DIR = path.join(UPLOADED_DATA_ROOT, "data");
 const UPLOADED_DATA_METADATA = path.join(UPLOADED_DATA_ROOT, "metadata.json");
 
-const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
+export const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
   mods: path.join("data", "database", "mods", "Mods.json"),
   items: path.join("data", "database", "items", "items.json"),
   mobs: path.join("data", "database", "mobs", "mobs.json"),

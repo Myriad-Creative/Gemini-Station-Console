@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ModsTable from "@components/ModsTable";
 import ModFilters from "@components/filters/ModFilters";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type ModRow = {
   id: string;
@@ -19,6 +20,7 @@ type ModRow = {
 };
 
 export default function ModsExplorerPage() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [rows, setRows] = useState<ModRow[]>([]);
   const [meta, setMeta] = useState<{ slots: string[]; rarities: number[]; classes: string[]; stats: string[] } | null>(null);
   const [query, setQuery] = useState({ slot: "", min: "", max: "", rarity: [] as string[], cls: "", stat: "", ability: "", q: "" });
@@ -47,7 +49,7 @@ export default function ModsExplorerPage() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, sharedDataVersion]);
 
   return (
     <div className="space-y-4">

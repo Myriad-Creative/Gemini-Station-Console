@@ -3,6 +3,7 @@ import { getConfig } from "@lib/config";
 import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function bandOf(level: number, bands: [number,number][]) {
   for (const [a,b] of bands) if (level>=a && level<=b) return `${a}-${b}`;

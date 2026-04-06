@@ -1,15 +1,15 @@
 import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
-import { DataUrls, getConfig } from "@lib/config";
+import { getConfig } from "@lib/config";
 import { parseMods } from "@parser/mods";
 import { parseItems } from "@parser/items";
 import { parseMobs } from "@parser/mobs";
 import { parseAbilitiesFromDataDirectory } from "@parser/abilities";
 import { computeOutliers } from "@parser/stats";
-import { getUploadedDataState, getUploadedDataRoot } from "@lib/uploaded-data";
+import { getUploadedDataState } from "@lib/uploaded-data";
+import { getLocalGameSourceState } from "@lib/local-game-source";
+import { getPreferredDataRepoRoot } from "@lib/shared-source";
 
 type Store = {
-  manifestUrl: string | null;
-  dataUrls: DataUrls | null;
   mods: Mod[];
   abilities: Ability[];
   mobs: Mob[];
@@ -22,8 +22,6 @@ type Store = {
 const G = global as any;
 if (!G.__GEMINI_STORE__) {
   G.__GEMINI_STORE__ = <Store>{
-    manifestUrl: null,
-    dataUrls: null,
     mods: [],
     abilities: [],
     mobs: [],
@@ -37,6 +35,11 @@ const STORE: Store = G.__GEMINI_STORE__;
 export function getStore() { return STORE; }
 
 export async function warmupLoadIfNeeded(): Promise<void> {
+  const localGameSource = getLocalGameSourceState();
+  if (localGameSource.active) {
+    try { await loadAll(); } catch {}
+    return;
+  }
   if (!STORE.lastLoaded) {
     try { await loadAll(); } catch {}
   }
@@ -45,33 +48,32 @@ export async function warmupLoadIfNeeded(): Promise<void> {
 export async function loadAll(): Promise<Store> {
   STORE.errors = [];
   const uploadedDataState = getUploadedDataState();
-  const uploadedDataRoot = getUploadedDataRoot();
-  STORE.manifestUrl = null;
-  STORE.dataUrls = null as DataUrls | null;
+  const localGameSource = getLocalGameSourceState();
+  const preferredDataRoot = getPreferredDataRepoRoot();
 
   try {
     let mods: Mod[] = [];
-    if (uploadedDataRoot && uploadedDataState.available.mods) {
-      mods = parseMods(uploadedDataRoot);
-      if (!mods.length) STORE.errors.push("Uploaded data source contains Mods.json but yielded zero parsed mods.");
+    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.mods)) {
+      mods = parseMods(preferredDataRoot);
+      if (!mods.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains Mods.json but yielded zero parsed mods.`);
     }
 
     let items: Item[] = [];
-    if (uploadedDataRoot && uploadedDataState.available.items) {
-      items = parseItems(uploadedDataRoot);
-      if (!items.length) STORE.errors.push("Uploaded data source contains items.json but yielded zero parsed items.");
+    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.items)) {
+      items = parseItems(preferredDataRoot);
+      if (!items.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains items.json but yielded zero parsed items.`);
     }
 
     let mobs: Mob[] = [];
-    if (uploadedDataRoot && uploadedDataState.available.mobs) {
-      mobs = parseMobs(uploadedDataRoot);
-      if (!mobs.length) STORE.errors.push("Uploaded data source contains mobs.json but yielded zero parsed mobs.");
+    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.mobs)) {
+      mobs = parseMobs(preferredDataRoot);
+      if (!mobs.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains mobs.json but yielded zero parsed mobs.`);
     }
 
     let abilities: Ability[] = [];
-    if (uploadedDataRoot && uploadedDataState.available.abilities) {
-      abilities = parseAbilitiesFromDataDirectory(uploadedDataRoot);
-      if (!abilities.length) STORE.errors.push("Uploaded data source contains abilities but yielded zero parsed abilities.");
+    if (preferredDataRoot && (localGameSource.active ? localGameSource.available.data : uploadedDataState.available.abilities)) {
+      abilities = parseAbilitiesFromDataDirectory(preferredDataRoot);
+      if (!abilities.length) STORE.errors.push(`${localGameSource.active ? "Local game source" : "Uploaded data source"} contains abilities but yielded zero parsed abilities.`);
     }
 
     STORE.mods = mods;
@@ -80,10 +82,10 @@ export async function loadAll(): Promise<Store> {
     STORE.mobs = mobs;
     STORE.missions = [];
     STORE.lastLoaded = new Date().toISOString();
-    if (!uploadedDataRoot || !uploadedDataState.active) {
+    if (!preferredDataRoot) {
       STORE.errors = [];
     } else if (!mods.length && !mobs.length && !items.length && !abilities.length) {
-      STORE.errors.push("Parsed zero console records from the uploaded /data workspace.");
+      STORE.errors.push(`Parsed zero console records from the ${localGameSource.active ? "local game source" : "uploaded /data workspace"}.`);
     }
   } catch (e: any) {
     STORE.errors.push(String(e?.message || e));

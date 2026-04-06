@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readUploadedDataFileText, type UploadedDataFileKind } from "@lib/uploaded-data";
+import { type UploadedDataFileKind } from "@lib/uploaded-data";
+import { readPreferredDataFileText } from "@lib/shared-source";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
   "mobs",
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unsupported shared data source kind." }, { status: 400 });
   }
 
-  const text = await readUploadedDataFileText(kind);
+  const { text, sourceLabel } = await readPreferredDataFileText(kind);
   if (!text) {
     return NextResponse.json({ ok: false, error: "Shared uploaded data source not available for that file." }, { status: 404 });
   }
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     kind,
-    sourceLabel: "Shared uploaded data",
+    sourceLabel,
     text,
   });
 }

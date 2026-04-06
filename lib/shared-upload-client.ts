@@ -21,7 +21,7 @@ export function useSharedDataWorkspaceVersion() {
   const [version, setVersion] = useState("0");
 
   useEffect(() => {
-    const sync = () => setVersion(readSharedDataWorkspaceVersion());
+    const sync = () => setVersion(`${readSharedDataWorkspaceVersion()}:${Date.now()}`);
     sync();
 
     const onStorage = (event: StorageEvent) => {

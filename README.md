@@ -9,14 +9,19 @@ Read-only console to analyze Gemini Station content: mods, missions, mobs, items
 Then open <http://localhost:3000>.
 
 ## Data sources
-The console is now upload-driven and starts empty on first load.
+The console now starts empty on first load. No missions, items, mobs, mods, comms, merchant profiles, or other game JSON ship with the console build.
 
-Open **Settings** to populate the three shared workspaces:
-- upload a shared `data.zip` or `/data` folder for non-mission datasets
-- upload a shared missions zip or missions folder for all mission pages
-- upload a shared `/assets` folder for `res://assets/...` image resolution
+Open **Settings** and either:
+- set a **Local Game Root** pointing at your Gemini Station folder so the console reads:
+  - `/data`
+  - `/assets`
+  - `/scripts/system/missions/missions`
+- or use the upload-based fallbacks:
+  - a shared `data.zip` or `/data` folder for non-mission datasets
+  - a shared missions zip or missions folder for all mission pages
+  - a shared `/assets` folder for `res://assets/...` image resolution
 
-Once those uploads are present, the entire site reads from them. There is no manifest URL or external JSON fallback path anymore.
+When a local game root is active, it takes precedence over uploaded fallbacks. There is no manifest URL or external JSON fallback path anymore.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
@@ -44,10 +49,10 @@ Once those uploads are present, the entire site reads from them. There is no man
   - Use `res://assets/comms/temp.png` automatically whenever the portrait field is blank
   - Download the updated JSON, copy the full file JSON, or copy just the selected contact entry
 - Settings:
-  - Import the full `/assets` folder once and let the console resolve uploaded images from that shared asset workspace
-  - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, mission headers, and mob image previews
-  - Import a shared `data.zip` or unzipped `/data` folder once and let the console populate mods, items, mobs, abilities, comms, merchant profile data, map data, routes, tutorial data, and systems JSON from that shared workspace
-  - Import a shared missions zip or missions folder once and let the console populate Mission Explorer, Mission Lab, Mission Creator, and dashboard mission summaries from that shared workspace
+  - Set a local Gemini Station game root and let the console read `/data`, `/assets`, and `/scripts/system/missions/missions` directly from that folder
+  - Use upload-based data/assets/missions fallbacks only when you are not using a local game root
+  - Reuse the active data and asset source automatically for items, mods, merchant previews, comms portraits, mission headers, and mob image previews
+  - Populate Mission Explorer, Mission Lab, Mission Creator, dashboard mission summaries, and the grouped Data tools from the active local or uploaded source
 - Data:
   - Use the shared uploaded `/data` workspace from Settings to manage map POIs, map regions, trade routes, NPC traffic, tutorial entries, tutorial triggers, ship stat descriptions, zones, stages, and hazard barrier profiles
   - Create, clone, edit, delete, copy, and download the runtime JSON for each dataset without touching the Godot repo directly
@@ -67,9 +72,10 @@ Once those uploads are present, the entire site reads from them. There is no man
 
 ## Mission Lab Usage
 1. Open `/settings` from the top navigation.
-2. Import either:
-   - a missions `.zip`, or
-   - a missions folder selected in the browser via the folder picker.
+2. Either:
+   - set a local game root that includes `/scripts/system/missions/missions`, or
+   - import a missions `.zip`, or
+   - import a missions folder selected in the browser via the folder picker.
 3. Open `/missions/explorer` to browse the imported shared mission workspace.
 4. Open `/missions/lab` to use the shared Browser, Map, and Diagnostics views.
 5. Open `/missions/creator` to seed mission drafts from the same imported workspace.
@@ -87,14 +93,14 @@ Once those uploads are present, the entire site reads from them. There is no man
    - placeholder arcs/tags,
    - graph cycles.
 
-Mission Lab is read-only and uses the same shared uploaded mission workspace that powers the other mission pages until cleared in Settings.
+Mission Lab is read-only and uses the same shared mission workspace that powers the other mission pages until cleared or replaced in Settings.
 
 ## Mob Lab Usage
 1. Open `/mob-lab` from the top navigation.
 2. Either:
    - import an existing `mobs.json` file, or
    - start a blank workspace for new mob creation.
-   If shared uploaded data is active in Settings and includes `data/database/mobs/mobs.json`, Mob Lab auto-seeds from that file on first load.
+   If the active Settings source includes `data/database/mobs/mobs.json`, Mob Lab auto-seeds from that file on first load.
 3. Use the left browser to search, sort, filter, and select mobs.
 4. Edit the selected mob’s:
    - ID, display name, level, faction, AI type, scene, and sprite
@@ -113,7 +119,7 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
    - import an existing `merchant_profiles.json` file,
    - paste the JSON contents and load them, or
    - start a blank workspace.
-   If shared uploaded data is active in Settings and includes `data/database/vendor/merchant_profiles.json`, Merchant Lab auto-seeds from that file on first load.
+   If the active Settings source includes `data/database/vendor/merchant_profiles.json`, Merchant Lab auto-seeds from that file on first load.
 3. Use the left sidebar to:
    - search and switch merchant profiles,
    - create or clone profiles,
@@ -135,7 +141,7 @@ Merchant Lab is isolated from the console’s existing read-only item/mod explor
    - import an existing comms JSON file,
    - paste the JSON contents and let it auto-load, or
    - start a blank workspace.
-   If shared uploaded data is active in Settings and includes `data/database/comms/Comms.json`, Comms Manager auto-seeds from that file on first load.
+   If the active Settings source includes `data/database/comms/Comms.json`, Comms Manager auto-seeds from that file on first load.
 3. Use the left sidebar to search and switch contacts, create new ones, or clone/delete the selected contact.
 4. Edit the selected contact’s:
    - unique contact ID
@@ -153,13 +159,13 @@ Comms Manager is isolated from the existing mission, merchant, mob, and mod tool
 
 ## Data Tools Usage
 1. Open `/data` from the top navigation.
-2. Import a shared `data.zip` or `/data` folder once in `/settings`.
+2. In `/settings`, either set a local game root or import a shared `data.zip` or `/data` folder.
 3. Open the grouped editors:
    - `/data/map` for `poi.json` and `regions.json`
    - `/data/routes` for `trade_routes.json` and `npc_traffic.json`
    - `/data/tutorial` for `info_entries.json` and `info_triggers.json`
    - `/data/systems` for `ShipStatDescriptions.json`, `Zones.json`, `Stages.json`, and `HazardBarrierProfiles.json`
-4. Each editor auto-loads from the shared uploaded data workspace when the corresponding file exists.
+4. Each editor auto-loads from the active Settings data source when the corresponding file exists.
 5. Use the library sidebar in each tool to create, clone, delete, and select records.
 6. Use the export actions to copy or download the updated runtime JSON for the active dataset.
 

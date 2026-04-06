@@ -13,6 +13,7 @@ import type {
 import { useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import { createDefaultMissionFilterState } from "@lib/mission-lab/filters";
 import { humanizeToken } from "@lib/mission-lab/utils";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import MissionFlow from "@components/mission-lab/MissionFlow";
 import { MissionChainCard } from "@components/mission-lab/MissionCard";
 import MissionDetailPanel from "@components/mission-lab/MissionDetailPanel";
@@ -230,6 +231,7 @@ function exportMissionsToCsv(rows: NormalizedMission[]) {
 
 export default function MissionLabApp() {
   const sessionId = useMissionLabSessionId();
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [activeTab, setActiveTab] = useState<"browser" | "map" | "diagnostics">("browser");
   const [mapMode, setMapMode] = useState<"graph" | "chain">("graph");
   const [filters, setFilters] = useState<MissionFilterState>(DEFAULT_FILTERS);
@@ -294,7 +296,7 @@ export default function MissionLabApp() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, JSON.stringify(filters)]);
+  }, [sessionId, sharedDataVersion, JSON.stringify(filters)]);
 
   useEffect(() => {
     if (!detailMissionKey) return;
