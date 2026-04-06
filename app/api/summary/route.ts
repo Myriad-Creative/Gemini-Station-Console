@@ -1,11 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@lib/config";
 import { getSummary, getStore, warmupLoadIfNeeded } from "@lib/datastore";
+import { parseLooseJson } from "@lib/json";
+import { getLocalGameSourceState } from "@lib/local-game-source";
 import { getResolvedMissionLabWorkspace } from "@lib/mission-lab/resolved-workspace";
 import { resolveMissionLabSessionId } from "@lib/mission-lab/store";
+import { readPreferredDataFileText } from "@lib/shared-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function countJsonEntries(kind: "merchantProfiles" | "comms") {
+  try {
+    const { text } = await readPreferredDataFileText(kind);
+    if (!text) return { count: 0, warning: null };
+
+    const parsed = parseLooseJson<unknown>(text);
+    if (Array.isArray(parsed)) return { count: parsed.length, warning: null };
+    if (parsed && typeof parsed === "object") {
+      return {
+        count: Object.keys(parsed as Record<string, unknown>).length,
+        warning: null,
+      };
+    }
+    return {
+      count: 0,
+      warning: `${kind === "merchantProfiles" ? "merchant_profiles.json" : "Comms.json"} does not contain an array or object map.`,
+    };
+  } catch (error) {
+    return {
+      count: 0,
+      warning: `Could not parse ${kind === "merchantProfiles" ? "merchant_profiles.json" : "Comms.json"}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,6 +45,10 @@ export async function GET(req: NextRequest) {
     const sessionId = resolveMissionLabSessionId(req);
     const missionWorkspace = await getResolvedMissionLabWorkspace(sessionId);
     const cfg = getConfig();
+    const localGameSource = getLocalGameSourceState();
+    const [merchantProfilesResult, commsResult] = await Promise.all([countJsonEntries("merchantProfiles"), countJsonEntries("comms")]);
+    const merchantProfiles = merchantProfilesResult.count;
+    const comms = commsResult.count;
 
     const missionRows = missionWorkspace.summary ? missionWorkspace.missions : [];
     const missionsByBand = missionWorkspace.summary
@@ -24,16 +58,38 @@ export async function GET(req: NextRequest) {
         }))
       : summary.missionsByBand;
 
+    const warnings: string[] = [];
+    if (!localGameSource.active) {
+      if (localGameSource.gameRootPath) warnings.push(...localGameSource.errors);
+      else warnings.push("No local game root is configured.");
+    } else {
+      if (merchantProfilesResult.warning) warnings.push(merchantProfilesResult.warning);
+      if (commsResult.warning) warnings.push(commsResult.warning);
+      if (!merchantProfiles) warnings.push("No merchant profiles were found in the local game root.");
+      if (!comms) warnings.push("No comms contacts were found in the local game root.");
+      if (!missionRows.length) warnings.push("No missions were found in the local game root.");
+    }
+
     const counts = {
       mods: store.mods.length,
       items: store.items.length,
       missions: missionRows.length,
       mobs: store.mobs.length,
-      abilities: store.abilities.length
+      abilities: store.abilities.length,
+      merchantProfiles,
+      comms,
+      holes: summary.holes.length,
+      outliers: summary.outliers.length,
     };
     return NextResponse.json({
       lastLoaded: store.lastLoaded,
       errors: store.errors,
+      warnings,
+      source: {
+        active: localGameSource.active,
+        gameRootPath: localGameSource.gameRootPath,
+        lastValidated: localGameSource.lastValidated,
+      },
       counts,
       ...summary,
       missionsByBand,
@@ -42,7 +98,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       lastLoaded: null,
       errors: [String(e?.message || e)],
-      counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0 },
+      warnings: [],
+      source: {
+        active: false,
+        gameRootPath: null,
+        lastValidated: null,
+      },
+      counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });
   }
