@@ -127,7 +127,7 @@ export default function MissionCreatorPage() {
       <div>
         <h1 className="page-title mb-1">Mission Creator</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Build mission drafts in the richer authoring model. When a shared missions zip is loaded on the Missions dashboard, this page auto-seeds from it.
+          Build mission drafts in the richer authoring model. When a shared missions zip is loaded in Settings, this page auto-seeds from it.
         </p>
         {workspaceMessage ? <div className="mt-3 text-sm text-accent">{workspaceMessage}</div> : null}
       </div>
@@ -135,11 +135,11 @@ export default function MissionCreatorPage() {
       {!workspaceSummary ? (
         <div className="card space-y-3">
           <div className="text-sm text-white/70">
-            No shared mission workspace is loaded yet. Import a missions zip on the Missions dashboard first, and the creator will auto-seed from it.
+            No shared mission workspace is loaded yet. Import a missions zip in Settings first, and the creator will auto-seed from it.
           </div>
           <div>
-            <Link href="/missions" className="btn">
-              Go To Missions Dashboard
+            <Link href="/settings" className="btn">
+              Go To Settings
             </Link>
           </div>
         </div>

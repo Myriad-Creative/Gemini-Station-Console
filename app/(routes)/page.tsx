@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import ChartBar from "@components/ChartBar";
 import HeatmapBands from "@components/HeatmapBands";
 import { Card, CardTitle, Stat } from "@components/Cards";
+import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 
 type Summary = {
-  manifestUrl: string | null;
   lastLoaded?: string;
   errors: string[];
   counts: { mods: number; items: number; missions: number; mobs: number; abilities: number };
@@ -19,9 +19,33 @@ type Summary = {
 };
 
 export default function DashboardPage() {
+  const sessionId = useMissionLabSessionId();
   const [data, setData] = useState<Summary | null>(null);
-  const DEFAULTS: Summary = { manifestUrl: null, lastLoaded: null as any, errors: [], counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0 }, missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: [] };
-  useEffect(() => { (async ()=>{ try { const r=await fetch("/api/summary"); const j=await r.json().catch(()=>null); setData(j); } catch(e) { setData({ missionsByBand:[], modsCoverage:[], modsCoverageBands:[], bandLabels:[], rarityCounts:[], holes:[], outliers:[], lastLoaded:null, manifestUrl:null, errors:[String(e)], counts:{ mods:0, items:0, missions:0, mobs:0, abilities:0 } } as any);} })(); }, []);
+  useEffect(() => {
+    if (!sessionId) return;
+    (async () => {
+      try {
+        const r = await fetch("/api/summary", {
+          headers: buildMissionLabSessionHeaders(sessionId),
+        });
+        const j = await r.json().catch(() => null);
+        setData(j);
+      } catch (e) {
+        setData({
+          missionsByBand: [],
+          modsCoverage: [],
+          modsCoverageBands: [],
+          bandLabels: [],
+          rarityCounts: [],
+          holes: [],
+          outliers: [],
+          lastLoaded: null,
+          errors: [String(e)],
+          counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0 },
+        } as any);
+      }
+    })();
+  }, [sessionId]);
   if (!data) return <div>Loading…</div>;
 
   return (
@@ -33,6 +57,7 @@ export default function DashboardPage() {
           <CardTitle>Data Source</CardTitle>
           <div className="text-sm text-white/80">
             <div><span className="label">Last loaded:</span> {data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
+            <div className="mt-1 text-white/60">This dashboard is populated only from uploaded Settings workspaces.</div>
             <div className="mt-1 space-y-1">
               <div className="label">Parsed records</div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">

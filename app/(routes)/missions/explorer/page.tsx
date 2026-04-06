@@ -57,7 +57,7 @@ export default function MissionsExplorerPage() {
       <div>
         <h1 className="page-title mb-1">Mission Explorer</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Browse the missions currently loaded in the shared imported workspace from the Missions dashboard.
+          Browse the missions currently loaded in the shared imported workspace from Settings.
         </p>
       </div>
 
@@ -66,10 +66,10 @@ export default function MissionsExplorerPage() {
       {!summary ? (
         <div className="card py-10 text-center">
           <div className="text-xl font-semibold text-white">No shared mission workspace loaded</div>
-          <div className="mt-2 text-sm text-white/55">Import a missions zip on the Missions dashboard before using Mission Explorer.</div>
+          <div className="mt-2 text-sm text-white/55">Import a missions zip in Settings before using Mission Explorer.</div>
           <div className="mt-5">
-            <Link href="/missions" className="btn">
-              Go To Missions Dashboard
+            <Link href="/settings" className="btn">
+              Go To Settings
             </Link>
           </div>
         </div>

@@ -9,12 +9,14 @@ Read-only console to analyze Gemini Station content: mods, missions, mobs, items
 Then open <http://localhost:3000>.
 
 ## Data sources
-The console now loads directly from fixed JSON endpoints:
-- Mods: `https://json-service-production-e4bb.up.railway.app/json/Mods.json`
-- Items: `https://json-service-production-e4bb.up.railway.app/json/items.json`
-Open **Settings** to view the currently loaded URLs and force a reload.
-Open **Settings** to import a shared `/assets` folder; uploaded assets are stored locally and resolved first for `res://assets/...` image paths across the console.
-Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data is stored locally and used across the console for non-mission datasets.
+The console is now upload-driven and starts empty on first load.
+
+Open **Settings** to populate the three shared workspaces:
+- upload a shared `data.zip` or `/data` folder for non-mission datasets
+- upload a shared missions zip or missions folder for all mission pages
+- upload a shared `/assets` folder for `res://assets/...` image resolution
+
+Once those uploads are present, the entire site reads from them. There is no manifest URL or external JSON fallback path anymore.
 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
@@ -42,9 +44,10 @@ Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data
   - Use `res://assets/comms/temp.png` automatically whenever the portrait field is blank
   - Download the updated JSON, copy the full file JSON, or copy just the selected contact entry
 - Settings:
-  - Import the full `/assets` folder once and let the console resolve uploaded images before repo-root or remote fallbacks
-  - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, and mob image previews
-  - Import a shared `data.zip` or unzipped `/data` folder once and let the console prefer uploaded mods, items, mobs, abilities, comms, merchant profile data, map data, routes, tutorial data, and systems JSON before URL-backed sources
+  - Import the full `/assets` folder once and let the console resolve uploaded images from that shared asset workspace
+  - Reuse that shared uploaded asset library automatically for items, mods, merchant previews, comms portraits, mission headers, and mob image previews
+  - Import a shared `data.zip` or unzipped `/data` folder once and let the console populate mods, items, mobs, abilities, comms, merchant profile data, map data, routes, tutorial data, and systems JSON from that shared workspace
+  - Import a shared missions zip or missions folder once and let the console populate Mission Explorer, Mission Lab, Mission Creator, and dashboard mission summaries from that shared workspace
 - Data:
   - Use the shared uploaded `/data` workspace from Settings to manage map POIs, map regions, trade routes, NPC traffic, tutorial entries, tutorial triggers, ship stat descriptions, zones, stages, and hazard barrier profiles
   - Create, clone, edit, delete, copy, and download the runtime JSON for each dataset without touching the Godot repo directly
@@ -63,11 +66,11 @@ Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data
 - Outliers report with z-score explanation
 
 ## Mission Lab Usage
-1. Open `/missions` from the top navigation.
+1. Open `/settings` from the top navigation.
 2. Import either:
    - a missions `.zip`, or
    - a missions folder selected in the browser via the folder picker.
-3. Open `/missions/explorer` to browse the imported mission workspace.
+3. Open `/missions/explorer` to browse the imported shared mission workspace.
 4. Open `/missions/lab` to use the shared Browser, Map, and Diagnostics views.
 5. Open `/missions/creator` to seed mission drafts from the same imported workspace.
 6. In Mission Lab, use the Browser tab to search, sort, filter, and open mission details.
@@ -84,7 +87,7 @@ Open **Settings** to import a shared `data.zip` or `/data` folder; uploaded data
    - placeholder arcs/tags,
    - graph cycles.
 
-Mission Lab is intentionally isolated from the manifest/data URL loader used by the rest of the console. Imports are read-only and held in a separate in-memory shared mission workspace until cleared.
+Mission Lab is read-only and uses the same shared uploaded mission workspace that powers the other mission pages until cleared in Settings.
 
 ## Mob Lab Usage
 1. Open `/mob-lab` from the top navigation.

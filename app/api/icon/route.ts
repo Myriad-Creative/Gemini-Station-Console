@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getConfig } from "@lib/config";
-import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 import { getUploadedAssetsRoot } from "@lib/uploaded-assets";
 
 function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
@@ -83,12 +81,9 @@ function resolveFromRoot(root: string, cleaned: string, id: string, name: string
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
-  await warmupLoadIfNeeded();
   const url = new URL(req.url);
   const resParam = url.searchParams.get("res");
   if (!resParam) return new NextResponse("Missing res", { status: 400 });
-  const store = getStore();
-  const repo = (store as any).repoRoot as string | undefined;
   const id = url.searchParams.get("id") || "";
   const name = url.searchParams.get("name") || "";
 
@@ -97,54 +92,12 @@ export async function GET(req: NextRequest) {
   const cleaned = p.replace(/^\/+/, "");
   const uploadedAssetsRoot = getUploadedAssetsRoot();
   let abs: string | null = uploadedAssetsRoot ? resolveFromRoot(uploadedAssetsRoot, cleaned, id, name) : null;
-  if (!abs && repo) {
-    abs = resolveFromRoot(repo, cleaned, id, name);
-  }
 
   if (abs && fs.existsSync(abs)) {
     const ext = path.extname(abs).toLowerCase();
     const type = ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "application/octet-stream";
     const buf = fs.readFileSync(abs);
     return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
-  }
-
-  // Remote fallback (data-url hosts + /assets)
-  const cfg = getConfig();
-  const baseHosts = new Set<string>();
-  function addOrigin(maybeUrl?: string | null) {
-    if (!maybeUrl) return;
-    try {
-      const u = new URL(maybeUrl);
-      baseHosts.add(`${u.protocol}//${u.host}`);
-    } catch {}
-  }
-  addOrigin(cfg.manifest_url);
-  addOrigin(store.dataUrls?.mods || undefined);
-  addOrigin(store.dataUrls?.items || undefined);
-
-  const remoteCandidates: string[] = [];
-  if (/^https?:\/\//i.test(cleaned)) remoteCandidates.push(cleaned);
-  const baseClean = cleaned.replace(/^\/+/, "");
-  const baseName = path.basename(baseClean);
-  for (const base of Array.from(baseHosts)) {
-    remoteCandidates.push(`${base}/${baseClean}`);
-    if (!baseClean.toLowerCase().startsWith("assets/")) {
-      remoteCandidates.push(`${base}/assets/${baseClean}`);
-    }
-    remoteCandidates.push(`${base}/assets/mods/${baseName}`);
-    remoteCandidates.push(`${base}/assets/items/${baseName}`);
-  }
-
-  for (const candidate of remoteCandidates) {
-    try {
-      const r = await fetch(candidate);
-      if (!r.ok) continue;
-      const buf = Buffer.from(await r.arrayBuffer());
-      const type = r.headers.get("content-type") || "application/octet-stream";
-      return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
-    } catch {
-      continue;
-    }
   }
 
   return new NextResponse("Not found", { status: 404 });

@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useMemo, useState } from "react";
 import MissionWorkshop from "@components/authoring/MissionWorkshop";
 import ModWorkshop from "@components/authoring/ModWorkshop";
+import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionDraft } from "@lib/mission-authoring";
 import { createMissionDraft, hydrateStoredMissionDraft, normalizeImportedMission } from "@lib/mission-authoring";
 import {
@@ -59,6 +60,7 @@ function loadDrafts<T>(key: string, fallback: T): T {
 }
 
 export default function AuthoringWorkbench() {
+  const sessionId = useMissionLabSessionId();
   const [tab, setTab] = useState<"missions" | "mods">("mods");
   const [missions, setMissions] = useState<MissionDraft[]>([createMissionDraft()]);
   const [mods, setMods] = useState<ModDraft[]>([createModDraft()]);
@@ -87,11 +89,17 @@ export default function AuthoringWorkbench() {
   }, [hydrated, mods]);
 
   useEffect(() => {
+    if (!sessionId) return;
     let cancelled = false;
 
     async function loadConsoleData() {
       try {
-        const [missionsResponse, modsResponse] = await Promise.all([fetch("/api/missions"), fetch("/api/mods")]);
+        const [missionsResponse, modsResponse] = await Promise.all([
+          fetch("/api/missions", {
+            headers: buildMissionLabSessionHeaders(sessionId),
+          }),
+          fetch("/api/mods"),
+        ]);
         const missionsJson = await missionsResponse.json().catch(() => ({ rows: [] }));
         const modsJson = await modsResponse.json().catch(() => ({ data: [] }));
         if (cancelled) return;
@@ -110,7 +118,7 @@ export default function AuthoringWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionId]);
 
   const knownMissionIds = useMemo(() => {
     return Array.from(

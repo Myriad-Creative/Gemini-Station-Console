@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import MissionWorkspaceManager from "@components/mission-lab/MissionWorkspaceManager";
 
 type UploadedAssetsState = {
   active: boolean;
@@ -39,11 +40,7 @@ type UploadedDataState = {
 };
 
 type SettingsData = {
-  manifestUrl: string | null;
-  lastLoaded?: string;
   errors: string[];
-  modsOverrideJson: string;
-  modsOverrideActive: boolean;
   uploadedAssets: UploadedAssetsState;
   uploadedData: UploadedDataState;
 };
@@ -90,15 +87,10 @@ export default function SettingsPage() {
   const dataFolderInputRef = useRef<HTMLInputElement | null>(null);
   const dataZipInputRef = useRef<HTMLInputElement | null>(null);
   const [settings, setSettings] = useState<SettingsData>({
-    manifestUrl: null,
-    lastLoaded: undefined,
     errors: [],
-    modsOverrideJson: "",
-    modsOverrideActive: false,
     uploadedAssets: EMPTY_UPLOADED_ASSETS,
     uploadedData: EMPTY_UPLOADED_DATA,
   });
-  const [modsOverrideJson, setModsOverrideJson] = useState("");
   const [status, setStatus] = useState<string>("");
 
   const loadSettings = async () => {
@@ -106,23 +98,14 @@ export default function SettingsPage() {
       const r = await fetch("/api/settings");
       const j = await r.json();
       const next = {
-        manifestUrl: j.manifestUrl || null,
-        lastLoaded: j.lastLoaded,
         errors: j.errors || [],
-        modsOverrideJson: j.modsOverrideJson || "",
-        modsOverrideActive: !!j.modsOverrideActive,
         uploadedAssets: j.uploadedAssets || EMPTY_UPLOADED_ASSETS,
         uploadedData: j.uploadedData || EMPTY_UPLOADED_DATA,
       };
       setSettings(next);
-      setModsOverrideJson(next.modsOverrideJson);
     } catch (e:any) {
       setSettings({
-        manifestUrl: null,
-        lastLoaded: undefined,
         errors: [String(e?.message || e)],
-        modsOverrideJson: "",
-        modsOverrideActive: false,
         uploadedAssets: EMPTY_UPLOADED_ASSETS,
         uploadedData: EMPTY_UPLOADED_DATA,
       });
@@ -139,55 +122,6 @@ export default function SettingsPage() {
       dataFolderInputRef.current.setAttribute("directory", "");
     }
   }, []);
-
-  const reloadFromManifest = async () => {
-    setStatus(settings.modsOverrideActive ? "Reloading using the saved Mods.json override…" : "Reloading from manifest…");
-    try {
-      const r = await fetch("/api/reload", { method: "POST" });
-      const j = await r.json().catch(()=>({}));
-      if (!r.ok || !j.ok) setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
-      else {
-        setStatus(settings.modsOverrideActive ? "Reloaded using the saved Mods.json override." : "Loaded from manifest");
-        await loadSettings();
-      }
-    } catch (e:any) { setStatus(`Error: ${e?.message || e}`); }
-  };
-
-  const saveModsOverride = async (nextValue = modsOverrideJson) => {
-    setStatus(nextValue.trim() ? "Saving Mods.json override…" : "Clearing Mods.json override…");
-    try {
-      const r = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modsOverrideJson: nextValue }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.ok) {
-        setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
-        return;
-      }
-
-      const updated = {
-        manifestUrl: j.manifestUrl || null,
-        lastLoaded: j.lastLoaded,
-        errors: j.errors || [],
-        modsOverrideJson: j.modsOverrideJson || "",
-        modsOverrideActive: !!j.modsOverrideActive,
-        uploadedAssets: j.uploadedAssets || settings.uploadedAssets,
-        uploadedData: j.uploadedData || settings.uploadedData,
-      };
-      setSettings(updated);
-      setModsOverrideJson(updated.modsOverrideJson);
-      setStatus(updated.modsOverrideActive ? "Saved Mods.json override and reloaded console data." : "Cleared Mods.json override and returned to the configured mods source.");
-    } catch (e:any) {
-      setStatus(`Error: ${e?.message || e}`);
-    }
-  };
-
-  const clearModsOverride = async () => {
-    setModsOverrideJson("");
-    await saveModsOverride("");
-  };
 
   const importAssetsFolder = async (files: FileList | null) => {
     const pickedFiles = Array.from(files ?? []);
@@ -233,7 +167,7 @@ export default function SettingsPage() {
       }
 
       await loadSettings();
-      setStatus("Cleared uploaded assets. Image resolution has returned to the repo and remote fallback sources.");
+      setStatus("Cleared uploaded assets. res://assets/... paths will stay unresolved until a new shared assets upload is added.");
     } catch (e: any) {
       setStatus(`Error: ${e?.message || e}`);
     }
@@ -310,7 +244,7 @@ export default function SettingsPage() {
       }
 
       await loadSettings();
-      setStatus("Cleared uploaded data. The console has returned to URL-backed data sources for non-mission datasets.");
+      setStatus("Cleared uploaded data. The console is now empty for non-mission datasets until a new shared data upload is added.");
     } catch (e: any) {
       setStatus(`Error: ${e?.message || e}`);
     }
@@ -323,7 +257,7 @@ export default function SettingsPage() {
         <div className="md:col-span-4">
           <div className="text-lg font-semibold text-white">Shared Data Library</div>
           <div className="mt-1 text-sm text-white/55">
-            Import the full <code>/data</code> directory here as either a zip or the unzipped folder. The console will prefer the uploaded data source for mods, items, mobs, abilities, comms, merchant profiles, map data, routes, tutorial data, and systems JSON. Missions stay separate and continue to use the Missions dashboard upload.
+            Import the full <code>/data</code> directory here as either a zip or the unzipped folder. The console will read non-mission runtime data only from this uploaded shared data workspace.
           </div>
         </div>
 
@@ -382,7 +316,7 @@ export default function SettingsPage() {
 
         <div className="md:col-span-4">
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-            This shared upload is meant for the main <code>data/</code> directory and will automatically feed the console’s non-mission datasets. If you upload a complete data tree, you should not need to separately import mods, items, mobs, comms, merchant profiles, map data, routes, tutorial data, or systems JSON.
+            This shared upload is meant for the main <code>data/</code> directory and will automatically feed the console’s non-mission datasets. When no data workspace is uploaded, the console starts empty instead of falling back to external JSON URLs.
           </div>
         </div>
 
@@ -413,11 +347,13 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      <MissionWorkspaceManager />
+
       <div className="card grid gap-4 md:grid-cols-4">
         <div className="md:col-span-4">
           <div className="text-lg font-semibold text-white">Shared Asset Library</div>
           <div className="mt-1 text-sm text-white/55">
-            Import the full <code>/assets</code> folder here. The console stores that uploaded asset tree locally and resolves <code>res://assets/...</code> paths against it before any repo-root or remote fallback.
+            Import the full <code>/assets</code> folder here. The console stores that uploaded asset tree locally and resolves <code>res://assets/...</code> paths only against this uploaded asset workspace.
           </div>
         </div>
 
@@ -447,7 +383,7 @@ export default function SettingsPage() {
         <div className="md:col-span-2">
           <div className="label">Notes</div>
           <div className="input mt-1 min-h-[88px] whitespace-normal bg-white/5 text-sm text-white/70">
-            Upload the <code>/assets</code> folder itself so relative paths like <code>res://assets/comms/cpt_larrabee.png</code> stay intact. Existing items, mods, merchant previews, comms portraits, and any other screens using <code>/api/icon</code> will pick up the uploaded files automatically.
+            Upload the <code>/assets</code> folder itself so relative paths like <code>res://assets/comms/cpt_larrabee.png</code> stay intact. Existing items, mods, merchant previews, comms portraits, mission headers, and any other screens using <code>/api/icon</code> will pick up the uploaded files automatically.
           </div>
         </div>
 
@@ -468,43 +404,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="card grid gap-3 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <div className="label">Manifest URL</div>
-          <div className="input bg-white/5">{settings.manifestUrl || "Not set"}</div>
-        </div>
-        <div>
-          <div className="label">Last loaded</div>
-          <div className="input bg-white/5">{settings.lastLoaded ? new Date(settings.lastLoaded).toLocaleString() : "—"}</div>
-        </div>
-        <div>
-          <div className="label">Mods source</div>
-          <div className="input bg-white/5">{settings.modsOverrideActive ? "Saved Mods.json override" : "Configured mods URL"}</div>
-        </div>
-        <div className="md:col-span-2">
-          <div className="label">Mods.json override</div>
-          <textarea
-            className="input min-h-72 font-mono text-xs"
-            value={modsOverrideJson}
-            onChange={e => setModsOverrideJson(e.target.value)}
-            placeholder='Paste the full contents of Mods.json here. Leave empty to fall back to the configured mods URL.'
-          />
-          <div className="mt-2 text-sm text-white/60">
-            If this box is empty, the console uses the normal mods source. If it contains JSON, that pasted payload becomes the primary mods source across the console after saving.
-          </div>
-        </div>
-        <div className="flex items-end">
-          <button className="btn" onClick={reloadFromManifest}>Reload from manifest</button>
-        </div>
-        <div className="flex items-end gap-2">
-          <button className="btn" onClick={() => saveModsOverride()}>Save Mods.json Override</button>
-          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearModsOverride}>Clear Override</button>
-        </div>
-        {settings.errors?.length ? (
-          <div className="md:col-span-2 text-red-400 text-sm">Errors: {settings.errors.join("; ")}</div>
-        ) : null}
-        <div className="md:col-span-2 text-white/70">{status}</div>
-      </div>
+      {settings.errors?.length ? (
+        <div className="card text-red-400 text-sm">Errors: {settings.errors.join("; ")}</div>
+      ) : null}
+      {status ? <div className="card text-white/70">{status}</div> : null}
     </div>
   );
 }
