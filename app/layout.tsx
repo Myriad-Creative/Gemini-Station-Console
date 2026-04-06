@@ -4,6 +4,7 @@ import Link from "next/link";
 import GlobalBeforeUnload from "@components/GlobalBeforeUnload";
 import Nav from "@components/Nav";
 import SectionNav from "@components/SectionNav";
+import packageJson from "../package.json";
 
 export const metadata = {
   title: "Gemini Balance Console",
@@ -19,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container py-3 space-y-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <Link href="/" className="font-semibold">
-                Gemini Balance Console <span className="text-white/50 text-xs align-top">v0.2.2</span>
+                Gemini Balance Console <span className="text-white/50 text-xs align-top">v{packageJson.version}</span>
               </Link>
               <Nav />
             </div>
