@@ -1,0 +1,16 @@
+{
+  "script": "res://scripts/system/AI/Sentinel_BeamAI.gd",
+  "ai_type": "Sentinel_Beam",
+  "aggro_range": 0.0,
+  "weapon_range": 4500.0,
+  "main_abilities": [{ "id": 14 }],
+
+
+  "orbit_radius": 0,            
+  "orbit_direction": "random",       
+  "orbit_radial_gain": 0,         
+  "orbit_hysteresis_pct": 0,
+
+   "disengage_after": 10.0,
+  "leash_distance": 6000.0     
+}

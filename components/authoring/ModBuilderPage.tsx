@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import ModWorkshop from "@components/authoring/ModWorkshop";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import {
   MOD_STORAGE_KEY,
   ModDraft,
@@ -41,6 +42,7 @@ function loadDrafts<T>(key: string, fallback: T): T {
 }
 
 export default function ModBuilderPage() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [mods, setMods] = useState<ModDraft[]>([createModDraft()]);
   const [existingMods, setExistingMods] = useState<ExistingModRow[]>([]);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
@@ -50,7 +52,7 @@ export default function ModBuilderPage() {
     const stored = loadDrafts<ModDraft[]>(MOD_STORAGE_KEY, []);
     setMods(stored.length ? stored.map((mod) => hydrateStoredModDraft(mod)) : [createModDraft()]);
     setHydrated(true);
-  }, []);
+  }, [sharedDataVersion]);
 
   useEffect(() => {
     if (!hydrated) return;

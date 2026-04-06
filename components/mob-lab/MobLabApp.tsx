@@ -2,6 +2,7 @@
 
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
 import {
   cloneMobDraft,
@@ -186,8 +187,8 @@ function mergeTextareaPaste(currentValue: string, pastedText: string, selectionS
 
 export default function MobLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const sharedImportAttemptedRef = useRef(false);
   const workspaceRef = useRef<MobLabWorkspace | null>(null);
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<MobLabWorkspace | null>(null);
   const [selectedMobKey, setSelectedMobKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -274,15 +275,24 @@ export default function MobLabApp() {
   }, [filteredMobs, selectedMobKey, workspace]);
 
   useEffect(() => {
-    if (sharedImportAttemptedRef.current || workspace) return;
-    sharedImportAttemptedRef.current = true;
-
     let cancelled = false;
     async function loadSharedWorkspace() {
       try {
         const response = await fetch("/api/settings/data/source?kind=mobs");
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok || !payload.text || cancelled || workspaceRef.current) return;
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled && workspaceRef.current?.sourceType === "uploaded") {
+            setWorkspace(null);
+            setSelectedMobKey(null);
+            setStatus({
+              tone: "neutral",
+              message: "No shared mobs.json is currently available. Import /data in Settings or load a file here.",
+            });
+          }
+          return;
+        }
+        if (cancelled) return;
+        if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
         importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
       } catch {
         // Shared uploaded data is optional.
@@ -293,7 +303,7 @@ export default function MobLabApp() {
     return () => {
       cancelled = true;
     };
-  }, [workspace]);
+  }, [sharedDataVersion]);
 
   const selectedMob = useMemo(() => {
     const mobs = workspace?.mobs ?? [];

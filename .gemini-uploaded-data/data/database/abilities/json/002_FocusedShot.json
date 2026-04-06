@@ -1,0 +1,21 @@
+{
+  "id": 2,
+  "script": "res://scripts/abilities/FocusedShot.gd",
+  "properties": {
+	"valid_targets": 6,
+	"facing_requirement": 0,
+	"name": "Focused Shot",
+	"description": "Increase target's targeting by 30 for 10 seconds.",
+	"icon": "res://assets/status_effects/icon_focused_shot.png",
+	"min_range_type": 0,
+	"max_range_type": 3,
+	"is_gcd_locked": true,
+	"cooldown": 15.0,
+	"charge_time": 0.0,
+	"range": 3000.0,
+	"power_percent": 0.0,
+	"base_damage": 0.0,
+	"energy_cost": 10.0,
+	"metadata/_custom_type_script": "uid://cvapwwk0vy8pd"
+  }
+}

@@ -1,0 +1,284 @@
+{
+  "small_asteroid_patch": {
+	"shape": "ellipse",
+	"width": 3500,
+	"height": 3500,
+	"edge_falloff": 750,
+	"collision": false,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_1.png",
+	  "res://assets/environment/asteroids/ast_2.png",
+	  "res://assets/environment/asteroids/ast_3.png",
+	  "res://assets/environment/asteroids/ast_4.png",
+	  "res://assets/environment/asteroids/ast_5.png",
+	  "res://assets/environment/asteroids/ast_6.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 1.25,
+	"grid_step": 500,
+	"jitter": 0.5
+  },
+  "single_small_asteroid": {
+	"shape": "ellipse",
+	"width": 50,
+	"height": 50,
+	"edge_falloff": 50,
+	"collision": false,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_2.png",
+	  
+	],
+	"scale_min": 5.00,
+	"scale_max": 5.00,
+	"grid_step": 100,
+	"jitter": 0.5
+  }, 
+  "ast_btm": {
+	"shape": "ellipse",
+	"width": 15000,
+	"height": 10000,
+	"edge_falloff": 4500,
+	"collision": false,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_1.png",
+	  "res://assets/environment/asteroids/ast_2.png",
+	  "res://assets/environment/asteroids/ast_3.png",
+	  "res://assets/environment/asteroids/ast_4.png",
+	  "res://assets/environment/asteroids/ast_5.png",
+	  "res://assets/environment/asteroids/ast_6.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 1.25,
+	"grid_step": 750,
+	"jitter": 0.5
+  }, 
+  "ast_top": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 15000,
+	"height": 10000,
+	"edge_falloff": 5000,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_1.png",
+	  "res://assets/environment/asteroids/ast_2.png",
+	  "res://assets/environment/asteroids/ast_3.png",
+	  "res://assets/environment/asteroids/ast_4.png",
+	  "res://assets/environment/asteroids/ast_5.png",
+	  "res://assets/environment/asteroids/ast_6.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 1.25,
+	"grid_step": 1000,
+	"jitter": 0.65
+  },
+"dust_minor": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 25000,
+	"height": 15000,
+	"edge_falloff": 5000,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/debris/debris_1.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 0.45,
+	"grid_step": 500,
+	"jitter": 0.65
+  },
+"neb_minor_yellow": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 25000,
+	"height": 15000,
+	"edge_falloff": 5000,
+	"zindex": -10,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_yellow.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 2500,
+	"jitter": 0.65,
+	 "animate": false,
+  "uv_scroll": [0.01, 0.0],
+  "uv_spin": 0.03
+  },
+"neb_minor_yellow_an": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 25000,
+	"height": 15000,
+	"edge_falloff": 5000,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_yellow.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 2500,
+	"jitter": 0.65,
+	 "animate": true,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },"neb_sm_yellow_an": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 2500,
+	"height": 2500,
+	"edge_falloff": 5000,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_yellow.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 2500,
+	"jitter": 0.65,
+	 "animate": true,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },
+"smoke_yellow_an": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 2500,
+	"height": 1500,
+	"edge_falloff": 5000,
+	"zindex": -5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_orange.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 3500,
+	"jitter": 0.65,
+	 "animate": true,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },
+"smoke_orange_an_5": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 2500,
+	"height": 1500,
+	"edge_falloff": 7500,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_yellow.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 2500,
+	"jitter": 0.65,
+	 "animate": true,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },
+"smoke_blue_an_6": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 2500,
+	"height": 1500,
+	"edge_falloff": 5000,
+	"zindex": -5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_brown_fifty.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 2500,
+	"jitter": 0.65,
+	 "animate": true,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },
+"ast_minor2": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 3500,
+	"height": 3500,
+	"edge_falloff": 3000,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_2.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 1.45,
+	"grid_step": 300,
+	"jitter": 0.65,
+	 "animate": false,
+  "uv_scroll": [0.001, 0.0005],
+  "uv_spin": 0.03
+  },
+"neb_minor_orange": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 25000,
+	"height": 15000,
+	"edge_falloff": 5000,
+	"zindex": 10,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_orange.png"
+	],
+	"scale_min": 0.25,
+	"scale_max": 5.45,
+	"grid_step": 5000,
+	"jitter": 0.65
+  },
+
+
+"neb_minor_brown": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 25000,
+	"height": 15000,
+	"edge_falloff": 5000,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_brown_fifty.png"
+	],
+	"scale_min": 3.00,
+	"scale_max": 5.00,
+	"grid_step": 7500,
+	"jitter": 0.65
+  },
+
+
+"play": {
+	"shape": "ellipse",
+	"collision": true,
+	"width": 500,
+	"height": 500,
+	"edge_falloff": 10,
+	"zindex": -1,
+	"materials": [
+	  "res://assets/environment/asteroids/ast_1.png"
+	],
+	"scale_min": 3.00,
+	"scale_max": 5.00,
+	"grid_step": 100,
+	"jitter": 0.65
+  },
+
+
+"Sun": {
+	"shape": "ellipse",
+	"collision": false,
+	"width": 20000,
+	"height": 20000,
+	"edge_falloff": 0,
+	"zindex": 5,
+	"materials": [
+	  "res://assets/environment/cloud/cloud_lg_brown_fifty.png"
+	],
+	"scale_min": 3.00,
+	"scale_max": 5.00,
+	"grid_step": 7500,
+	"jitter": 0.65
+  }
+}

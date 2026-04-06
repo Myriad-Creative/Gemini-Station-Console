@@ -1,0 +1,17 @@
+{
+  "ai_type": "PatrolRouteAI",
+
+  "aggro_range": 2500.0,
+  "weapon_range": 1500.0,
+
+  "main_abilities": [
+	{ "id": 15 }
+  ],
+
+  "disengage_after": 10.0,
+  "leash_distance": 0.0,
+
+  "route_loop": true,
+  "route_arrive_dist": 40.0,
+  "route_look_ahead": 120.0
+}

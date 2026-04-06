@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { CommsContactDraft, CommsContactValidationIssue, CommsLabWorkspace } from "@lib/comms-manager/types";
 import {
   DEFAULT_COMMS_PORTRAIT,
@@ -150,8 +151,8 @@ function DialogLineEditor({
 
 export default function CommsManagerApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const sharedImportAttemptedRef = useRef(false);
   const workspaceRef = useRef<CommsLabWorkspace | null>(null);
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<CommsLabWorkspace | null>(null);
   const [selectedContactKey, setSelectedContactKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -204,15 +205,24 @@ export default function CommsManagerApp() {
   }, [filteredContacts, selectedContactKey, workspace]);
 
   useEffect(() => {
-    if (sharedImportAttemptedRef.current || workspace) return;
-    sharedImportAttemptedRef.current = true;
-
     let cancelled = false;
     async function loadSharedWorkspace() {
       try {
         const response = await fetch("/api/settings/data/source?kind=comms");
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok || !payload.text || cancelled || workspaceRef.current) return;
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled && workspaceRef.current?.sourceType === "uploaded") {
+            setWorkspace(null);
+            setSelectedContactKey(null);
+            setStatus({
+              tone: "neutral",
+              message: "No shared comms data is currently available. Import /data in Settings or load a file here.",
+            });
+          }
+          return;
+        }
+        if (cancelled) return;
+        if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
         importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
       } catch {
         // Shared uploaded data is optional.
@@ -223,7 +233,7 @@ export default function CommsManagerApp() {
     return () => {
       cancelled = true;
     };
-  }, [workspace]);
+  }, [sharedDataVersion]);
 
   const selectedContact = useMemo(() => {
     const contacts = workspace?.contacts ?? [];

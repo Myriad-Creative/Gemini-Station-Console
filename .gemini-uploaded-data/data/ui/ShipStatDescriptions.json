@@ -1,0 +1,104 @@
+{
+  "speed": {
+	"label": "Speed",
+	"title": "Speed",
+	"decimals": 2,
+	"description": "Your speed attribute determins how fast your ship will fly. "
+  },
+  "sensors": {
+	"label": "Sensors",
+	"title": "Sensors",
+	"decimals": 2,
+	"description": "Sensor strength determines how near your ship needs to be to a target before you can scan it and how quickly a scan will complete. \n\nAdditional intel can be revealed on scans with higher sensor scores."
+  },
+  "energy_regen_rate": {
+	"label": "Energy Regen.",
+	"title": "Energy Regeneration",
+	"decimals": 2,
+	"description": "Energy recharges at 1 energy per 5 seconds. Increasing your energy regen will increase the amount regenerated per tick."
+  },
+  "power": {
+	"label": "Power",
+	"title": "Power",
+	"decimals": 2,
+	"description": "The amount of damage you do is directly tied to how much power your ship has. \n\nOffensive abilities that do damage will deal damage equal to a percentage of your total power alternatively, shield-restoring abilities will restore based on the caster's power.\n\nIf you plan on a tank, dps, or support role, power will be a primary stat."
+  },
+  "targeting": {
+	"label": "Targeting",
+	"title": "Targeting",
+	"decimals": 2,
+	"description": "Targeting determins how effective your ship is at hitting a target. An attack roll consists of (among other variables) a targeting roll against the target's evasion roll.\n\nNOTE: Your pilot level is a contributing factor in your targeting total."
+  },
+  "threat_generation": {
+	"label": "Threat:",
+	"title": "Threat",
+	"decimals": 2,
+	"description": "The threat stat modifies how much threat actions you take generate. \n\nAttacks generate threat, but other abilities, like shield recharge abilities, or buffs also genreate threat.\n\nThreat modifiers can increase or decrease the amount of threat your ship generates."
+  },
+  "hacking": {
+	"label": "Hacking",
+	"title": "Hacking",
+	"decimals": 2,
+	"description": "Your hacking total indicates how effective you are at bypassing a ship or location's computer sytems.\n\nSuccessful hacking actions will not put your ship in combat, nor will it draw agro (unless you're within the target's sensor range).\n\nFailed hacking attemps, however, will generate a large amount of threat.\n\nHacking actions typically take longer to charge due to their damaging nature.\n\nNOTE: Your pilot level is added to your Hacking total."
+  },
+  "armor": {
+	"label": "Armor",
+	"title": "Armor",
+	"decimals": 0,
+	"description": "Armor are your ship's hit points. When your armor reaches zero, your ship will be destroyed.\n\nUnlike shields, armor hit points do not regenerate and there are very few abilities that can restore armor.\n\nDamaged armor can be repaired at any Recker Depot (for a fee)."
+  },
+  "shields": {
+	"label": "Shields",
+	"title": "Shields",
+	"decimals": 0,
+	"description": "Shields are your ship’s first layer of defense—all damage you receive will hit shields before armor.\n\nShields can recharge much more easily than armor, making increasing your shields vital."
+  },
+  "shield_regen": {
+	"label": "Shield Regen",
+	"title": "Shield Regeneration",
+	"decimals": 0,
+	"description": "Shield Regeneration dictates how quickly shields recover over time. Shields regenerate ticks occur every 5 seconds while in combat and 3 seconds while out of combat."
+  },
+  "armor_regen": {
+	"label": "Armor Regen",
+	"title": "Armor Regeneration",
+	"decimals": 2,
+	"description": "Armor Regeneration controls how quickly armor is restored over time. This stat is nearly impossible to obtain."
+  },
+  "evasion": {
+	"label": "Evasion",
+	"title": "Evasion",
+	"decimals": 2,
+	"description": "The higher your evasion stat, the more difficult it will be to hit you.\n\nEvasion counters targeting."
+  },
+  "damage_reflect": {
+	"label": "Dmg. Reflect",
+	"title": "Damage Reflection",
+	"decimals": 2,
+	"description": "Damage reflect redirects a percentage of you've taken back to the attacker.\n\nThe amount reflected back is calculated AFTER any damage reduction stats. "
+  },
+  "damage_reduction": {
+	"label": "Dmg. Reduction",
+	"title": "Damage Reduction",
+	"decimals": 2,
+	"description": "Damage Reduction reduces the amount of damage your ship will receive.\n\nThis occurs BEFORE any damage reflection."
+  },
+  "heat_resistance": {
+	"label": "Heat Resistance",
+	"title": "Heat Resistance",
+	"decimals": 2,
+	"description": "Your Heat Resistance rating (HR) determins how much radiation protection your ship has.\n\nThere are several environments throughout the System that are dangerous to standard ships. Adding mods with HR stats will help with your survivability in those area.\n\nFor example, a HR rating of 2,000 is needed to safely reach Mercury."
+  },
+  "overclock": {
+	"label": "Overclock",
+	"title": "Overclock",
+	"decimals": 2,
+	"description": "This stat affects your ability cooldown. 100% overclock will lower your GCD to .75 seconds."
+  },
+  "stealth": {
+	"label": "Stealth",
+	"title": "Stealth",
+	"decimals": 2,
+	"description": "You steal rating indicates how likely your ship is to be deteceted by sensors.\n\nHigher stealth ratings can effectly cloak your ship. However, dealing direct damage will degrade your stealth field."
+  }
+}

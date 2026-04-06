@@ -1,0 +1,28 @@
+{
+  "id": 15,
+  "script": "res://scripts/abilities/ChargedBolt/ab_ChargedBolt.gd",
+  "properties": {
+	"name": "Charged Bolt",
+	"description": "Fires a charged bolt that electrifies the target, does 35% damage and slows movement by 25% for 10 seconds.",
+	"icon": "res://assets/abilities/icon_ChargedBolt.png",
+
+	"is_gcd_locked": true,
+	"cooldown": 1.5,
+	"charge_time": 0.0,
+	"valid_targets": 1,
+	"facing_requirement": 0,
+
+	"min_range_type": 0,
+	"max_range_type": 1,
+	"attack_range": 1500.0,
+
+	"base_damage": 0.0,
+	"power_percent": 0.35,
+	"energy_cost": 15.0,
+
+	"projectile_scene": "res://scenes/weapons/BlueBlastBolt.tscn",
+	"fire_sfx": "res://assets/sounds/fx/AutoCannon.wav",
+
+	"applies_effect_ids": [107]
+  }
+}

@@ -1,0 +1,44 @@
+{
+	"id": 18,
+  "script": "res://scripts/abilities/HomingMine/ab_HomingMine.gd",
+	"properties": {
+		"threat_type": 1,
+		"threat_multiplier": 1.0,
+
+		"name": "Homing Mine V",
+		"description": "Deploys 5 homing mines that seek the first enemy it detects, dealing damage 25% power.",
+		"icon": "res://assets/abilities/icon_HomingMine.png",
+
+		"valid_targets": 1,
+		"facing_requirement": 0,
+
+		"min_range_type": 0,
+		"max_range_type": 3,
+		"attack_range": 500.0,
+ 		"requires_target": false,
+		"is_gcd_locked": true,
+		"cooldown": 3.0,
+		"charge_time": 0.0,
+
+		"power_percent": 0.25,
+		"base_damage": 0.0,
+		"energy_cost": 5.0,
+
+	"projectile_scene": "res://scenes/weapons/HomingMine.tscn",
+
+		"mines_count": 5,
+		"inter_mine_delay": 0.08,
+
+		"seek_radius": 1000.0,
+		"spin_speed_dps": 150.0,
+		"growth_speed": 120.0,
+
+		"drift_distance": 100.0,
+		"drift_time": 0.5,
+
+		"chase_speed": 750.0,
+		"explode_radius": 36.0,
+		"max_lifetime": 30.0,
+		"exclude_front_arc_deg": 90.0
+	}
+}

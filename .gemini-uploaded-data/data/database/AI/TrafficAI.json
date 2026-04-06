@@ -1,0 +1,46 @@
+{
+  "id": "TrafficAI",
+  "version": 1,
+
+  "script": "res://scripts/system/AI/RouteTrafficAI.gd",
+
+  "aggro_range": 0.0,
+  "weapon_range": 1800.0,
+  "main_abilities": [{ "id": 1 }],
+
+  "ai_tick": 1.5,
+  "ai_tick_jitter": 0.25,
+  "idle_ai_tick": 2.5,
+  "idle_ai_tick_jitter": 0.5,
+
+  "orbit_radius": 1200.0,
+  "orbit_radial_gain": 0.35,
+  "orbit_hysteresis_pct": 0.15,
+  "orbit_direction": "random",
+
+  "disengage_after": 10.0,
+  "leash_distance": 0.0,
+
+  "movement": {
+	"max_speed": 280.0,
+	"min_speed": 80.0,
+
+	"accel": 520.0,
+	"decel": 720.0,
+
+	"turn_rate_deg": 120.0,
+
+	"arrive_radius": 900.0,
+	"waypoint_reached_radius": 650.0,
+
+	"wander_jitter": 0.0,
+	"rotate_in_place_allowed": false
+  },
+
+  "combat": {
+	"retaliate_on_damage": true,
+	"retaliate_on_attack": true,
+	"break_route_on_combat": true,
+	"rejoin_route_after_seconds": 10.0
+  }
+}

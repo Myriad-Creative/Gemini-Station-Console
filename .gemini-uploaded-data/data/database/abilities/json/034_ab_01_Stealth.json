@@ -1,0 +1,23 @@
+{
+  "id": 34,
+  "script": "res://scripts/abilities/Stealth/ab_Stealth.gd",
+  "properties": {
+	"threat_type": 0,
+	"threat_multiplier": 1.0,
+	"valid_targets": 6,
+	"facing_requirement": 0,
+	"name": "Stealth",
+	"description": "Cloaks your ship from nearby sensors.",
+	"icon": "res://assets/abilities/icon_stealth.png",
+	"min_range_type": 0,
+	"max_range_type": 3,
+	"is_gcd_locked": true,
+	"cooldown": 120.0,
+	"charge_time": 0.0,
+	"attack_range": 00.0,
+	"power_percent": 0.0,
+	"base_damage": 0.0,
+	"energy_cost": 25.0,
+	"metadata/_custom_type_script": "uid://bd00rfdtdv6bf"
+  }
+}

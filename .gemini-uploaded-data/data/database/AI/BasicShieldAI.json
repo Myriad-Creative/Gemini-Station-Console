@@ -1,0 +1,38 @@
+{
+  "ai_type": "basic_ai",
+  "aggro_range": 1500.0,
+
+ "main_abilities": [
+  { "id": 1 }
+],
+
+  "secondary_abilities": [
+	{
+	  "id": 2,
+	  "weight": 0.7,
+	  "cooldown_priority": "low"
+	},
+	{
+	  "id": 3,
+	  "weight": 0.3,
+	  "cooldown_priority": "low"
+	}
+  ],
+
+  "on_combat_start": {
+	"cast_abilities": [4]  
+  },
+
+  "combat_conditions": {
+	"below_50_shields": {
+	  "cast_abilities": [5]  
+	},
+	"below_50_armor": {
+	  "cast_abilities": [6] 
+	}
+  },
+
+  "retreat_conditions": {
+	"below_10_armor": true
+  }
+}

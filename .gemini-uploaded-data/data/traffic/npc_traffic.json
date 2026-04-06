@@ -1,0 +1,99 @@
+{
+  "enabled": true,
+
+  "max_active": 500,
+  "spawn_interval_sec": 0.9,
+
+  "min_spawn_distance": 3500.0,
+  "max_spawn_distance": 12000.0,
+  "despawn_distance": 24000.0,
+
+  "default_level_min": 1,
+  "default_level_max": 100,
+
+  "default_route_max_ships": 10,
+
+  "default_template_weights": {
+	"freighter": 0.55,
+	"tanker": 0.15,
+	"scout": 0.15,
+	"fighter": 0.15
+  },
+
+  "templates": {
+	"freighter": {
+	  "mob_id": "npc_freighter",
+	  "ai_type": "TrafficAI",
+	  "sprite_pool": [],
+	  "faction_pool": [],
+	  "ship_profile_pool": []
+	},
+	"tanker": {
+	  "mob_id": "npc_tanker",
+	  "ai_type": "TrafficAI",
+	  "sprite_pool": [],
+	  "faction_pool": [],
+	  "ship_profile_pool": []
+	},
+	"scout": {
+	  "mob_id": "npc_scout",
+	  "ai_type": "TrafficAI",
+	  "sprite_pool": [],
+	  "faction_pool": [],
+	  "ship_profile_pool": []
+	},
+	"fighter": {
+	  "mob_id": "npc_fighter",
+	  "ai_type": "TrafficAI",
+	  "sprite_pool": [],
+	  "faction_pool": [],
+	  "ship_profile_pool": []
+	}
+  },
+
+"route_level_ranges": {
+  "alpha_corridor":   { "min": 1,  "max": 10 },
+  "venture_corridor": { "min": 1,  "max": 10 },
+  "ceres_corridor":   { "min": 5,  "max": 25 },
+  "martian_cooridor": { "min": 40, "max": 80 }
+},
+
+"route_max_ships": {
+  "alpha_corridor":   14,
+  "venture_corridor": 14,
+  "ceres_corridor":   10,
+  "martian_cooridor": 6
+},
+
+"route_template_weights": {
+  "alpha_corridor":   { "freighter": 0.70, "tanker": 0.10, "scout": 0.10, "fighter": 0.10 },
+  "venture_corridor": { "freighter": 0.70, "tanker": 0.10, "scout": 0.10, "fighter": 0.10 },
+  "ceres_corridor":   { "freighter": 0.55, "tanker": 0.20, "scout": 0.10, "fighter": 0.15 },
+  "martian_cooridor": { "freighter": 0.35, "tanker": 0.25, "scout": 0.10, "fighter": 0.30 }
+},
+
+  "sector_level_ranges": {
+	"0,0": { "min": 1, "max": 10 }
+  },
+
+  "patrols": [
+	{
+	  "id": "utf_patrol_crossroads",
+	  "count": 0,
+	  "loop": true,
+	  "mob_id": "npc_fighter",
+	  "min_level": 5,
+	  "max_level": 12,
+	  "points": [
+		[2000, 2000],
+		[3400, 1800],
+		[4200, 2400],
+		[3100, 3300]
+	  ],
+	  "overrides": {
+		"faction": "UTF",
+		"ai_type": "TrafficAI"
+	  }
+	}
+  ]
+}

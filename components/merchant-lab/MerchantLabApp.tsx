@@ -2,6 +2,7 @@
 
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { Item, Mod } from "@lib/types";
 import type {
   MerchantCatalogMode,
@@ -191,8 +192,8 @@ function PreviewCard({
 
 export default function MerchantLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const sharedImportAttemptedRef = useRef(false);
   const workspaceRef = useRef<MerchantLabWorkspace | null>(null);
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<MerchantLabWorkspace | null>(null);
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [profileSearch, setProfileSearch] = useState("");
@@ -240,7 +241,7 @@ export default function MerchantLabApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sharedDataVersion]);
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -311,15 +312,24 @@ export default function MerchantLabApp() {
   }, [filteredProfiles, selectedProfileKey, workspace]);
 
   useEffect(() => {
-    if (sharedImportAttemptedRef.current || workspace) return;
-    sharedImportAttemptedRef.current = true;
-
     let cancelled = false;
     async function loadSharedWorkspace() {
       try {
         const response = await fetch("/api/settings/data/source?kind=merchantProfiles");
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok || !payload.text || cancelled || workspaceRef.current) return;
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled && workspaceRef.current?.sourceType === "uploaded") {
+            setWorkspace(null);
+            setSelectedProfileKey(null);
+            setStatus({
+              tone: "neutral",
+              message: "No shared merchant profile data is currently available. Import /data in Settings or load a file here.",
+            });
+          }
+          return;
+        }
+        if (cancelled) return;
+        if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
         importText(payload.text, payload.sourceLabel || "Shared uploaded data", "uploaded");
       } catch {
         // Shared uploaded data is optional.
@@ -330,7 +340,7 @@ export default function MerchantLabApp() {
     return () => {
       cancelled = true;
     };
-  }, [workspace]);
+  }, [sharedDataVersion]);
 
   const selectedProfile = useMemo(() => {
     const profiles = workspace?.profiles ?? [];

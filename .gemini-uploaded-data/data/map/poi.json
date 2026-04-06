@@ -1,0 +1,116 @@
+{
+	"pois": [
+		{
+			"id": "S.S. Gavix",
+			"name": "S.S. Gavix",
+			"type": "ship",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": 0.0,
+				"y": 75000.0
+			}
+		},
+		{
+			"id": "Terran One",
+			"name": "Terran One",
+			"type": "ship2",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": 0.0,
+				"y": 68000.0
+			}
+		},
+		{
+			"id": "Venture",
+			"name": "Venture",
+			"type": "station",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": -50227.0,
+				"y": -100057.0
+			}
+		},
+		{
+			"id": "Crossroads",
+			"name": "Crossroads",
+			"type": "station",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": 0.0,
+				"y": 0.0
+			}
+		},
+		{
+			"id": "Ceres Outpost",
+			"name": "Ceres Outpost",
+			"type": "station",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": 105000.0,
+				"y": 47000.0
+			}
+		},
+		{
+			"id": "Earth",
+			"name": "Earth",
+			"type": "Planet",
+			"map": true,
+			"sector": {
+				"x": 0.0,
+				"y": 1.0
+			},
+			"pos": {
+				"x": -8059.0,
+				"y": 4401.0
+			}
+		},
+		{
+			"id": "Mars",
+			"name": "Mars",
+			"type": "Planet",
+			"map": true,
+			"sector": {
+				"x": 0,
+				"y": -1
+			},
+			"pos": {
+				"x": 16402.0,
+				"y": -17967.0
+			}
+		},
+		{
+			"id": "Venus",
+			"name": "Venus",
+			"type": "Planet",
+			"map": true,
+			"sector": {
+				"x": 1.0,
+				"y": 0.0
+			},
+			"pos": {
+				"x": -108565.0,
+				"y": -114689.0
+			}
+		}
+	]
+}

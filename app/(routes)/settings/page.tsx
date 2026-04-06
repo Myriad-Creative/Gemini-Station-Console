@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import MissionWorkspaceManager from "@components/mission-lab/MissionWorkspaceManager";
+import { publishSharedDataWorkspaceUpdate } from "@lib/shared-upload-client";
 
 type UploadedAssetsState = {
   active: boolean;
@@ -197,6 +198,7 @@ export default function SettingsPage() {
       }
 
       await loadSettings();
+      publishSharedDataWorkspaceUpdate();
       const summary = j.data;
       setStatus(`Imported shared data from folder upload. Found ${summary.fileCount} files and connected uploaded data for mods, items, mobs, abilities, comms, and merchant profiles where present.`);
     } catch (e: any) {
@@ -224,6 +226,7 @@ export default function SettingsPage() {
       }
 
       await loadSettings();
+      publishSharedDataWorkspaceUpdate();
       const summary = j.data;
       setStatus(`Imported shared data from ${file.name}. Found ${summary.fileCount} files and reloaded the console from the uploaded data source.`);
     } catch (e: any) {
@@ -244,6 +247,7 @@ export default function SettingsPage() {
       }
 
       await loadSettings();
+      publishSharedDataWorkspaceUpdate();
       setStatus("Cleared uploaded data. The console is now empty for non-mission datasets until a new shared data upload is added.");
     } catch (e: any) {
       setStatus(`Error: ${e?.message || e}`);

@@ -1,0 +1,16 @@
+{
+  "script": "res://scripts/system/AI/PirateLeaderAI.gd",
+  "ai_type": "PirateLeaderAI",
+  "aggro_range": 4500.0,
+  "weapon_range": 3500.0,
+  "main_abilities": [{ "id": 9 }],
+
+
+  "orbit_radius": 800,            
+  "orbit_direction": "random",       
+  "orbit_radial_gain": 0.25,         
+  "orbit_hysteresis_pct": 0.25,
+
+   "disengage_after": 30.0,
+  "leash_distance": 6000.0     
+}

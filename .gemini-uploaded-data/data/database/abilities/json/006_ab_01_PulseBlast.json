@@ -1,0 +1,25 @@
+{
+  "id": 6,
+  "script": "res://scripts/abilities/PulseBlast/ab_PulseBlast.gd",
+  "properties": {
+	"power_scaling": 1.0,
+	"threat_type": 0,
+	"threat_multiplier": 1.0,
+	"valid_targets": 1,
+	"facing_requirement": 0,
+	"name": "Pulse Blast I",
+	"description": "Fires an energy pulse that does 50% damage.",
+	"icon": "res://assets/abilities/icon_PulseBlast.png",
+	"min_range_type": 0,
+	"max_range_type": 1,
+	"is_gcd_locked": true,
+	"cooldown": 1.5,
+	"charge_time": 0.0,
+	"attack_range": 1500.0,
+	"power_percent": 0.50,
+	"base_damage": 0.0,
+	"energy_cost": 20.0,
+	"projectile_scene": "res://scenes/weapons/BlueBlastBolt.tscn",
+	"metadata/_custom_type_script": "uid://cydkl7b6aforg"
+  }
+}

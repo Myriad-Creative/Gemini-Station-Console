@@ -1,0 +1,527 @@
+{
+  "lathans_folly": {
+	"name": "Lathan's Folly",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"activation_radius": 20000,
+	"activation_radius_border": false,
+	"pos": [99033, -115568],
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 10000
+	},
+
+	"stages": [
+	  { "stage_id": "ast_btm", "pos": [0, 0] },
+	  { "stage_id": "ast_top", "pos": [0, 0] }
+	],
+
+	"mobs": [
+	  { "mob_id": "PirateFighter", "count": 6, "radius": 7500, "respawn_delay": 30, "pos": [0, 0], "angle_deg": 0 }
+	]
+  },
+
+ 
+"minor_nebula": {
+	"name": "Orion's Dream name thing",
+	"active" : false, 
+	"show_hud_on_enter": false,
+	"sector_id": [1, 0],
+	"activation_radius": 20000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 10000
+	},
+	"stages": [
+	  { "stage_id": "neb_minor_yellow_an", "pos": [0, 0] },
+	  { "stage_id": "neb_minor_yellow", "pos": [0, 0] }
+	],
+	"mobs": [
+	  { "mob_id": "PirateFighter", "count": 20, "radius": 13000, "respawn_delay": 300, "pos": [0, 0], "angle_deg": 0, "level_min": 1, "level_max": 2, "rank": "normal" }
+	]
+  }, 
+
+
+
+"10_crossroads": {
+	"name": "Crossroads Settlement",
+	"active" : true, 
+	"show_hud_on_enter": true,
+	"poi_map": true,
+	"poi_hidden": false,
+	"sector_id": [1, 0],
+	"pos": [0, 0],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  { "mob_id": "Crossroads", "count": 2, "radius": 0, "respawn_delay": 300, "pos": [0, 0], "angle_deg": 0, "level_min": 20, "level_max": 20, "rank": "normal" },
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [5000, -2500], "angle_deg": 0, "rank": "normal" },
+
+	]
+  }, 
+
+
+
+"10_terran_one": {
+	"name": "Terran One Front",
+	"active" : true,
+	 "sector_id": [1, 0],
+	"pos": [0,68000],
+	"activation_radius": 125000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 7500,
+	  "height": 7500
+	},
+	"stages": [],
+	"mobs": [
+	  { "mob_id": "terran_one", "count": 1, "radius": 0, "respawn_delay": 1, "pos": [0, 0], "angle_deg": -90, "rank": "elite" },
+	  { "mob_id": "PirateFighter", "count": 0, "level_min": 1, "level_max": 2, "radius": 10000, "respawn_delay": 60, "pos": [5000, -2500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "PirateFighter", "count": 5, "level_min": 1, "level_max": 1, "radius": 10000, "respawn_delay": 30, "pos": [0, 15000], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "PirateInterceptor", "count": 0, "level_min": 2, "level_max": 3, "radius": 10000, "respawn_delay": 60, "pos": [-5000, -2500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "PirateLeader", "count": 1, "level_min": 3, "level_max": 3, "radius": 0, "respawn_delay": 30, "pos": [-20000, 20000], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+"11_terran_one": {
+	"name": "Terran One Front",
+	"show_hud_on_enter": true,
+	"active" : true,
+	
+	 "sector_id": [1, -1],
+	"pos": [0,75000],
+	"activation_radius": 25000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 7500,
+	  "height": 7500
+	},
+	"stages": [],
+	"mobs": [
+	  { "mob_id": "terran_one", "count": 1, "radius": 0, "respawn_delay": 1, "pos": [0, 0], "angle_deg": -90, "rank": "elite" },
+	  { "mob_id": "PirateFighter", "count": 10, "level_min": 1, "level_max": 1, "radius": 10000, "respawn_delay": 60, "pos": [15000, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "PirateInterceptor", "count": 10, "level_min": 1, "level_max": 2, "radius": 10000, "respawn_delay": 60, "pos": [-20000, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "PirateLeader", "count": 1, "level_min": 3, "level_max": 3, "radius": 0, "respawn_delay": 30, "pos": [-20000, 20000], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+ 
+
+"11_sus_debris_field": {
+	"name": "Suspicious Debris Field",
+	"show_hud_on_enter": true,
+	"poi_map": true,
+	"poi_hidden": true,
+	"active" : true,
+	 "sector_id": [1, 0],
+	"pos": [0,-80000],
+	"activation_radius": 25000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 3500,
+	  "height": 3500
+	},
+	"stages": [
+			
+			  
+		
+	],
+	"mobs": [
+	  { "mob_id": "PirateLeader", "count": 0,  "radius": 0, "respawn_delay": 30, "pos": [-0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "ast-sus", "count": 1, "level_min": 100, "level_max": 100, "radius": 0, "respawn_delay": 30, "pos": [-0, 0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+"10_ceres": {
+	"name": "Ceres Mining Outpost",
+	"show_hud_on_enter": true,
+	"poi_map": true,
+	"poi_hidden": true,
+	"active" : true, 
+	"sector_id": [1, 0],
+	"pos": [105000, 47000],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  { "mob_id": "ceres_outpost", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0, 0], "angle_deg": -25, "rank": "normal" },
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-5000, -5000], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+
+"10_venture": {
+	"name": "Venture Settlement",
+	"active" : true, 
+	"poi_map": true,
+	"poi_hidden": true,
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-50227, -100057],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  { "mob_id": "Venture", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0, 0], "angle_deg": 15, "rank": "normal" },
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-5000, -5000], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "earth", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 10000], "angle_deg": 0, "rank": "normal" },
+	  
+	  
+	]
+  },
+
+
+
+"11_earth": {
+	"name": "Earth",
+	"active" : true, 
+	"poi_map": true,
+	"poi_hidden": false,
+	"show_hud_on_enter": true,
+	"sector_id": [0, 1],
+	"pos": [-8059, 4401],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-5000, -5000], "angle_deg": -45, "rank": "normal" },
+	  { "mob_id": "earth", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "defender", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  
+	  
+	]
+  },
+
+
+
+"-10_gem": {
+	"name": "Gemini Station",
+	"active" : true, 
+	"poi_map": true,
+	"poi_hidden": false,
+	"show_hud_on_enter": true,
+	"sector_id": [-1, 0],
+	"pos": [-49833, 709],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-5000, -5000], "angle_deg": -45, "rank": "normal" },
+	  { "mob_id": "gem", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "defender", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "spike", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  
+	  
+	]
+  },
+
+
+
+"0-1_mars": {
+	"name": "Mars",
+	"active" : true,
+	"poi_map": true,
+	"poi_hidden": false, 
+	"show_hud_on_enter": true,
+	"sector_id": [0, -1],
+	"pos": [16402,-17967],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  
+	  { "mob_id": "recker_depot", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-5000, -5000], "angle_deg": -45, "rank": "normal" },
+	  { "mob_id": "mars", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [-7500, -7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "turret_utf", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [7500, 7500], "angle_deg": 0, "rank": "normal" },
+	  { "mob_id": "spike", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, -10000], "angle_deg": 0, "rank": "normal" },
+	  
+	  
+	]
+  }, 
+
+
+
+"11_venus": {
+	"name": "Venus",
+	"active" : true, 
+	"poi_map": true,
+	"poi_hidden": false,
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-108565, -114689],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 15000,
+	  "height": 15000
+	},
+	"stages": [],
+	"mobs": [
+	  
+	  
+	  { "mob_id": "venus", "count": 1, "radius": 0, "respawn_delay": 0, "pos": [0, 0], "angle_deg": 0, "rank": "normal" },
+	  
+	  
+	  
+	]
+  }, 
+
+
+"10_tutorial": {
+	"name": "The Cresent Training & Salvage Outpost",
+	"poi_map": true,
+	"poi_hidden": false,
+	"poi_label": "Training & Salvage Outpost",
+	"active" : true, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [1707, 117000],
+	"activation_radius": 75000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 17500,
+	  "height": 17500
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "tut", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+  
+
+	]
+  }, 
+
+
+"10_hab_farm": {
+	"name": "Johnson Farmstead",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 5000,
+	  "height": 5000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_farm", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+
+"10_longshot": {
+	"name": "Longshot Crash Site",
+	"active" : true, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [99033, -115568],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 7500,
+	  "height": 7500
+	},
+	"stages": [
+	  { "stage_id": "dust_minor", "pos": [0, 0] },
+	  { "stage_id": "ast_minor2", "pos": [0, 0] },
+	  { "stage_id": "smoke_yellow_an", "pos": [0, 0] },
+	  { "stage_id": "smoke_orange_an_5", "pos": [0, 0] },
+	  { "stage_id": "ast_btm", "pos": [0, 0] }		
+	],
+	"mobs": [
+	{ "mob_id": "Longshot", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0, 0], "angle_deg": 15, "rank": "normal" },
+	{ "mob_id": "ast-709", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [-2500, -7500], "angle_deg": 15, "rank": "normal" }
+	]
+  }, 
+
+
+
+"test_zone": {
+	"name": "The Testing Zone, YO",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"activation_radius": 5000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 500,
+	  "height": 500
+	},
+	"stages": [{ "stage_id": "play", "pos": [0, 0] },],
+
+	"mobs": [
+	  {
+  "mob_id": "PirateFighter",
+  "count": 1,
+  "radius": 1,
+  "respawn_delay": 1,
+  "pos": [0, 0],
+  "angle_deg": 0,
+  "level_min": 1,
+  "level_max": 2,
+  "rank": "normal"
+}
+	]
+  },
+
+
+"10_hab_factory": {
+	"name": "Factory Habitat",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 5000,
+	  "height": 5000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_venus_23_factory", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+
+"10_hab_factory_alpha": {
+	"name": "Factory Hab Alpha",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 5000,
+	  "height": 5000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_venus_23_factory_alpha", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+"10_hab_factory_beta": {
+	"name": "Factory Hab Beta",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 5000,
+	  "height": 5000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_venus_23_factory_beta", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+"10_hab_factory_gamma": {
+	"name": "Factory Hab Gamma",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 5000,
+	  "height": 5000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_venus_23_factory_gamma", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+"10_hab_shattered": {
+	"name": "Destroyed Hab",
+	"active" : false, 
+	"show_hud_on_enter": true,
+	"sector_id": [1, 0],
+	"pos": [-683, 103464],
+	"activation_radius": 50000,
+	"activation_radius_border": false,
+	"bounds": {
+	  "shape": "ellipse",
+	  "width": 10000,
+	  "height": 10000
+	},
+	"stages": [],
+	"mobs": [
+	{ "mob_id": "hab_shattered", "count": 1, "radius": 0, "respawn_delay": 10, "pos": [0,0], "angle_deg": 0, "rank": "normal" }
+	]
+  }, 
+
+
+
+
+
+}

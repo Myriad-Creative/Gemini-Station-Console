@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "entries": [
+	{
+	  "id": "intro_1",
+	  "title": "Welcome to Gemini Station!",
+	  "image": "res://assets/tutorial/tutorial_intro_1.png",
+	  "body": "Gemini Station is a story-driven, open-world space exploration, trading, and combat game. \n\nThe choices you make and the way you play will affect everything from the gear you acquire, the abilities you have access to, faction relationships, and so much more.\n\nBut every great adventure begins with a first step. And before you can become the great pilot you’re destined to be, you need to know how to fly... 
+
+",	  "category": "Getting Started",
+	  "tags": ["movement", "controls", "basics"],
+	  "order": 1,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "intro_2",
+	  "title": "Ship Movement",
+	  "image": "res://assets/tutorial/tutorial_intro_2.png",
+	  "body": "Your ship's movement is handled by the WASD keys, similar to most other MMORPGs. \n\nW - Fly Forward\nA - Turn Left\nS - Fly in Reverse\nD - Turn Right\n\nAdditionally, the Q and E keys will make your ship strafe left or right. Quickly double tapping 'W' will engage your auto pilot.\n\n TIP: If you remain in motion for more than 5 seconds, your ship will receive the 'In Motion' buff.",	  
+  	  "category": "Getting Started",
+	  "tags": ["movement", "controls", "basics"],
+	  "order": 2,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "intro_3",
+	  "title": "Camera Movement",
+	  "image": "res://assets/tutorial/tutorial_intro_3.png",
+	  "body": "Your camera is one of your most valuable assets. The default camera position places your ship in the center of the screen. You can zoom in or out using your mouse wheel to change your zoom level. \n\n If you left click and drag your mouse, the camera will rotate around your ship. \n\nAdditionally, if you right click and drag your mouse, it will change the position of the camera, allowing you to look around to areas that are outside of your sensor range (as long as the ship is still in-frame).\n\nTIP: Double right click to return the camera to its default, center position.",	  
+  	  "category": "Getting Started",
+	  "tags": ["movement", "controls", "basics"],
+	  "order": 3,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "intro_4",
+	  "title": "Next steps...",
+	  "image": "res://assets/tutorial/tutorial_intro_4.png",
+	  "body": "Just ahead you'll find a set of cargo bay door with green status lights. Green lights indicate an unlocked status. Proceed to the firing range on the other side of the doors.\n\nTIP: Doors with green status lights are unlocked, red status lights indicate locked while yellow indicate locked but require a pass card to enter.",	  
+  	  "category": "Getting Started",
+	  "tags": ["exclude"],
+	  "order": 4,
+	  "show_once": false,
+	  "pause_game": false
+	},
+	{
+	  "id": "combat_1",
+	  "title": "Combat Basics",
+	  "image": "res://assets/tutorial/tutorial_intro_5.png",
+	  "body": "Space is dangerous. And no matter how you play, odds are you'll eventually find yourself in a firefight. As the saying goes: the best defense is a good offense. \n\nAll of your ship's abilities are tied to ENERGY and COOLDOWNS. You spend energy to use an ability, then wait for your global cooldown timer to expire before you can act again. In addition to the global cooldown (GCD), each ability has its own cooldown—many of which are longer than the GCD, requiring you to time your ability usage.\n\nTIP: Every ship comes equiped with an auto-cannon. Auto Cannons cost zero energy to fire and do damage equal to 25% of your ship's power.",
+	  "category": "Combat",
+	  "tags": ["combat", "weapons"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "combat_2",
+	  "title": "Shoot First",
+	  "image": "res://assets/tutorial/tutorial_intro_6.png",
+	  "body": "Test out your ship's Auto Cannon ability on the targeting drone at the end of the firing range. Don't worry—it won't shoot back.",
+	  "category": "Combat",
+	  "tags": ["combat", "exclude"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "loot_1",
+	  "title": "Loot!",
+	  "image": "res://assets/tutorial/tutorial_intro_7.png",
+	  "body": "A destroyed target will drop loot. Typically you'll receive a loot box and credits. Credits are the currency you'll use with vendors. Loot boxes can contain everything from trade items, mission-realted items, and gear for your ship.\n\nYou can open a lootbox by left clicking it (if you're close enough) or by flying into it. \n\nTIP: Generally, the type of targets you destroy will give you gear for that type. (i.e. Fighters give combat mods, Traders give trading mods, etc.)",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "loot_2",
+	  "title": "Mods",
+	  "image": "res://assets/tutorial/tutorial_intro_8.png",
+	  "body": "Ship modifications, or mods, are interchangable gear for your ship—they are the building blocks that will define how you play and your ship's role. Mods come with various stats, and in many cases, abilities. Once a mod with an ability has been installed, that ability will appear in your SKILLS menu.\n\nYou can install a mod by opening your SHIP and CARGO menus then left click on the mod you want to install. Once that mod is selected you can click on the available mod slot. Keep in mind each mod is tied to a set type and only mods of that type can be installed in a matching mod slot.\n\nTIP: Uninstalling a mod will remove that ability from your active skill list! So build your mod loadout around abilities and stats that match your playstyle.",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "open_world_1",
+	  "title": "Mods",
+	  "image": "res://assets/tutorial/tutorial_open_world_1.png",
+	  "body": "You've just taken your first step into a larger world. As an open world game, the possibilities are limited by your imagination\n\nAll of these tips are stored in your CODEX and can be accessed by clicking on the COG menu in the top right corner of the screen.\n\nTIP: Every NPC ship you encounter in space is traveling to a specific destination—following ships or calculating their trajectory is a good way to find new locations.",
+	  "category": "Combat",
+	  "tags": ["combat", "exclude"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "reckers_1",
+	  "title": "The Reckers",
+	  "image": "res://assets/tutorial/tutorial_reckers_1.png",
+	  "body": "The Gemini Station Reclamation Corps—commonly referred to as simply, 'Reckers' are responsible for handling all salvage operations in the system.\n\nIf you find yourself on the losing end of a fight, a Reckers ship will tow you back to one of their depots where you they will—for a fee—repair your ship's armor.\n\nAdditionally, you can visit a record depot on your own and pay for repairs.\n\nTIP: Your ship's armor will not regenerate on its own. You must visit a Recker depot to restore your armor hit points.",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "missions_1",
+	  "title": "Missions",
+	  "image": "res://assets/tutorial/tutorial_missions_1.png",
+	  "body": "Throughout your travels, you'll find countless ships and stations that require assistance—offering you missions to complete. Missions will range from delivering goods to eliminating a threat. Rewards will include credits, experience, mods or a combination of three.\n\nTo view a station or ship's available missions, right click on the target and select HAIL from the INTERACTION menu.\n\nTo view your current active missions, click on the LOG button in your interface.\n\nTIP: In many cases the faction giving the mission as well as the objectives will give you an idea of what kind of rewards you can expect.",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "scanning_1",
+	  "title": "Scanning",
+	  "image": "res://assets/tutorial/tutorial_scanning.png",
+	  "body": "Scanning is one most powerful non-combat abilities. Scanning a target will give a detailed description of the target, insights into its activity and role in the system. \n\nThe default scanning range is 500M. However, your scanning range can be extended by increasing your ship's SENSORS skill.\n\nTo scan a target, right click on it and select the SCAN TARGET option. \n\n\nTIP: Classified data can be revealed by increasing your ship's SENSOR stats.",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "hostiles_1",
+	  "title": "Hostiles",
+	  "image": "res://assets/tutorial/tutorial_open_world_1.png",
+	  "body": "Hostiles will interact with you in two ways and their distinction is color-coded. Yellow-tagged mobs will ignore you unless you attack them. Red-tagged mobs will attack you as soon as you enter their sensor range. \n\nTIP: An aggravated mob will not indefinitely chase you—eventually they will give up.",
+	  "category": "Combat",
+	  "tags": ["combat"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "vendor_1",
+	  "title": "Vendors",
+	  "image": "res://assets/tutorial/tutorial_vendor_1.png",
+	  "body": "NPCs that offer trade services will have the credit icon above them. Vendors allow you to buy items, mods, as well as sell unwanted items.\nVendor types tend to have similar ship design as well—Supply Ships have similar design across factions. \n\nTIP: Vendors have unique sell lists so make sure to check each one you encounter to see if they offer anything you need.",
+	  "category": "Economy",
+	  "tags": ["vendors", "economy"],
+	  "order": 10,
+	  "show_once": false,
+	  "pause_game": false
+	},{
+	  "id": "mods_1",
+	  "title": "Mod Installation",
+	  "image": "res://assets/tutorial/tutorial_vendor_1.png",
+	  "body": "Mods are the building blocks of your specialization. To install a mod, open your SHIP MENU and CARGO HOLD. Left click on a mod, then click an available slot to install it. \n\nRight click on an installed mod to uninstall it and return it to your cargo hold.\n\nYou can move a mod to another available slot by left clicking on it and clicking on the open (or occupied) slot. If the slot is occupied, it will switch locations.  ",
+	  "category": "Mods",
+	  "tags": ["mods"],
+	  "order": 1,
+	  "show_once": false,
+	  "pause_game": false
+	}
+  ]
+}

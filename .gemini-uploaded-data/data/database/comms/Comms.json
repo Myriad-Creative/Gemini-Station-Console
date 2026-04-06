@@ -1,0 +1,73 @@
+{
+  "ava_ray": {
+	"name": "Ava Ray",
+	"portrait": "res://assets/comms/ava.png",
+	"greeting": "Well?",
+	"dialog": ["I'm glad you're here. ", "There's a lot going on that we need to talk about. "]
+  },  "lt_ava": {
+	"name": "Lieutenant Ray",
+	"portrait": "res://assets/comms/lt_ava.png",
+	"greeting": "Well?",
+	"dialog": [""]
+  },
+  "stan": {
+	"name": "Stan",
+	"portrait": "res://assets/comms/brennen.png",
+	"greeting": "Space...it's pretty big, no?",
+	
+  },
+  "cpt_larrabee": {
+	"name": "Cpt. Larrabee",
+	"portrait": "res://assets/comms/cpt_larrabee.png",
+	"greeting": "[nods once]",
+	
+  },
+  "cpt_larue": {
+	"name": "Cpt. Larue",
+	"portrait": "res://assets/comms/cpt_larue.png",
+	"greeting": "[nods once]",
+	
+  },  
+
+"jerry_leroy": {
+	"name": "Cpt. Leroy",
+	"portrait": "res://assets/comms/cpt_jerry_leroy.png",
+	"greeting": "[nods]",
+	
+  },
+"ellie_johnson": {
+	"name": "Ellie Johnson",
+	"portrait": "res://assets/comms/ellie_johnson.png",
+	"greeting": "[waves]",
+	
+  },
+
+  "lt_hackins": {
+	"name": "Lieutenant Hackins",
+	"portrait": "res://assets/comms/lt_hackins.png",
+	"greeting": "[nods once]",
+	
+  },  "kaori_shin": {
+	"name": "Kaori Shin",
+	"portrait": "res://assets/comms/kaori_shin.png",
+	"greeting": "Hello.",
+	
+  
+
+},  "pilot_gem": {
+	"name": "Pilot",
+	"portrait": "res://assets/comms/pilot_gem.png",
+	"greeting": "Greetings, fellow pilot.",
+	
+  },
+
+
+
+
+  "suros": {
+	"name": "Suros",
+	"portrait": "res://assets/comms/suros.png",
+	"greeting": "Huh? What do you want?",
+	"dialog": ["Yeah, its me, Suros, Hero. They're going to build me a statue or whatever, not that I care, but they're going to. ", "Oh, you don't think so? We'll see about that. "]
+  }
+}

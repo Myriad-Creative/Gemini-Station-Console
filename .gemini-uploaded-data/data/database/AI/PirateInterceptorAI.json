@@ -1,0 +1,16 @@
+{
+  "script": "res://scripts/system/AI/PatrolBasicAI.gd",
+  "ai_type": "PatrolBasicAI",
+  "aggro_range": 4000.0,
+  "weapon_range": 2000.0,
+  "main_abilities": [{ "id": 4 }],
+
+
+  "orbit_radius": 1.1,            
+  "orbit_direction": "random",       
+  "orbit_radial_gain": 0.25,         
+  "orbit_hysteresis_pct": 0.25,
+
+   "disengage_after": 20.0,
+  "leash_distance": 6000.0     
+}

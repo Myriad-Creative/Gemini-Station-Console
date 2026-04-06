@@ -4,6 +4,7 @@ import ChartBar from "@components/ChartBar";
 import HeatmapBands from "@components/HeatmapBands";
 import { Card, CardTitle, Stat } from "@components/Cards";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type Summary = {
   lastLoaded?: string;
@@ -20,6 +21,7 @@ type Summary = {
 
 export default function DashboardPage() {
   const sessionId = useMissionLabSessionId();
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [data, setData] = useState<Summary | null>(null);
   useEffect(() => {
     if (!sessionId) return;
@@ -45,7 +47,7 @@ export default function DashboardPage() {
         } as any);
       }
     })();
-  }, [sessionId]);
+  }, [sessionId, sharedDataVersion]);
   if (!data) return <div>Loading…</div>;
 
   return (

@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3 uid="uid://drprowcejon5t"]
+
+[ext_resource type="Script" uid="uid://dmgg6pn2m5wpk" path="res://data/database/items/ItemTableViewer.gd" id="1_oably"]
+
+[node name="ItemTableViewer" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_oably")
+
+[node name="Tree" type="Tree" parent="."]
+layout_mode = 0
+offset_right = 3825.0
+offset_bottom = 2053.0
+theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/title_button_font_size = 30

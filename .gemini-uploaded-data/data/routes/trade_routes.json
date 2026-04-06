@@ -1,0 +1,83 @@
+{
+	"version": 1,
+	"routes": [
+		{
+			"id": "alpha_corridor",
+			"name": "Alpha Corridor",
+			"sector": { "x": 1, "y": 0 },
+			"width": 2500,
+			"speed_multiplier": 2.0,
+			"color": "#2F4558",
+			"border_color": "#B0ECFE",
+			"opacity": 0.05,
+			"border_px": 0,
+			"endpoints": {
+				"a": { "x": 0, "y": 66000, "name": "Terran One" },
+				"b": { "x": -2500, "y": 5000, "name": "Crossroads Settlement" }
+			},
+			"points": [],
+			"smoothing": { "tension": 0.40 },
+			"s_curve": { "amplitude_factor": 0.30 }
+		},
+		{
+			"id": "ceres_corridor",
+			"name": "Ceres Corridor",
+			"sector": { "x": 1, "y": 0 },
+			"width": 2500,
+			"speed_multiplier": 2.0,
+			"color": "#9b2b00",
+			"border_color": "#B0ECFE",
+			"opacity": 0.05,
+			"border_px": 0,
+			"endpoints": {
+				"a": { "x": 2500, "y": 5000, "name": "Crossroads Settlement" },
+				"b": { "x": 105000, "y": 42000, "name": "Ceres Outpost" }
+			},
+			"points": [
+				{ "x": 78000, "y": -10000 }
+			],
+			"smoothing": { "tension": 0.15 }
+		},
+		{
+			"id": "venture_corridor",
+			"name": "Venture Corridor",
+			"sector": { "x": 1, "y": 0 },
+			"width": 2500,
+			"speed_multiplier": 2.0,
+			"color": "#9b2b00",
+			"border_color": "#B0ECFE",
+			"opacity": 0.05,
+			"border_px": 0,
+			"endpoints": {
+				"a": { "x": -45007, "y": -100057, "name": "Venture" },
+				"b": { "x": 2500, "y": -5000, "name": "Crossroads" }
+			},
+			"points": [
+				{"x": 50000, "y": -90000},
+				{ "x": 40000, "y": -50000 }
+				
+			],
+			"smoothing": { "tension": 0.05 }
+		},
+		{
+			"id": "martian_cooridor",
+			"name": "Martian Corridor",
+			"sector": { "x": 0, "y": -1 },
+			"width": 2500,
+			"speed_multiplier": 1.5,
+			"color": "#9b2b00",
+			"border_color": "#B0ECFE",
+			"opacity": 0.05,
+			"border_px": 10,
+			"endpoints": {
+				"a": { "x": -6367, "y": -17000, "name": "Mars" },
+				"b": { "x": -124999, "y": -17000, "name": "Gem?" }
+			},
+			"points": [
+				
+				
+			],
+			"smoothing": { "tension": 100.0 }
+		}
+	]
+}

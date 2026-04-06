@@ -1,0 +1,23 @@
+{
+  "id": 7,
+  "script": "res://scripts/abilities/SystemWorm/ab_SystemWorm.gd",
+  "properties": {
+	"threat_type": 1,
+	"threat_multiplier": 1.0,
+	"valid_targets": 1,
+	"facing_requirement": 0,
+	"name": "System Worm",
+	"description": "Deals 10% power damage to target every 3 sec for 16 sec ",
+	"icon": "res://assets/abilities/icon_SystemWorm.png",
+	"min_range_type": 0,
+	"max_range_type": 2,
+	"is_gcd_locked": true,
+	"cooldown": 1.5,
+	"charge_time": 2.0,
+	"range": 1500.0,
+	"power_percent": 1,
+	"base_damage": 0.0,
+	"energy_cost": 5.0,
+	"metadata/_custom_type_script": "uid://lejy3qjs3esv"
+  }
+}

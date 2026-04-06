@@ -4,6 +4,7 @@ import type { InputHTMLAttributes } from "react";
 import { KeyboardEvent, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import type { ValidationMessage } from "@lib/authoring";
 import type { NormalizedMission } from "@lib/mission-lab/types";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import {
   MISSION_MODES,
   MISSION_OBJECTIVE_TYPES,
@@ -71,6 +72,7 @@ export default function MissionWorkshop({
   consoleMissionCount: number;
   referenceMissions?: NormalizedMission[];
 }) {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [factionFilter, setFactionFilter] = useState(FILTER_ALL);
@@ -120,7 +122,7 @@ export default function MissionWorkshop({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sharedDataVersion]);
 
   const itemOptions = useMemo(() => items.map((item) => itemToLookupOption(item)), [items]);
   const modOptions = useMemo(() => mods.map((mod) => modToLookupOption(mod)), [mods]);
