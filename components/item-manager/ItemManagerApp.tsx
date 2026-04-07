@@ -2,8 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { RARITY_COLOR } from "@lib/constants";
+import { useEffect, useMemo, useState } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { ItemDraft, ItemManagerWorkspace, ItemValidationIssue } from "@lib/item-manager/types";
 import {
@@ -13,6 +12,10 @@ import {
   deleteItemDraftAt,
   duplicateItemIdMap,
   importItemWorkspace,
+  ITEM_RARITY_COLOR,
+  ITEM_RARITY_LABEL,
+  ITEM_RARITY_OPTIONS,
+  ITEM_TYPE_OPTIONS,
   insertItemDraftAfter,
   normalizeComparableItemId,
   resolvedItemIconPath,
@@ -96,26 +99,14 @@ function Section({
   );
 }
 
-function mergeStatusMessage(existing: string, message: string) {
-  return existing ? `${existing} ${message}` : message;
-}
-
 export default function ItemManagerApp() {
-  const workspaceRef = useRef<ItemManagerWorkspace | null>(null);
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<ItemManagerWorkspace | null>(null);
   const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [rarityFilter, setRarityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
-    tone: "neutral",
-    message: "Items Manager reads items.json directly from the active local game root in Settings.",
-  });
-
-  useEffect(() => {
-    workspaceRef.current = workspace;
-  }, [workspace]);
+  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
 
   const validation = useMemo(() => validateItemDrafts(workspace?.items ?? []), [workspace]);
   const validationByItemKey = useMemo(() => {
@@ -129,16 +120,6 @@ export default function ItemManagerApp() {
   }, [validation]);
   const duplicateIds = useMemo(() => duplicateItemIdMap(workspace?.items ?? []), [workspace]);
   const summary = useMemo(() => summarizeItemWorkspace(workspace, validation), [workspace, validation]);
-
-  const rarityOptions = useMemo(() => {
-    return Array.from(new Set((workspace?.items ?? []).map((item) => item.rarity.trim()).filter(Boolean))).sort((left, right) => Number(left) - Number(right));
-  }, [workspace]);
-
-  const typeOptions = useMemo(() => {
-    return Array.from(new Set((workspace?.items ?? []).map((item) => item.type.trim()).filter(Boolean))).sort((left, right) =>
-      left.localeCompare(right),
-    );
-  }, [workspace]);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -176,12 +157,12 @@ export default function ItemManagerApp() {
         const response = await fetch("/api/settings/data/source?kind=items");
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok || !payload.text) {
-          if (!cancelled && workspaceRef.current?.sourceType === "local") {
+          if (!cancelled) {
             setWorkspace(null);
             setSelectedItemKey(null);
             setStatus({
-              tone: "neutral",
-              message: "No items.json was found under the active local game root. Set a valid Gemini Station folder in Settings first.",
+              tone: "error",
+              message: "No items.json was found. Set a valid Gemini Station folder in Settings.",
             });
           }
           return;
@@ -192,19 +173,14 @@ export default function ItemManagerApp() {
         const result = importItemWorkspace(payload.text, payload.sourceLabel || "Local game source", "local");
         setWorkspace(result.workspace);
         setSelectedItemKey(result.workspace.items[0]?.key ?? null);
-        setStatus({
-          tone: "success",
-          message: result.warnings.length
-            ? mergeStatusMessage("Loaded items.json from the active local game root.", result.warnings.join(" "))
-            : "Loaded items.json from the active local game root.",
-        });
+        setStatus({ tone: "neutral", message: "" });
       } catch {
         if (cancelled) return;
         setWorkspace(null);
         setSelectedItemKey(null);
         setStatus({
           tone: "error",
-          message: "Items Manager could not read items.json from the current local game root.",
+          message: "Items Manager could not read items.json.",
         });
       }
     }
@@ -228,12 +204,6 @@ export default function ItemManagerApp() {
       : [];
   const fullJson = useMemo(() => (workspace ? stringifyItemWorkspace(workspace) : "[]"), [workspace]);
   const selectedJson = useMemo(() => (selectedItem ? stringifySingleItem(selectedItem) : ""), [selectedItem]);
-  const workspaceSourceLabel = useMemo(() => {
-    if (!workspace) return "";
-    if (workspace.sourceType === "blank") return "Manual workspace";
-    return `${workspace.sourceLabel ?? "Local game source"} · ${workspace.strictJsonValid ? "strict JSON" : "tolerant JSON"}`;
-  }, [workspace]);
-
   function updateSelectedItem(updater: (current: ItemDraft) => ItemDraft) {
     if (!workspace || !selectedItem) return;
     setWorkspace(updateItemDraftAt(workspace, selectedItem.key, updater));
@@ -294,27 +264,36 @@ export default function ItemManagerApp() {
   }
 
   const previewIcon = buildIconSrc(selectedItem ? resolvedItemIconPath(selectedItem.icon) : "icon_lootbox.png", selectedItem?.id || "item", selectedItem?.name || "Item");
-  const titleColor = selectedItem ? RARITY_COLOR[Number(selectedItem.rarity)] || "#FFFFFF" : "#FFFFFF";
+  const titleColor = selectedItem ? ITEM_RARITY_COLOR[selectedItem.rarity] || "#FFFFFF" : "#FFFFFF";
 
   return (
     <div className="space-y-6">
+      {status.tone !== "neutral" && status.message ? (
+        <div
+          className={`card text-sm ${
+            status.tone === "error" ? "text-red-200" : status.tone === "success" ? "text-emerald-100" : "text-white/70"
+          }`}
+        >
+          {status.message}
+        </div>
+      ) : null}
+
       {!workspace ? (
         <>
           <div className="card space-y-4">
             <div className="text-xl font-semibold text-white">What Items Manager Includes</div>
             <div className="space-y-3 text-sm text-white/70">
               <div>Edit, create, clone, and delete item drafts while preserving unmodeled runtime JSON.</div>
-              <div>Set core authoring fields like item ID, name, rarity, image, and type with live duplicate-ID validation.</div>
+              <div>Set core authoring fields like item ID, name, rarity, image, type, size, prices, and stack rules with live duplicate-ID validation.</div>
               <div>Preview item icons with the standard lootbox fallback whenever the icon field is blank.</div>
               <div>Download the updated items JSON, copy the whole file JSON, or copy only the current item entry.</div>
             </div>
           </div>
 
           <div className="card space-y-4">
-            <div className="text-xl font-semibold text-white">Local Game Root Required</div>
+            <div className="text-xl font-semibold text-white">No Item Data Loaded</div>
             <div className="text-sm leading-6 text-white/65">
-              Items Manager reads <code>data/database/items/items.json</code> directly from the active Gemini Station local game root.
-              Set that folder in Settings and this editor will auto-load the runtime item data.
+              Set your Gemini Station folder in Settings and this editor will load the current item data automatically.
             </div>
             <div>
               <Link href="/settings" className="btn">
@@ -332,13 +311,15 @@ export default function ItemManagerApp() {
             <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-300" : "text-white"} />
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1.1fr)_380px]">
             <aside className="space-y-6">
               <div className="card h-fit space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xl font-semibold text-white">Item Library</div>
-                    <div className="mt-1 text-sm text-white/55">{workspaceSourceLabel}</div>
+                    <div className="mt-1 text-sm text-white/55">
+                      {filteredItems.length} filtered of {workspace.items.length}
+                    </div>
                   </div>
                   <button className="btn shrink-0" onClick={addBlankItem}>
                     New Item
@@ -360,9 +341,9 @@ export default function ItemManagerApp() {
                     <div className="label">Rarity</div>
                     <select className="select mt-1 w-full" value={rarityFilter} onChange={(event) => setRarityFilter(event.target.value)}>
                       <option value="">All rarities</option>
-                      {rarityOptions.map((value) => (
-                        <option key={value} value={value}>
-                          {value}
+                      {ITEM_RARITY_OPTIONS.map((entry) => (
+                        <option key={entry.value} value={entry.value}>
+                          {entry.label}
                         </option>
                       ))}
                     </select>
@@ -372,7 +353,7 @@ export default function ItemManagerApp() {
                     <div className="label">Type</div>
                     <select className="select mt-1 w-full" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
                       <option value="">All types</option>
-                      {typeOptions.map((value) => (
+                      {ITEM_TYPE_OPTIONS.map((value) => (
                         <option key={value} value={value}>
                           {value}
                         </option>
@@ -410,7 +391,7 @@ export default function ItemManagerApp() {
                               <div className="truncate text-base font-semibold text-white">{item.name || "Unnamed Item"}</div>
                               <div className="mt-1 truncate font-mono text-xs text-white/55">{item.id || "missing-id"}</div>
                               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
-                                <span className="rounded bg-white/5 px-2 py-1">Rarity {item.rarity || "?"}</span>
+                                <span className="rounded bg-white/5 px-2 py-1">{ITEM_RARITY_LABEL[item.rarity] || `Rarity ${item.rarity || "?"}`}</span>
                                 {item.type.trim() ? <span className="rounded bg-white/5 px-2 py-1">{item.type}</span> : null}
                                 {isDuplicate ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Duplicate ID</span> : null}
                                 {hasErrors ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Errors</span> : null}
@@ -447,7 +428,7 @@ export default function ItemManagerApp() {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
-                      The selected item currently passes validation.
+                      no issues
                     </div>
                   )
                 ) : (
@@ -463,7 +444,7 @@ export default function ItemManagerApp() {
                 <>
                   <Section
                     title="Item Editor"
-                    description="Edit the item fields you care about directly and preserve the rest of the runtime shape through Additional Runtime JSON."
+                    description="Edit the item fields directly and preserve only the remaining unmodeled runtime properties through Additional Runtime JSON."
                   >
                     <div className="flex flex-wrap gap-2">
                       <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={cloneSelectedItem}>
@@ -494,17 +475,23 @@ export default function ItemManagerApp() {
                       </div>
                       <div>
                         <div className="label">Rarity</div>
-                        <input
-                          className="input mt-1"
-                          value={selectedItem.rarity}
-                          inputMode="numeric"
-                          placeholder="1"
-                          onChange={(event) => updateSelectedItem((current) => ({ ...current, rarity: event.target.value }))}
-                        />
+                        <select className="select mt-1 w-full" value={selectedItem.rarity} onChange={(event) => updateSelectedItem((current) => ({ ...current, rarity: event.target.value }))}>
+                          {ITEM_RARITY_OPTIONS.map((entry) => (
+                            <option key={entry.value} value={entry.value}>
+                              {entry.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <div className="label">Type</div>
-                        <input className="input mt-1" value={selectedItem.type} onChange={(event) => updateSelectedItem((current) => ({ ...current, type: event.target.value }))} />
+                        <select className="select mt-1 w-full" value={selectedItem.type} onChange={(event) => updateSelectedItem((current) => ({ ...current, type: event.target.value }))}>
+                          {ITEM_TYPE_OPTIONS.map((entry) => (
+                            <option key={entry} value={entry}>
+                              {entry}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="md:col-span-2">
                         <div className="label">Image</div>
@@ -524,32 +511,70 @@ export default function ItemManagerApp() {
                           onChange={(event) => updateSelectedItem((current) => ({ ...current, description: event.target.value }))}
                         />
                       </div>
+                      <div>
+                        <div className="label">Size</div>
+                        <input className="input mt-1" value={selectedItem.size} inputMode="numeric" onChange={(event) => updateSelectedItem((current) => ({ ...current, size: event.target.value }))} />
+                      </div>
+                      <div>
+                        <div className="label">Stack Size</div>
+                        <input className="input mt-1" value={selectedItem.maxStack} inputMode="numeric" onChange={(event) => updateSelectedItem((current) => ({ ...current, maxStack: event.target.value }))} />
+                      </div>
+                      <div>
+                        <div className="label">Sell Price</div>
+                        <input className="input mt-1" value={selectedItem.sellPrice} inputMode="numeric" onChange={(event) => updateSelectedItem((current) => ({ ...current, sellPrice: event.target.value }))} />
+                      </div>
+                      <div>
+                        <div className="label">Buy Price</div>
+                        <input className="input mt-1" value={selectedItem.buyPrice} inputMode="numeric" onChange={(event) => updateSelectedItem((current) => ({ ...current, buyPrice: event.target.value }))} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
+                          <input type="checkbox" checked={selectedItem.stackable} onChange={(event) => updateSelectedItem((current) => ({ ...current, stackable: event.target.checked }))} />
+                          Stackable
+                        </label>
+                      </div>
                       <div className="md:col-span-2">
                         <div className="label">Additional Runtime JSON</div>
                         <textarea
                           className="input mt-1 min-h-52 font-mono text-sm"
                           value={selectedItem.extraJson}
-                          placeholder='{"sell_price": 10, "stackable": true}'
+                          placeholder='{"custom_property": true}'
                           onChange={(event) => updateSelectedItem((current) => ({ ...current, extraJson: event.target.value }))}
                         />
                       </div>
                     </div>
                   </Section>
+                </>
+              ) : (
+                <Section title="No Item Selected" description="Create a new item or pick one from the left sidebar to start editing.">
+                  <button className="btn" onClick={addBlankItem}>
+                    New Item
+                  </button>
+                </Section>
+              )}
+            </div>
 
-                  <Section title="Preview" description="Preview the current icon and core item fields with the same lootbox fallback used elsewhere in the console.">
+            <aside className="space-y-6">
+              {selectedItem ? (
+                <>
+                  <Section title="Preview">
                     <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                      <div className="flex flex-col gap-5 md:flex-row md:items-start">
+                      <div className="flex items-start gap-4">
                         <img src={previewIcon} alt="" className="h-24 w-24 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
                         <div className="min-w-0 flex-1">
-                          <div className="text-3xl font-semibold" style={{ color: titleColor }}>
-                            {selectedItem.name || "Unnamed Item"}
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="truncate text-2xl font-semibold" style={{ color: titleColor }}>
+                                {selectedItem.name || "Unnamed Item"}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right text-xs text-white/55">
+                              <div>{ITEM_RARITY_LABEL[selectedItem.rarity] || `Rarity ${selectedItem.rarity || "?"}`}</div>
+                              <div>{selectedItem.type.trim() || "Type unset"}</div>
+                              <div className="font-mono">{selectedItem.id || "missing-id"}</div>
+                            </div>
                           </div>
-                          <div className="mt-2 font-mono text-xs text-white/55">{selectedItem.id || "missing-id"}</div>
-                          <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
-                            <span className="rounded bg-white/5 px-2 py-1">Rarity {selectedItem.rarity || "?"}</span>
-                            <span className="rounded bg-white/5 px-2 py-1">{selectedItem.type.trim() || "Type unset"}</span>
-                          </div>
-                          {selectedItem.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedItem.description}</div> : null}
+                          {selectedItem.description.trim() ? <div className="mt-4 text-sm leading-6 text-white/70">{selectedItem.description}</div> : null}
                         </div>
                       </div>
                     </div>
@@ -567,25 +592,11 @@ export default function ItemManagerApp() {
                     <pre className="max-h-[40rem] overflow-auto rounded-xl border border-white/10 bg-[#08101c] p-4 text-sm text-white/80">{fullJson}</pre>
                   </Section>
                 </>
-              ) : (
-                <Section title="No Item Selected" description="Create a new item or pick one from the left sidebar to start editing.">
-                  <button className="btn" onClick={addBlankItem}>
-                    New Item
-                  </button>
-                </Section>
-              )}
-            </div>
+              ) : null}
+            </aside>
           </div>
         </>
       )}
-
-      <div
-        className={`card text-sm ${
-          status.tone === "error" ? "text-red-200" : status.tone === "success" ? "text-emerald-100" : "text-white/70"
-        }`}
-      >
-        {status.message}
-      </div>
     </div>
   );
 }

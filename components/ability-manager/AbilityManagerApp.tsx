@@ -36,16 +36,13 @@ function sourceLabel(sources: string[]) {
 }
 
 export default function AbilityManagerApp() {
-  const { database: loadedDatabase, loading, error } = useAbilityDatabase();
+  const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
   const [selectedAbilityKey, setSelectedAbilityKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [deliveryFilter, setDeliveryFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
-    tone: "neutral",
-    message: "Abilities Manager reads the indexed ability JSON files and linked status effects directly from the active local game root.",
-  });
+  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
 
   useEffect(() => {
     setDatabase(loadedDatabase);
@@ -183,14 +180,13 @@ export default function AbilityManagerApp() {
         <div>
           <h1 className="page-title mb-1">Abilities Manager</h1>
           <p className="max-w-3xl text-sm text-white/70">
-            Manage ability JSON entries, inspect linked status effects, and export the indexed ability bundle from the active local game root.
+            Manage ability JSON entries, inspect linked status effects, and export the indexed ability bundle.
           </p>
         </div>
-        <StatusBanner tone="error" message={error || "No local game root is configured."} />
-        <Section title="Local Game Root Required">
+        <StatusBanner tone="error" message="No ability data is currently available. Check Settings." />
+        <Section title="No Ability Data Loaded">
           <p className="text-sm leading-6 text-white/65">
-            Abilities Manager reads <code>data/database/abilities/json</code>, <code>_AbilityIndex.json</code>, and the linked Godot scripts directly
-            from the Gemini Station local game root.
+            Set your Gemini Station folder in Settings and this editor will load the current ability data automatically.
           </p>
           <div>
             <Link href="/settings" className="btn">
@@ -208,8 +204,8 @@ export default function AbilityManagerApp() {
         <div className="max-w-4xl">
           <h1 className="page-title mb-1">Abilities Manager</h1>
           <p className="text-sm text-white/70">
-            Browse all ability JSON files, inspect whether an ability behaves like a projectile or beam, and manage JSON-linked status effects while
-            still surfacing script-linked effect relationships from the Godot implementation.
+            Browse all ability JSON files, inspect delivery behavior, and manage JSON-linked status effects while still surfacing script-linked effect
+            relationships.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -226,7 +222,7 @@ export default function AbilityManagerApp() {
         </div>
       </div>
 
-      <StatusBanner tone={status.tone} message={status.message} />
+      {status.tone !== "neutral" && status.message ? <StatusBanner tone={status.tone} message={status.message} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Abilities" value={summary.totalAbilities} />

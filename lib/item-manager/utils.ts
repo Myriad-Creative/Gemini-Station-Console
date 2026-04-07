@@ -11,8 +11,33 @@ import type {
 
 type JsonObject = Record<string, unknown>;
 
-const MODELED_KEYS = new Set(["id", "name", "description", "icon", "type", "rarity"]);
+const MODELED_KEYS = new Set(["id", "name", "description", "icon", "type", "category", "rarity", "size", "sell_price", "buy_price", "stackable", "max_stack"]);
 export const DEFAULT_ITEM_ICON = "icon_lootbox.png";
+export const ITEM_TYPE_OPTIONS = [
+  "Trade Good",
+  "Raw Material",
+  "Refined Material",
+  "Fuel",
+  "Component",
+  "Supply",
+  "Hazardous",
+  "Special",
+] as const;
+export const ITEM_RARITY_OPTIONS = [
+  { value: "1", label: "Common" },
+  { value: "2", label: "Uncommon" },
+  { value: "3", label: "Rare" },
+  { value: "4", label: "Epic" },
+  { value: "5", label: "Legendary" },
+] as const;
+export const ITEM_RARITY_LABEL: Record<string, string> = Object.fromEntries(ITEM_RARITY_OPTIONS.map((entry) => [entry.value, entry.label]));
+export const ITEM_RARITY_COLOR: Record<string, string> = {
+  "1": "#FFFFFF",
+  "2": "#3CB371",
+  "3": "#6495ED",
+  "4": "#663399",
+  "5": "#FFA500",
+};
 
 let draftCounter = 0;
 
@@ -75,6 +100,11 @@ function normalizeImportedItem(source: JsonObject, fallbackId: string, sourceInd
     icon: String(source.icon ?? "").trim(),
     rarity: source.rarity === undefined || source.rarity === null ? "" : String(source.rarity).trim(),
     type: String(source.type ?? source.category ?? "").trim(),
+    size: source.size === undefined || source.size === null ? "" : String(source.size).trim(),
+    sellPrice: source.sell_price === undefined || source.sell_price === null ? "" : String(source.sell_price).trim(),
+    buyPrice: source.buy_price === undefined || source.buy_price === null ? "" : String(source.buy_price).trim(),
+    stackable: Boolean(source.stackable),
+    maxStack: source.max_stack === undefined || source.max_stack === null ? "" : String(source.max_stack).trim(),
     extraJson: Object.keys(extra).length ? JSON.stringify(extra, null, 2) : "",
   };
 }
@@ -128,6 +158,11 @@ function exportItem(draft: ItemDraft) {
     icon: resolvedItemIconPath(draft.icon),
     rarity: coerceRarityValue(draft.rarity),
     type: draft.type.trim(),
+    size: draft.size.trim() ? Number(draft.size.trim()) : undefined,
+    sell_price: draft.sellPrice.trim() ? Number(draft.sellPrice.trim()) : undefined,
+    buy_price: draft.buyPrice.trim() ? Number(draft.buyPrice.trim()) : undefined,
+    stackable: draft.stackable,
+    max_stack: draft.maxStack.trim() ? Number(draft.maxStack.trim()) : undefined,
     ...extra,
   });
 }
@@ -178,8 +213,13 @@ export function createBlankItem(existingIds: string[] = []): ItemDraft {
     name: "",
     description: "",
     icon: "",
-    rarity: "",
-    type: "",
+    rarity: "1",
+    type: ITEM_TYPE_OPTIONS[0],
+    size: "",
+    sellPrice: "",
+    buyPrice: "",
+    stackable: false,
+    maxStack: "",
     extraJson: "",
   };
 }
@@ -322,6 +362,47 @@ export function validateItemDrafts(items: ItemDraft[]): ItemValidationIssue[] {
         field: "rarity",
         message: "Item rarity must be numeric.",
       });
+    } else if (!ITEM_RARITY_OPTIONS.some((entry) => entry.value === item.rarity.trim())) {
+      issues.push({
+        level: "warning",
+        itemKey: item.key,
+        field: "rarity",
+        message: "Item rarity should be one of the supported rarity values.",
+      });
+    }
+
+    if (!item.type.trim()) {
+      issues.push({
+        level: "warning",
+        itemKey: item.key,
+        field: "type",
+        message: "Item type is blank.",
+      });
+    } else if (!ITEM_TYPE_OPTIONS.includes(item.type.trim() as (typeof ITEM_TYPE_OPTIONS)[number])) {
+      issues.push({
+        level: "warning",
+        itemKey: item.key,
+        field: "type",
+        message: "Item type is not one of the supported item categories.",
+      });
+    }
+
+    for (const [field, label, value] of [
+      ["size", "Size", item.size],
+      ["sellPrice", "Sell Price", item.sellPrice],
+      ["buyPrice", "Buy Price", item.buyPrice],
+      ["maxStack", "Stack Size", item.maxStack],
+    ] as const) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      if (Number.isNaN(Number(trimmed))) {
+        issues.push({
+          level: "error",
+          itemKey: item.key,
+          field,
+          message: `${label} must be numeric.`,
+        });
+      }
     }
 
     try {

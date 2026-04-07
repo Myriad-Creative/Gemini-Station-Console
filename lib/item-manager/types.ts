@@ -11,6 +11,11 @@ export interface ItemDraft {
   icon: string;
   rarity: string;
   type: string;
+  size: string;
+  sellPrice: string;
+  buyPrice: string;
+  stackable: boolean;
+  maxStack: string;
   extraJson: string;
 }
 

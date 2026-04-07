@@ -29,16 +29,13 @@ function modifierLabel(key: string) {
 }
 
 export default function StatusEffectManagerApp() {
-  const { database: loadedDatabase, loading, error } = useAbilityDatabase();
+  const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
   const [selectedStatusEffectKey, setSelectedStatusEffectKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [buffFilter, setBuffFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
-    tone: "neutral",
-    message: "Status Effects Manager reads the indexed status effect JSON files directly from the active local game root.",
-  });
+  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
 
   useEffect(() => {
     setDatabase(loadedDatabase);
@@ -182,14 +179,13 @@ export default function StatusEffectManagerApp() {
         <div>
           <h1 className="page-title mb-1">Status Effects Manager</h1>
           <p className="max-w-3xl text-sm text-white/70">
-            Manage status effect JSON entries, browse linked abilities, and export the indexed status effect bundle from the active local game root.
+            Manage status effect JSON entries, browse linked abilities, and export the indexed status effect bundle.
           </p>
         </div>
-        <StatusBanner tone="error" message={error || "No local game root is configured."} />
-        <Section title="Local Game Root Required">
+        <StatusBanner tone="error" message="No status effect data is currently available. Check Settings." />
+        <Section title="No Status Effect Data Loaded">
           <p className="text-sm leading-6 text-white/65">
-            Status Effects Manager reads <code>data/database/status_effects/json</code> and <code>_StatusEffectIndex.json</code> directly from the
-            Gemini Station local game root.
+            Set your Gemini Station folder in Settings and this editor will load the current status effect data automatically.
           </p>
           <div>
             <Link href="/settings" className="btn">
@@ -208,7 +204,7 @@ export default function StatusEffectManagerApp() {
           <h1 className="page-title mb-1">Status Effects Manager</h1>
           <p className="text-sm text-white/70">
             Browse all status-effect JSON files, tune buff/debuff and stacking rules, inspect linked abilities, and export the runtime index-plus-file
-            bundle used by the Godot project.
+            bundle.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -225,7 +221,7 @@ export default function StatusEffectManagerApp() {
         </div>
       </div>
 
-      <StatusBanner tone={status.tone} message={status.message} />
+      {status.tone !== "neutral" && status.message ? <StatusBanner tone={status.tone} message={status.message} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Status Effects" value={summary.totalStatusEffects} />
