@@ -1,7 +1,9 @@
 "use client";
 
+import { buildIconSrc } from "@lib/icon-src";
 import type { MissionGraphNode, MissionRewardEntrySummary, MissionRewardSummary, NormalizedMission } from "@lib/mission-lab/types";
 import { humanizeToken } from "@lib/mission-lab/utils";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type MissionCardBase = {
   title: string;
@@ -33,12 +35,11 @@ function RewardPill({ label, value }: { label: string; value: number }) {
 }
 
 function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   return (
     <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
       <img
-        src={`/api/icon?res=${encodeURIComponent(reward.icon || "icon_lootbox.png")}&id=${encodeURIComponent(reward.id)}&name=${encodeURIComponent(
-          reward.name ?? reward.id,
-        )}`}
+        src={buildIconSrc(reward.icon || "icon_lootbox.png", reward.id, reward.name ?? reward.id, sharedDataVersion)}
         alt={reward.name ?? reward.id}
         width={72}
         height={72}

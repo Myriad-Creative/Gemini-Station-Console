@@ -102,8 +102,8 @@ export async function GET(req: NextRequest) {
     const ext = path.extname(abs).toLowerCase();
     const type = ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "application/octet-stream";
     const buf = fs.readFileSync(abs);
-    return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "public, max-age=3600" } });
+    return new NextResponse(buf, { headers: { "content-type": type, "cache-control": "no-store, max-age=0" } });
   }
 
-  return new NextResponse("Not found", { status: 404 });
+  return new NextResponse("Not found", { status: 404, headers: { "cache-control": "no-store, max-age=0" } });
 }

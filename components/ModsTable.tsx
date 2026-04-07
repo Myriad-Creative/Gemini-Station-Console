@@ -1,6 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
+import { buildIconSrc } from "@lib/icon-src";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type Row = {
   id: string; name: string; slot: string; levelRequirement: number; rarity: number;
@@ -30,6 +32,7 @@ function HoverCard({ row }: { row: Row }) {
 }
 
 export default function ModsTable({ rows }: { rows: Row[] }) {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [sortKey, setSortKey] = useState<string>("name");
   const [asc, setAsc] = useState<boolean>(true);
   const sorted = useMemo(()=>{
@@ -45,7 +48,7 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
   const columns = useMemo(() => [
     { key: "name", header: "Name", render: (r: Row) => (
       <div className="relative group flex items-center gap-2">
-        <img src={`/api/icon?res=${encodeURIComponent(r.icon || "icon_lootbox.png")}&id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`} width={28} height={28} style={{borderRadius:4}} alt="" />
+        <img src={buildIconSrc(r.icon || "icon_lootbox.png", r.id, r.name, sharedDataVersion)} width={28} height={28} style={{borderRadius:4}} alt="" />
         <span className="font-medium" style={rarityStyle(r.rarity)}>{r.name}</span>
         <div className="tooltip group-hover:block hidden"><HoverCard row={r} /></div>
       </div>

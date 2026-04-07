@@ -2,16 +2,12 @@
 
 import type { ReactNode } from "react";
 import JSZip from "jszip";
+import { buildIconSrc as buildVersionedIconSrc } from "@lib/icon-src";
 
 export type StatusTone = "neutral" | "success" | "error";
 
-export function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  const params = new URLSearchParams({
-    res: icon || "icon_lootbox.png",
-    id,
-    name,
-  });
-  return `/api/icon?${params.toString()}`;
+export function buildIconSrc(icon: string | undefined, id: string, name: string, version?: string) {
+  return buildVersionedIconSrc(icon, id, name, version);
 }
 
 export function downloadTextFile(filename: string, contents: string) {
@@ -105,4 +101,3 @@ export function StatusBanner({ tone, message }: { tone: StatusTone; message: str
     </div>
   );
 }
-

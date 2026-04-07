@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
+import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { Item, Mod } from "@lib/types";
 import type {
@@ -47,15 +48,6 @@ function labelize(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (match) => match.toUpperCase());
-}
-
-function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  const params = new URLSearchParams({
-    res: icon || "icon_lootbox.png",
-    id,
-    name,
-  });
-  return `/api/icon?${params.toString()}`;
 }
 
 function downloadTextFile(filename: string, contents: string) {
@@ -130,14 +122,16 @@ function CatalogThumb({
   icon,
   id,
   name,
+  version,
   className = "h-20 w-20",
 }: {
   icon?: string;
   id: string;
   name: string;
+  version?: string;
   className?: string;
 }) {
-  const src = buildIconSrc(icon, id, name);
+  const src = buildIconSrc(icon, id, name, version);
   return (
     <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b] ${className}`}>
       {src ? (
@@ -153,9 +147,11 @@ function CatalogThumb({
 function PreviewCard({
   product,
   onRemove,
+  version,
 }: {
   product: PreviewProduct;
   onRemove: () => void;
+  version?: string;
 }) {
   const titleColor = product.rarity === 4 ? "#F97316" : product.rarity === 3 ? "#8B5CF6" : RARITY_COLOR[product.rarity ?? 0] || "#FFFFFF";
 
@@ -166,7 +162,7 @@ function PreviewCard({
       }`}
     >
       <div className="flex items-start gap-3">
-        <CatalogThumb icon={product.icon} id={product.id} name={product.name} className="h-[75px] w-[75px]" />
+        <CatalogThumb icon={product.icon} id={product.id} name={product.name} version={version} className="h-[75px] w-[75px]" />
         <div className="flex min-w-[75px] flex-col items-start gap-2">
           <button
             type="button"
@@ -860,7 +856,7 @@ export default function MerchantLabApp() {
                           onClick={() => addCatalogEntry("items", String(item.id).trim())}
                         >
                           <div className="flex gap-3">
-                            <CatalogThumb icon={item.icon} id={String(item.id)} name={item.name} />
+                            <CatalogThumb icon={item.icon} id={String(item.id)} name={item.name} version={sharedDataVersion} />
                             <div className="min-w-0">
                               <div className="truncate text-base font-semibold text-white">{item.name}</div>
                               <div className="mt-1 text-xs text-white/50">{item.id}</div>
@@ -890,7 +886,7 @@ export default function MerchantLabApp() {
                           onClick={() => addCatalogEntry("mods", String(mod.id).trim())}
                         >
                           <div className="flex gap-3">
-                            <CatalogThumb icon={mod.icon} id={String(mod.id)} name={mod.name} />
+                            <CatalogThumb icon={mod.icon} id={String(mod.id)} name={mod.name} version={sharedDataVersion} />
                             <div className="min-w-0">
                               <div className="truncate text-base font-semibold text-white">{mod.name}</div>
                               <div className="mt-1 text-xs text-white/50">{mod.id}</div>
@@ -1051,7 +1047,12 @@ export default function MerchantLabApp() {
                         {selectedItemProducts.length ? (
                           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {selectedItemProducts.map((product, index) => (
-                              <PreviewCard key={`preview-item-${product.id}-${index}`} product={product} onRemove={() => removeCatalogEntry("items", index)} />
+                              <PreviewCard
+                                key={`preview-item-${product.id}-${index}`}
+                                product={product}
+                                version={sharedDataVersion}
+                                onRemove={() => removeCatalogEntry("items", index)}
+                              />
                             ))}
                           </div>
                         ) : (
@@ -1069,7 +1070,12 @@ export default function MerchantLabApp() {
                         {selectedModProducts.length ? (
                           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             {selectedModProducts.map((product, index) => (
-                              <PreviewCard key={`preview-mod-${product.id}-${index}`} product={product} onRemove={() => removeCatalogEntry("mods", index)} />
+                              <PreviewCard
+                                key={`preview-mod-${product.id}-${index}`}
+                                product={product}
+                                version={sharedDataVersion}
+                                onRemove={() => removeCatalogEntry("mods", index)}
+                              />
                             ))}
                           </div>
                         ) : (

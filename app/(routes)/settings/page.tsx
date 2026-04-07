@@ -20,6 +20,7 @@ type LocalGameSourceState = {
 
 type SettingsData = {
   errors: string[];
+  lastLoaded: string | null;
   localGameSource: LocalGameSourceState;
 };
 
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   const [gameRootPath, setGameRootPath] = useState("");
   const [settings, setSettings] = useState<SettingsData>({
     errors: [],
+    lastLoaded: null,
     localGameSource: EMPTY_LOCAL_GAME_SOURCE,
   });
   const [status, setStatus] = useState<string>("");
@@ -52,6 +54,7 @@ export default function SettingsPage() {
       const j = await r.json();
       const next = {
         errors: j.errors || [],
+        lastLoaded: typeof j.lastLoaded === "string" ? j.lastLoaded : null,
         localGameSource: j.localGameSource || EMPTY_LOCAL_GAME_SOURCE,
       };
       setSettings(next);
@@ -59,12 +62,35 @@ export default function SettingsPage() {
     } catch (e:any) {
       setSettings({
         errors: [String(e?.message || e)],
+        lastLoaded: null,
         localGameSource: EMPTY_LOCAL_GAME_SOURCE,
       });
     }
   };
 
   useEffect(() => { loadSettings(); }, []);
+
+  const reloadLocalGameData = async () => {
+    setStatus("Refreshing local game data…");
+    try {
+      const r = await fetch("/api/reload", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        setStatus(`Error: ${j.error || r.status + " " + r.statusText}`);
+        return;
+      }
+
+      await loadSettings();
+      publishSharedDataWorkspaceUpdate();
+      setStatus(
+        j.lastLoaded
+          ? `Refreshed the local game data. Re-indexed ${new Date(j.lastLoaded).toLocaleString()}.`
+          : "Refreshed the local game data.",
+      );
+    } catch (e: any) {
+      setStatus(`Error: ${e?.message || e}`);
+    }
+  };
 
   const saveLocalGameSource = async () => {
     setStatus("Saving local game root…");
@@ -147,6 +173,9 @@ export default function SettingsPage() {
               ? `Last validated ${new Date(settings.localGameSource.lastValidated).toLocaleString()}`
               : "Set the local game root to point the console at your Gemini Station folder."}
           </div>
+          {settings.lastLoaded ? (
+            <div className="mt-1 text-xs text-white/45">Last indexed {new Date(settings.lastLoaded).toLocaleString()}</div>
+          ) : null}
         </div>
 
         <div className="md:col-span-4">
@@ -171,6 +200,9 @@ export default function SettingsPage() {
         <div className="md:col-span-4 flex flex-wrap gap-2">
           <button className="btn" onClick={saveLocalGameSource}>
             Set Local Game Root
+          </button>
+          <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={reloadLocalGameData}>
+            Refresh / Re-index Local Game Data
           </button>
           <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearLocalGameSource}>
             Clear Local Game Root

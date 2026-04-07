@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { CommsContactDraft, CommsContactValidationIssue, CommsLabWorkspace } from "@lib/comms-manager/types";
 import {
@@ -24,15 +25,6 @@ import {
 } from "@lib/comms-manager/utils";
 
 type StatusTone = "neutral" | "success" | "error";
-
-function buildIconSrc(icon: string, id: string, name: string) {
-  const params = new URLSearchParams({
-    res: icon,
-    id,
-    name,
-  });
-  return `/api/icon?${params.toString()}`;
-}
 
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
@@ -382,7 +374,9 @@ export default function CommsManagerApp() {
   }
 
   const resolvedPortrait = selectedContact ? resolvedPortraitPath(selectedContact.portrait) : DEFAULT_COMMS_PORTRAIT;
-  const portraitSrc = selectedContact ? buildIconSrc(resolvedPortrait, selectedContact.id || "contact", selectedContact.name || "Contact") : null;
+  const portraitSrc = selectedContact
+    ? buildIconSrc(resolvedPortrait, selectedContact.id || "contact", selectedContact.name || "Contact", sharedDataVersion)
+    : null;
 
   return (
     <div className="space-y-6">

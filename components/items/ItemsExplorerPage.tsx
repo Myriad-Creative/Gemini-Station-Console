@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
+import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type Item = { id: string; name: string; levelRequirement: number; rarity: number; icon?: string; type?: string };
@@ -105,13 +106,7 @@ export default function ItemsExplorerPage() {
                 <td className="font-mono text-xs text-white/70">{item.id}</td>
                 <td>
                   <div className="flex items-center gap-2">
-                    <img
-                      src={`/api/icon?res=${encodeURIComponent(item.icon || DEFAULT_ITEM_ICON)}&id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(item.name)}`}
-                      alt=""
-                      width={28}
-                      height={28}
-                      style={{ borderRadius: 4 }}
-                    />
+                    <img src={buildIconSrc(item.icon || DEFAULT_ITEM_ICON, item.id, item.name, sharedDataVersion)} alt="" width={28} height={28} style={{ borderRadius: 4 }} />
                     <span style={rarityStyle(item.rarity)} className="font-medium">
                       {item.name}
                     </span>

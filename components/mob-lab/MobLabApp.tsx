@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
+import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
 import {
@@ -40,15 +41,6 @@ function SummaryCard({ label, value, accent }: { label: string; value: string | 
       <div className={`mt-2 text-3xl font-semibold ${accent ?? "text-white"}`}>{value}</div>
     </div>
   );
-}
-
-function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  const params = new URLSearchParams({
-    res: icon || "icon_lootbox.png",
-    id,
-    name,
-  });
-  return `/api/icon?${params.toString()}`;
 }
 
 function Section({
@@ -313,9 +305,16 @@ export default function MobLabApp() {
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const selectedDuplicateKeys =
     selectedMob && selectedMob.id.trim() ? (duplicateIds.get(selectedMob.id.trim()) ?? []).filter((key) => key !== selectedMob.key) : [];
-  const spritePreviewSrc = selectedMob ? buildIconSrc(selectedMob.sprite || undefined, selectedMob.id || "mob", selectedMob.display_name || "Mob") : null;
+  const spritePreviewSrc = selectedMob
+    ? buildIconSrc(selectedMob.sprite || undefined, selectedMob.id || "mob", selectedMob.display_name || "Mob", sharedDataVersion)
+    : null;
   const hailPortraitPreviewSrc = selectedMob
-    ? buildIconSrc(selectedMob.hail_portrait || undefined, selectedMob.id || "mob", selectedMob.hail_name || selectedMob.display_name || "Mob")
+    ? buildIconSrc(
+        selectedMob.hail_portrait || undefined,
+        selectedMob.id || "mob",
+        selectedMob.hail_name || selectedMob.display_name || "Mob",
+        sharedDataVersion,
+      )
     : null;
 
   function updateSelectedMob(updater: (current: MobDraft) => MobDraft) {

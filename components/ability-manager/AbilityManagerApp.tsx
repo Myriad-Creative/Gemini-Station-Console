@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
 import {
   buildAbilityBundleFiles,
@@ -36,6 +37,7 @@ function sourceLabel(sources: string[]) {
 }
 
 export default function AbilityManagerApp() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
   const [selectedAbilityKey, setSelectedAbilityKey] = useState<string | null>(null);
@@ -108,7 +110,12 @@ export default function AbilityManagerApp() {
   );
 
   const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
-  const previewIcon = buildIconSrc(selectedAbility?.icon || "icon_lootbox.png", selectedAbility?.id || "ability", selectedAbility?.name || "Ability");
+  const previewIcon = buildIconSrc(
+    selectedAbility?.icon || "icon_lootbox.png",
+    selectedAbility?.id || "ability",
+    selectedAbility?.name || "Ability",
+    sharedDataVersion,
+  );
 
   function updateSelectedAbility(updater: (current: AbilityDraft) => AbilityDraft) {
     if (!database || !selectedAbility) return;
@@ -299,7 +306,11 @@ export default function AbilityManagerApp() {
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <img src={buildIconSrc(draft.icon, draft.id || "ability", draft.name || "Ability")} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover" />
+                        <img
+                          src={buildIconSrc(draft.icon, draft.id || "ability", draft.name || "Ability", sharedDataVersion)}
+                          alt=""
+                          className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-base font-semibold text-white">{draft.name || "Unnamed Ability"}</div>
                           <div className="mt-1 truncate font-mono text-xs text-white/55">{draft.id || "missing-id"}</div>

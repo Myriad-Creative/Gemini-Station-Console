@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import { STATUS_EFFECT_MODIFIER_KEYS, type AbilityManagerDatabase, type AbilityManagerValidationIssue, type StatusEffectDraft } from "@lib/ability-manager/types";
 import {
   buildStatusEffectBundleFiles,
@@ -29,6 +30,7 @@ function modifierLabel(key: string) {
 }
 
 export default function StatusEffectManagerApp() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
   const [selectedStatusEffectKey, setSelectedStatusEffectKey] = useState<string | null>(null);
@@ -96,7 +98,12 @@ export default function StatusEffectManagerApp() {
   const selectedIssues = selectedStatusEffect ? issuesByKey.get(selectedStatusEffect.key) ?? [] : [];
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const workspaceHasErrors = statusEffectIssues.some((issue) => issue.level === "error");
-  const previewIcon = buildIconSrc(selectedStatusEffect?.icon || "icon_lootbox.png", selectedStatusEffect?.numericId || "status-effect", selectedStatusEffect?.name || "Status Effect");
+  const previewIcon = buildIconSrc(
+    selectedStatusEffect?.icon || "icon_lootbox.png",
+    selectedStatusEffect?.numericId || "status-effect",
+    selectedStatusEffect?.name || "Status Effect",
+    sharedDataVersion,
+  );
   const indexJson = useMemo(() => (database ? stringifyStatusEffectIndexJson(database.statusEffects) : "{}"), [database]);
 
   function updateSelectedStatusEffect(updater: (current: StatusEffectDraft) => StatusEffectDraft) {
@@ -294,7 +301,11 @@ export default function StatusEffectManagerApp() {
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <img src={buildIconSrc(draft.icon, draft.numericId || "status-effect", draft.name || "Status Effect")} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover" />
+                        <img
+                          src={buildIconSrc(draft.icon, draft.numericId || "status-effect", draft.name || "Status Effect", sharedDataVersion)}
+                          alt=""
+                          className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-base font-semibold text-white">{draft.name || "Unnamed Status Effect"}</div>
                           <div className="mt-1 truncate font-mono text-xs text-white/55">{draft.numericId || "missing-id"}</div>

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { ItemDraft, ItemManagerWorkspace, ItemValidationIssue } from "@lib/item-manager/types";
 import {
@@ -27,15 +28,6 @@ import {
 } from "@lib/item-manager/utils";
 
 type StatusTone = "neutral" | "success" | "error";
-
-function buildIconSrc(icon: string | undefined, id: string, name: string) {
-  const params = new URLSearchParams({
-    res: icon || "icon_lootbox.png",
-    id,
-    name,
-  });
-  return `/api/icon?${params.toString()}`;
-}
 
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
@@ -263,7 +255,12 @@ export default function ItemManagerApp() {
     });
   }
 
-  const previewIcon = buildIconSrc(selectedItem ? resolvedItemIconPath(selectedItem.icon) : "icon_lootbox.png", selectedItem?.id || "item", selectedItem?.name || "Item");
+  const previewIcon = buildIconSrc(
+    selectedItem ? resolvedItemIconPath(selectedItem.icon) : "icon_lootbox.png",
+    selectedItem?.id || "item",
+    selectedItem?.name || "Item",
+    sharedDataVersion,
+  );
   const titleColor = selectedItem ? ITEM_RARITY_COLOR[selectedItem.rarity] || "#FFFFFF" : "#FFFFFF";
 
   return (
@@ -383,7 +380,7 @@ export default function ItemManagerApp() {
                         >
                           <div className="flex items-start gap-3">
                             <img
-                              src={buildIconSrc(resolvedItemIconPath(item.icon), item.id || "item", item.name || item.id)}
+                              src={buildIconSrc(resolvedItemIconPath(item.icon), item.id || "item", item.name || item.id, sharedDataVersion)}
                               alt=""
                               className="h-14 w-14 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
                             />
