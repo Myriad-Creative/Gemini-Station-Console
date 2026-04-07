@@ -21,6 +21,12 @@ There is no manifest URL, no bundled runtime data, and no separate upload-based 
 ## Features
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
 - Mods Explorer (icons, rarity coloring, **hover card** with full stats/desc, sorting)
+- Abilities:
+  - Read indexed ability JSON files and indexed status effect JSON files directly from the active local game root
+  - Inspect weapon-style delivery such as projectile vs beam, plus script-linked and JSON-linked status effects
+  - Create, clone, edit, delete, and validate ability entries while preserving extra runtime JSON
+  - Create, clone, edit, delete, and validate status effect entries with modifier payload editing and linked-ability visibility
+  - Download bundle zips for abilities or status effects, copy updated index JSON, or copy/download the current entry JSON
 - Items Explorer (icons, filters, sorting)
 - Items Manager:
   - Read `items.json` directly from the active local game root
@@ -140,6 +146,30 @@ Merchant Lab is isolated from the console’s existing read-only item/mod explor
    - download the updated `items.json`,
    - copy the whole updated file JSON, or
    - copy just the current item JSON.
+
+## Abilities Usage
+1. Open `/abilities` from the top navigation.
+2. Set a local game root in `/settings`. The console will read:
+   - `data/database/abilities/json/_AbilityIndex.json`
+   - `data/database/abilities/json/*.json`
+   - `data/database/status_effects/_StatusEffectIndex.json`
+   - `data/database/status_effects/json/*.json`
+   - linked Godot scripts referenced by each ability JSON entry
+3. Open `/abilities/manager` to:
+   - search abilities,
+   - filter by delivery type such as projectile or beam,
+   - create, clone, delete, and edit ability JSON files,
+   - manage JSON-linked `applies_effect_ids`,
+   - inspect status effects inferred from both JSON and script constants/fallbacks.
+4. Open `/abilities/status-effects` to:
+   - browse and edit status effect JSON files,
+   - manage stack, duration, and modifier payloads,
+   - see which abilities currently link to each status effect.
+5. Use the export actions to:
+   - download the updated abilities bundle zip,
+   - download the updated status effects bundle zip,
+   - copy the updated index JSON for each system, or
+   - copy/download only the currently selected JSON file entry.
 
 ## Comms Manager Usage
 1. Open `/comms` from the top navigation.

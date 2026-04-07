@@ -151,6 +151,12 @@ export default function DashboardPage() {
       value: data.counts.mods,
     },
     {
+      href: "/abilities",
+      label: "Abilities",
+      description: "Manage runtime abilities and linked status effects.",
+      value: data.counts.abilities,
+    },
+    {
       href: "/items",
       label: "Items",
       description: "Inspect the current item catalog.",

@@ -1,0 +1,556 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
+import {
+  buildAbilityBundleFiles,
+  computeAbilityLinkedEffects,
+  cloneAbilityDraft,
+  createBlankAbility,
+  deleteAbilityAt,
+  inferAbilityDeliveryType,
+  insertAbilityAfter,
+  statusEffectOptionsFromDatabase,
+  stringifyAbilityDraft,
+  stringifyAbilityIndexJson,
+  summarizeAbilityManager,
+  updateAbilityAt,
+  validateAbilityDrafts,
+} from "@lib/ability-manager/utils";
+import { buildIconSrc, copyToClipboard, downloadTextFile, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
+import { useAbilityDatabase } from "@components/ability-manager/useAbilityDatabase";
+
+function issueTone(issue: AbilityManagerValidationIssue["level"]) {
+  return issue === "error" ? "border-red-400/25 bg-red-400/10 text-red-100" : "border-yellow-300/25 bg-yellow-300/10 text-yellow-100";
+}
+
+function sourceLabel(sources: string[]) {
+  return sources
+    .map((source) => {
+      if (source === "json") return "JSON";
+      if (source === "script_constant") return "Script";
+      return "Fallback";
+    })
+    .join(" + ");
+}
+
+export default function AbilityManagerApp() {
+  const { database: loadedDatabase, loading, error } = useAbilityDatabase();
+  const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
+  const [selectedAbilityKey, setSelectedAbilityKey] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [deliveryFilter, setDeliveryFilter] = useState("");
+  const [linkedFilter, setLinkedFilter] = useState("");
+  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
+    tone: "neutral",
+    message: "Abilities Manager reads the indexed ability JSON files and linked status effects directly from the active local game root.",
+  });
+
+  useEffect(() => {
+    setDatabase(loadedDatabase);
+    setSelectedAbilityKey(loadedDatabase?.abilities[0]?.key ?? null);
+  }, [loadedDatabase]);
+
+  const statusEffectOptions = useMemo(() => statusEffectOptionsFromDatabase(database), [database]);
+  const abilityIssues = useMemo(() => validateAbilityDrafts(database?.abilities ?? [], statusEffectOptions), [database, statusEffectOptions]);
+  const abilityIssuesByKey = useMemo(() => {
+    const next = new Map<string, AbilityManagerValidationIssue[]>();
+    for (const issue of abilityIssues) {
+      const current = next.get(issue.draftKey) ?? [];
+      current.push(issue);
+      next.set(issue.draftKey, current);
+    }
+    return next;
+  }, [abilityIssues]);
+  const summary = useMemo(() => summarizeAbilityManager(database, abilityIssues, []), [database, abilityIssues]);
+
+  const filteredAbilities = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return (database?.abilities ?? [])
+      .filter((draft) => {
+        if (!query) return true;
+        return [draft.id, draft.name, draft.description, draft.script, draft.fileName].join(" ").toLowerCase().includes(query);
+      })
+      .filter((draft) => (deliveryFilter ? inferAbilityDeliveryType(draft) === deliveryFilter : true))
+      .filter((draft) => {
+        if (!linkedFilter) return true;
+        const linkedCount = computeAbilityLinkedEffects(draft, statusEffectOptions).length;
+        return linkedFilter === "linked" ? linkedCount > 0 : linkedCount === 0;
+      });
+  }, [database, deliveryFilter, linkedFilter, search, statusEffectOptions]);
+
+  useEffect(() => {
+    const abilities = database?.abilities ?? [];
+    if (!abilities.length) {
+      if (selectedAbilityKey !== null) setSelectedAbilityKey(null);
+      return;
+    }
+
+    if (!selectedAbilityKey || !abilities.some((draft) => draft.key === selectedAbilityKey)) {
+      setSelectedAbilityKey(filteredAbilities[0]?.key ?? abilities[0]?.key ?? null);
+      return;
+    }
+
+    if (filteredAbilities.length && !filteredAbilities.some((draft) => draft.key === selectedAbilityKey)) {
+      setSelectedAbilityKey(filteredAbilities[0]?.key ?? abilities[0]?.key ?? null);
+    }
+  }, [database, filteredAbilities, selectedAbilityKey]);
+
+  const selectedAbility = useMemo(() => {
+    const abilities = database?.abilities ?? [];
+    return abilities.find((draft) => draft.key === selectedAbilityKey) ?? filteredAbilities[0] ?? abilities[0] ?? null;
+  }, [database, filteredAbilities, selectedAbilityKey]);
+
+  const selectedIssues = selectedAbility ? abilityIssuesByKey.get(selectedAbility.key) ?? [] : [];
+  const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
+  const workspaceHasErrors = abilityIssues.some((issue) => issue.level === "error");
+  const selectedLinkedEffects = useMemo(
+    () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
+    [selectedAbility, statusEffectOptions],
+  );
+
+  const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
+  const previewIcon = buildIconSrc(selectedAbility?.icon || "icon_lootbox.png", selectedAbility?.id || "ability", selectedAbility?.name || "Ability");
+
+  function updateSelectedAbility(updater: (current: AbilityDraft) => AbilityDraft) {
+    if (!database || !selectedAbility) return;
+    setDatabase(updateAbilityAt(database, selectedAbility.key, updater));
+  }
+
+  function addBlankAbility() {
+    if (!database) return;
+    const nextDraft = createBlankAbility(
+      database.abilities.map((draft) => draft.id),
+      database.abilities.map((draft) => draft.fileName),
+    );
+    const nextDatabase = insertAbilityAfter(database, selectedAbility?.key ?? null, nextDraft);
+    setDatabase(nextDatabase);
+    setSelectedAbilityKey(nextDraft.key);
+    setStatus({ tone: "success", message: "Added a new blank ability draft." });
+  }
+
+  function cloneSelectedAbility() {
+    if (!database || !selectedAbility) return;
+    const nextDraft = cloneAbilityDraft(
+      selectedAbility,
+      database.abilities.map((draft) => draft.id),
+      database.abilities.map((draft) => draft.fileName),
+    );
+    const nextDatabase = insertAbilityAfter(database, selectedAbility.key, nextDraft);
+    setDatabase(nextDatabase);
+    setSelectedAbilityKey(nextDraft.key);
+    setStatus({ tone: "success", message: `Cloned ability "${selectedAbility.name || selectedAbility.id}" into "${nextDraft.id}".` });
+  }
+
+  function deleteSelectedAbility() {
+    if (!database || !selectedAbility) return;
+    const nextDatabase = deleteAbilityAt(database, selectedAbility.key);
+    setDatabase(nextDatabase);
+    setSelectedAbilityKey(nextDatabase.abilities[0]?.key ?? null);
+    setStatus({ tone: "success", message: `Deleted ability "${selectedAbility.name || selectedAbility.id}".` });
+  }
+
+  async function handleCopyIndexJson() {
+    if (!database) return;
+    const copied = await copyToClipboard(abilityIndexJson);
+    setStatus({
+      tone: copied ? "success" : "error",
+      message: copied ? "Copied the updated _AbilityIndex.json to the clipboard." : "Clipboard copy failed in this browser context.",
+    });
+  }
+
+  async function handleCopyCurrentAbility() {
+    if (!selectedAbility || selectedHasErrors) return;
+    const copied = await copyToClipboard(stringifyAbilityDraft(selectedAbility));
+    setStatus({
+      tone: copied ? "success" : "error",
+      message: copied ? `Copied ${selectedAbility.fileName} to the clipboard.` : "Clipboard copy failed in this browser context.",
+    });
+  }
+
+  async function handleDownloadBundle() {
+    if (!database || workspaceHasErrors) return;
+    await downloadZipBundle("abilities_bundle.zip", buildAbilityBundleFiles(database.abilities));
+    setStatus({ tone: "success", message: "Downloaded abilities bundle zip." });
+  }
+
+  if (loading) return <div>Loading…</div>;
+
+  if (!database) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="page-title mb-1">Abilities Manager</h1>
+          <p className="max-w-3xl text-sm text-white/70">
+            Manage ability JSON entries, inspect linked status effects, and export the indexed ability bundle from the active local game root.
+          </p>
+        </div>
+        <StatusBanner tone="error" message={error || "No local game root is configured."} />
+        <Section title="Local Game Root Required">
+          <p className="text-sm leading-6 text-white/65">
+            Abilities Manager reads <code>data/database/abilities/json</code>, <code>_AbilityIndex.json</code>, and the linked Godot scripts directly
+            from the Gemini Station local game root.
+          </p>
+          <div>
+            <Link href="/settings" className="btn">
+              Open Settings
+            </Link>
+          </div>
+        </Section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-4xl">
+          <h1 className="page-title mb-1">Abilities Manager</h1>
+          <p className="text-sm text-white/70">
+            Browse all ability JSON files, inspect whether an ability behaves like a projectile or beam, and manage JSON-linked status effects while
+            still surfacing script-linked effect relationships from the Godot implementation.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
+            Download abilities bundle.zip
+          </button>
+          <button
+            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+            disabled={!database}
+            onClick={() => void handleCopyIndexJson()}
+          >
+            Copy Updated _AbilityIndex.json
+          </button>
+        </div>
+      </div>
+
+      <StatusBanner tone={status.tone} message={status.message} />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard label="Abilities" value={summary.totalAbilities} />
+        <SummaryCard label="Projectile" value={summary.projectileCount} />
+        <SummaryCard label="Beam" value={summary.beamCount} />
+        <SummaryCard label="Linked Effects" value={summary.linkedAbilityCount} />
+        <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="space-y-6">
+          <div className="card h-fit space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xl font-semibold text-white">Ability Library</div>
+                <div className="mt-1 text-sm text-white/55">
+                  {database.sourceLabel} · {database.abilities.length} ability file{database.abilities.length === 1 ? "" : "s"}
+                </div>
+              </div>
+              <button className="btn shrink-0" onClick={addBlankAbility}>
+                New Ability
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="label">Search</div>
+                <input
+                  className="input mt-1"
+                  value={search}
+                  placeholder="Search ID, name, description, script, or file..."
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+
+              <div>
+                <div className="label">Delivery Type</div>
+                <select className="select mt-1 w-full" value={deliveryFilter} onChange={(event) => setDeliveryFilter(event.target.value)}>
+                  <option value="">All types</option>
+                  <option value="projectile">Projectile</option>
+                  <option value="beam">Beam</option>
+                  <option value="mine">Mine</option>
+                  <option value="blast">Blast</option>
+                  <option value="status">Status-linked</option>
+                  <option value="utility">Utility / Other</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="label">Effect Links</div>
+                <select className="select mt-1 w-full" value={linkedFilter} onChange={(event) => setLinkedFilter(event.target.value)}>
+                  <option value="">All abilities</option>
+                  <option value="linked">Has linked effects</option>
+                  <option value="unlinked">No linked effects</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+              {filteredAbilities.length ? (
+                filteredAbilities.map((draft) => {
+                  const selected = selectedAbility?.key === draft.key;
+                  const issues = abilityIssuesByKey.get(draft.key) ?? [];
+                  const hasErrors = issues.some((issue) => issue.level === "error");
+                  const linkedCount = computeAbilityLinkedEffects(draft, statusEffectOptions).length;
+                  const deliveryType = inferAbilityDeliveryType(draft);
+                  return (
+                    <button
+                      key={draft.key}
+                      type="button"
+                      onClick={() => setSelectedAbilityKey(draft.key)}
+                      className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        selected
+                          ? "border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(125,211,252,0.12)]"
+                          : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <img src={buildIconSrc(draft.icon, draft.id || "ability", draft.name || "Ability")} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-base font-semibold text-white">{draft.name || "Unnamed Ability"}</div>
+                          <div className="mt-1 truncate font-mono text-xs text-white/55">{draft.id || "missing-id"}</div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
+                            <span className="rounded bg-white/5 px-2 py-1 capitalize">{deliveryType}</span>
+                            {linkedCount ? <span className="rounded bg-white/5 px-2 py-1">{linkedCount} link{linkedCount === 1 ? "" : "s"}</span> : null}
+                            {hasErrors ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Errors</span> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                  No abilities match the current search or filters.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div className="text-lg font-semibold text-white">Validation</div>
+            {selectedAbility ? (
+              selectedIssues.length ? (
+                <div className="space-y-3">
+                  {selectedIssues.map((issue, index) => (
+                    <div key={`${issue.field}-${index}`} className={`rounded-xl border px-3 py-3 ${issueTone(issue.level)}`}>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em]">{issue.level}</div>
+                      <div className="mt-2 text-sm">{issue.message}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
+                  The selected ability currently passes validation.
+                </div>
+              )
+            ) : (
+              <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">Select an ability to review validation.</div>
+            )}
+          </div>
+        </aside>
+
+        <div className="space-y-6">
+          {selectedAbility ? (
+            <>
+              <Section
+                title="Ability Editor"
+                description="Edit the core ability JSON fields directly. JSON effect links are exported to properties.applies_effect_ids, while script-inferred links are shown for reference."
+              >
+                <div className="flex flex-wrap gap-2">
+                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={cloneSelectedAbility}>
+                    Clone Ability
+                  </button>
+                  <button className="rounded border border-red-400/25 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10" onClick={deleteSelectedAbility}>
+                    Delete Ability
+                  </button>
+                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40" disabled={selectedHasErrors} onClick={() => void handleCopyCurrentAbility()}>
+                    Copy Current Ability JSON
+                  </button>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={selectedHasErrors}
+                    onClick={() => downloadTextFile(selectedAbility.fileName.trim() || "ability.json", stringifyAbilityDraft(selectedAbility))}
+                  >
+                    Download Current Ability JSON
+                  </button>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="label">Ability ID</div>
+                    <input className="input mt-1" value={selectedAbility.id} onChange={(event) => updateSelectedAbility((current) => ({ ...current, id: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">File Name</div>
+                    <input className="input mt-1" value={selectedAbility.fileName} onChange={(event) => updateSelectedAbility((current) => ({ ...current, fileName: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Name</div>
+                    <input className="input mt-1" value={selectedAbility.name} onChange={(event) => updateSelectedAbility((current) => ({ ...current, name: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Delivery Type</div>
+                    <div className="input mt-1 flex items-center text-white/70 capitalize">{inferAbilityDeliveryType(selectedAbility)}</div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="label">Script</div>
+                    <input className="input mt-1" value={selectedAbility.script} onChange={(event) => updateSelectedAbility((current) => ({ ...current, script: event.target.value }))} />
+                    {selectedAbility.scriptPathResolved ? <div className="mt-2 text-xs text-white/45 break-all">{selectedAbility.scriptPathResolved}</div> : null}
+                  </div>
+                  <div>
+                    <div className="label">Cooldown</div>
+                    <input className="input mt-1" value={selectedAbility.cooldown} onChange={(event) => updateSelectedAbility((current) => ({ ...current, cooldown: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Energy Cost</div>
+                    <input className="input mt-1" value={selectedAbility.energyCost} onChange={(event) => updateSelectedAbility((current) => ({ ...current, energyCost: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Attack Range</div>
+                    <input className="input mt-1" value={selectedAbility.attackRange} onChange={(event) => updateSelectedAbility((current) => ({ ...current, attackRange: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Projectile Scene</div>
+                    <input className="input mt-1" value={selectedAbility.projectileScene} onChange={(event) => updateSelectedAbility((current) => ({ ...current, projectileScene: event.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="label">Icon</div>
+                    <input className="input mt-1" value={selectedAbility.icon} onChange={(event) => updateSelectedAbility((current) => ({ ...current, icon: event.target.value }))} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="label">Description</div>
+                    <textarea className="input mt-1 min-h-24" value={selectedAbility.description} onChange={(event) => updateSelectedAbility((current) => ({ ...current, description: event.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className="space-y-3">
+                    <div className="label">JSON-linked Status Effects</div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                        {statusEffectOptions.map((effect) => {
+                          const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
+                          return (
+                            <label key={effect.numericId} className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/5 px-3 py-2 hover:bg-white/[0.03]">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={checked}
+                                onChange={(event) =>
+                                  updateSelectedAbility((current) => ({
+                                    ...current,
+                                    appliesEffectIds: event.target.checked
+                                      ? [...current.appliesEffectIds, String(effect.numericId)].sort((left, right) => Number(left) - Number(right))
+                                      : current.appliesEffectIds.filter((entry) => entry !== String(effect.numericId)),
+                                  }))
+                                }
+                              />
+                              <div className="min-w-0">
+                                <div className="text-sm text-white">{effect.name}</div>
+                                <div className="text-xs text-white/45">
+                                  {effect.numericId} · {effect.effectId || "no properties.id"}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="label">Resolved Effect Links</div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      {selectedLinkedEffects.length ? (
+                        <div className="space-y-2">
+                          {selectedLinkedEffects.map((link) => (
+                            <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
+                              <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
+                              <div className="mt-1 text-xs text-white/45">
+                                {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="label">Additional Runtime JSON</div>
+                    <textarea
+                      className="input mt-1 min-h-64 font-mono text-sm"
+                      value={selectedAbility.extraPropertiesJson}
+                      placeholder='{"power_percent": 0.35, "valid_targets": 1}'
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, extraPropertiesJson: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <div className="label">Additional Root JSON</div>
+                    <textarea
+                      className="input mt-1 min-h-64 font-mono text-sm"
+                      value={selectedAbility.extraRootJson}
+                      placeholder='{"metadata/_custom_type_script": "uid://..."}'
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, extraRootJson: event.target.value }))}
+                    />
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="Preview" description="Quick view of the current ability icon, description, and linked status-effect behavior.">
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
+                  <div className="flex flex-col gap-5 md:flex-row md:items-start">
+                    <img src={previewIcon} alt="" className="h-24 w-24 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-3xl font-semibold text-white">{selectedAbility.name || "Unnamed Ability"}</div>
+                      <div className="mt-2 font-mono text-xs text-white/55">{selectedAbility.id || "missing-id"}</div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
+                        <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
+                        {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {selectedAbility.cooldown}</span> : null}
+                        {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
+                      </div>
+                      {selectedAbility.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedAbility.description}</div> : null}
+                      {selectedLinkedEffects.length ? (
+                        <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/70">
+                          {selectedLinkedEffects.map((link) => (
+                            <span key={`${link.numericId}-${link.sources.join("-")}`} className="rounded bg-white/5 px-2 py-1">
+                              {link.effectName || `Status ${link.numericId}`} · {sourceLabel(link.sources)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="Export Preview" description="The full ability bundle still exports as indexed per-file JSON, matching the real game data layout.">
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn" onClick={() => void handleCopyIndexJson()}>
+                    Copy Updated _AbilityIndex.json
+                  </button>
+                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40" disabled={workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
+                    Download abilities bundle.zip
+                  </button>
+                </div>
+                <pre className="max-h-[28rem] overflow-auto rounded-xl border border-white/10 bg-[#08101c] p-4 text-sm text-white/80">{abilityIndexJson}</pre>
+              </Section>
+            </>
+          ) : (
+            <Section title="No Ability Selected" description="Create a new ability or pick one from the left sidebar to start editing.">
+              <button className="btn" onClick={addBlankAbility}>
+                New Ability
+              </button>
+            </Section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
