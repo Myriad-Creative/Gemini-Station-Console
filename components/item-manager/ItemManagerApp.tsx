@@ -385,16 +385,22 @@ export default function ItemManagerApp() {
                             <img
                               src={buildIconSrc(resolvedItemIconPath(item.icon), item.id || "item", item.name || item.id)}
                               alt=""
-                              className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
+                              className="h-14 w-14 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-base font-semibold text-white">{item.name || "Unnamed Item"}</div>
-                              <div className="mt-1 truncate font-mono text-xs text-white/55">{item.id || "missing-id"}</div>
-                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
-                                <span className="rounded bg-white/5 px-2 py-1">{ITEM_RARITY_LABEL[item.rarity] || `Rarity ${item.rarity || "?"}`}</span>
-                                {item.type.trim() ? <span className="rounded bg-white/5 px-2 py-1">{item.type}</span> : null}
-                                {isDuplicate ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Duplicate ID</span> : null}
-                                {hasErrors ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Errors</span> : null}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-base font-semibold text-white">{item.name || "Unnamed Item"}</div>
+                                  <div className="mt-1 max-h-[2.75rem] overflow-hidden text-xs leading-[1.35rem] text-white/55">
+                                    {item.description.trim() || "No description."}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 space-y-1 text-[10px] text-white/65">
+                                  {item.type.trim() ? <div className="rounded bg-white/5 px-2 py-1 text-right">{item.type}</div> : null}
+                                  <div className="rounded bg-white/5 px-2 py-1 text-right">{ITEM_RARITY_LABEL[item.rarity] || `Rarity ${item.rarity || "?"}`}</div>
+                                  {isDuplicate ? <div className="rounded bg-red-400/15 px-2 py-1 text-right text-red-100">Duplicate ID</div> : null}
+                                  {hasErrors ? <div className="rounded bg-red-400/15 px-2 py-1 text-right text-red-100">Errors</div> : null}
+                                </div>
                               </div>
                             </div>
                           </div>
