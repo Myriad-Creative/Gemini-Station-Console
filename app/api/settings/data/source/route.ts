@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
+  "items",
   "mobs",
   "comms",
   "merchantProfiles",

@@ -22,6 +22,11 @@ There is no manifest URL, no bundled runtime data, and no separate upload-based 
 - Dashboard (missions by band, **coverage by band**, rarity distribution)
 - Mods Explorer (icons, rarity coloring, **hover card** with full stats/desc, sorting)
 - Items Explorer (icons, filters, sorting)
+- Items Manager:
+  - Read `items.json` directly from the active local game root
+  - Create, clone, edit, delete, and validate item drafts with duplicate-ID detection
+  - Edit core fields like ID, name, rarity, image, type, and description while preserving extra runtime JSON
+  - Download the updated `items.json`, copy the full file JSON, or copy only the current item JSON
 - Missions Explorer (shared mission workspace + band filter)
 - Mob Lab:
   - Read `mobs.json` directly from the active local game root
@@ -118,6 +123,23 @@ Mob Lab is isolated from the console’s existing read-only mob parsing and from
    - copying only the currently selected profile JSON.
 
 Merchant Lab is isolated from the console’s existing read-only item/mod explorers and from the separate mission/mob tools.
+
+## Items Manager Usage
+1. Open `/items/manager` from the top navigation.
+2. Set a local game root in `/settings`. If it includes `data/database/items/items.json`, Items Manager auto-seeds from that file.
+3. Use the left sidebar to search and filter items by rarity and type, then select the current item draft.
+4. Edit the selected item’s:
+   - unique item ID
+   - name
+   - rarity
+   - image / icon path
+   - type
+   - description
+   - additional runtime JSON for unmodeled fields
+5. Use the export actions to:
+   - download the updated `items.json`,
+   - copy the whole updated file JSON, or
+   - copy just the current item JSON.
 
 ## Comms Manager Usage
 1. Open `/comms` from the top navigation.

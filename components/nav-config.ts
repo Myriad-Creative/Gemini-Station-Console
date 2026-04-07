@@ -31,6 +31,12 @@ const MOD_SECTION_LINKS: NavLink[] = [
   { href: "/mods/builder", label: "Builder", aliases: ["/authoring"] },
 ];
 
+const ITEM_SECTION_LINKS: NavLink[] = [
+  { href: "/items", label: "Items Dashboard" },
+  { href: "/items/explorer", label: "Explorer" },
+  { href: "/items/manager", label: "Manager" },
+];
+
 const DATA_SECTION_LINKS: NavLink[] = [
   { href: "/data", label: "Data Dashboard" },
   { href: "/data/map", label: "Map" },
@@ -39,7 +45,7 @@ const DATA_SECTION_LINKS: NavLink[] = [
   { href: "/data/systems", label: "Systems" },
 ];
 
-export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "data" | null {
+export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "items" | "data" | null {
   if (!pathname) return null;
 
   if (pathname === "/mission-lab" || pathname === "/missions" || pathname.startsWith("/missions/")) {
@@ -48,6 +54,10 @@ export function getActiveSection(pathname: string | null | undefined): "missions
 
   if (pathname === "/authoring" || pathname === "/mods" || pathname.startsWith("/mods/")) {
     return "mods";
+  }
+
+  if (pathname === "/items" || pathname.startsWith("/items/")) {
+    return "items";
   }
 
   if (pathname === "/data" || pathname.startsWith("/data/")) {
@@ -61,6 +71,7 @@ export function getSectionLinks(pathname: string | null | undefined): NavLink[] 
   const section = getActiveSection(pathname);
   if (section === "missions") return MISSION_SECTION_LINKS;
   if (section === "mods") return MOD_SECTION_LINKS;
+  if (section === "items") return ITEM_SECTION_LINKS;
   if (section === "data") return DATA_SECTION_LINKS;
   return [];
 }
@@ -69,6 +80,7 @@ export function getSectionAnchorHref(pathname: string | null | undefined) {
   const section = getActiveSection(pathname);
   if (section === "missions") return "/missions";
   if (section === "mods") return "/mods";
+  if (section === "items") return "/items";
   if (section === "data") return "/data";
   return null;
 }
@@ -77,6 +89,7 @@ export function isMainLinkActive(pathname: string | null | undefined, href: stri
   if (href === "/") return pathname === "/";
   if (href === "/missions") return getActiveSection(pathname) === "missions";
   if (href === "/mods") return getActiveSection(pathname) === "mods";
+  if (href === "/items") return getActiveSection(pathname) === "items";
   if (href === "/data") return getActiveSection(pathname) === "data";
   return pathname === href || pathname?.startsWith(`${href}/`) || false;
 }
