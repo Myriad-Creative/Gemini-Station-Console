@@ -144,16 +144,34 @@ function parseAbilityFileId(raw: JsonObject, indexedId: string, fileName: string
   return numericPrefix || base;
 }
 
+function inferLoadedDeliveryType(rawDeliveryType: unknown, properties: JsonObject, draftSeed: { script: string; fileName: string; name: string; projectileScene: string }) {
+  const normalized = String(rawDeliveryType ?? "").trim().toLowerCase();
+  if (normalized === "energy" || normalized === "beam" || normalized === "projectile" || normalized === "other") {
+    return normalized;
+  }
+  const script = draftSeed.script.toLowerCase();
+  const fileName = draftSeed.fileName.toLowerCase();
+  const name = draftSeed.name.toLowerCase();
+  if (draftSeed.projectileScene.trim()) return "projectile";
+  if (script.includes("beam") || fileName.includes("beam") || name.includes("beam")) return "beam";
+  if (script.includes("cannon") || script.includes("shot") || script.includes("bolt") || script.includes("blast") || script.includes("strike")) return "energy";
+  if (fileName.includes("cannon") || fileName.includes("shot") || fileName.includes("bolt") || fileName.includes("blast") || fileName.includes("strike")) return "energy";
+  if (name.includes("cannon") || name.includes("shot") || name.includes("bolt") || name.includes("blast") || name.includes("strike")) return "energy";
+  if (properties.power_percent !== undefined || properties.base_damage !== undefined) return "energy";
+  return "other";
+}
+
 function classifyAbilityDeliveryType(draft: AbilityDraft) {
+  if (draft.deliveryType) return draft.deliveryType;
   const script = draft.script.toLowerCase();
   const fileName = draft.fileName.toLowerCase();
   const name = draft.name.toLowerCase();
   if (draft.projectileScene.trim()) return "projectile";
   if (script.includes("beam") || fileName.includes("beam") || name.includes("beam")) return "beam";
-  if (script.includes("mine") || fileName.includes("mine") || name.includes("mine")) return "mine";
-  if (script.includes("blast") || fileName.includes("blast") || name.includes("blast")) return "blast";
-  if (draft.linkedEffects.length) return "status";
-  return "utility";
+  if (script.includes("cannon") || script.includes("shot") || script.includes("bolt") || script.includes("blast") || script.includes("strike")) return "energy";
+  if (fileName.includes("cannon") || fileName.includes("shot") || fileName.includes("bolt") || fileName.includes("blast") || fileName.includes("strike")) return "energy";
+  if (name.includes("cannon") || name.includes("shot") || name.includes("bolt") || name.includes("blast") || name.includes("strike")) return "energy";
+  return "other";
 }
 
 function buildEffectLinkEntries(
@@ -229,6 +247,13 @@ function loadStatusEffects(gameRoot: string, diagnostics: AbilityManagerDiagnost
     try {
       const raw = parseJsonObjectFile(absolutePath);
       const properties = asObject(raw.properties);
+      const numericId = indexed.indexedId || path.basename(absolutePath, ".json").match(/^(\d+)/)?.[1] || String(raw.id ?? "");
+      if (raw.id !== undefined && String(raw.id).trim() && String(raw.id).trim() !== String(numericId)) {
+        diagnostics.push({
+          level: "warning",
+          message: `Status effect file ${path.basename(absolutePath)} has root id ${String(raw.id).trim()} but index/file id ${String(numericId)} is being used.`,
+        });
+      }
       const extraProperties = stripKnownKeys(properties, [
         "id",
         "name",
@@ -251,7 +276,7 @@ function loadStatusEffects(gameRoot: string, diagnostics: AbilityManagerDiagnost
       effects.push({
         key: createStatusEffectKey(),
         sourceIndex: effects.length,
-        numericId: String(raw.id ?? indexed.indexedId ?? "").trim(),
+        numericId: String(numericId).trim(),
         fileName: path.basename(absolutePath),
         script: String(raw.script ?? "").trim(),
         effectId: String(properties.id ?? "").trim(),
@@ -345,29 +370,57 @@ function loadAbilities(gameRoot: string, statusEffects: StatusEffectDraft[], dia
       const scriptEffectIds = inferEffectLinksFromScript(scriptPathResolved);
       const linkedEffects = buildEffectLinkEntries([...jsonEffectIds, ...scriptEffectIds], statusEffectMap);
       const extraProperties = stripKnownKeys(properties, [
+        "delivery_type",
+        "threat_type",
+        "threat_multiplier",
+        "valid_targets",
+        "facing_requirement",
         "name",
         "description",
         "icon",
+        "min_range_type",
+        "max_range_type",
+        "is_gcd_locked",
         "cooldown",
+        "charge_time",
         "energy_cost",
         "attack_range",
+        "power_percent",
+        "base_damage",
         "projectile_scene",
         "applies_effect_ids",
       ]);
       const extraRoot = stripKnownKeys(raw, ["id", "script", "properties"]);
 
+      const draftSeed = {
+        script: String(raw.script ?? "").trim(),
+        fileName: path.basename(absolutePath),
+        name: String(properties.name ?? "").trim(),
+        projectileScene: String(properties.projectile_scene ?? "").trim(),
+      };
       abilities.push({
         key: createAbilityKey(),
         sourceIndex: abilities.length,
         id: parseAbilityFileId(raw, indexed.indexedId, path.basename(absolutePath)),
         fileName: path.basename(absolutePath),
         script: String(raw.script ?? "").trim(),
+        deliveryType: inferLoadedDeliveryType(properties.delivery_type, properties, draftSeed),
         name: String(properties.name ?? "").trim(),
         description: String(properties.description ?? "").trim(),
         icon: String(properties.icon ?? "").trim(),
+        threatType: properties.threat_type === undefined || properties.threat_type === null ? "" : String(properties.threat_type),
+        threatMultiplier: properties.threat_multiplier === undefined || properties.threat_multiplier === null ? "" : String(properties.threat_multiplier),
+        validTargets: properties.valid_targets === undefined || properties.valid_targets === null ? "" : String(properties.valid_targets),
+        facingRequirement: properties.facing_requirement === undefined || properties.facing_requirement === null ? "" : String(properties.facing_requirement),
+        minRangeType: properties.min_range_type === undefined || properties.min_range_type === null ? "" : String(properties.min_range_type),
+        maxRangeType: properties.max_range_type === undefined || properties.max_range_type === null ? "" : String(properties.max_range_type),
+        isGcdLocked: Boolean(properties.is_gcd_locked),
         cooldown: properties.cooldown === undefined || properties.cooldown === null ? "" : String(properties.cooldown),
+        chargeTime: properties.charge_time === undefined || properties.charge_time === null ? "" : String(properties.charge_time),
         energyCost: properties.energy_cost === undefined || properties.energy_cost === null ? "" : String(properties.energy_cost),
         attackRange: properties.attack_range === undefined || properties.attack_range === null ? "" : String(properties.attack_range),
+        powerPercent: properties.power_percent === undefined || properties.power_percent === null ? "" : String(properties.power_percent),
+        baseDamage: properties.base_damage === undefined || properties.base_damage === null ? "" : String(properties.base_damage),
         projectileScene: String(properties.projectile_scene ?? "").trim(),
         appliesEffectIds: parseNumericIdList(properties.applies_effect_ids).map(String),
         extraPropertiesJson: stableJsonBlock(extraProperties),
@@ -473,4 +526,3 @@ export function loadAbilityManagerDatabase(gameRoot: string): AbilityManagerData
 export function inferAbilityDeliveryType(draft: AbilityDraft) {
   return classifyAbilityDeliveryType(draft);
 }
-

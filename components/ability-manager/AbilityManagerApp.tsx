@@ -266,12 +266,10 @@ export default function AbilityManagerApp() {
                 <div className="label">Delivery Type</div>
                 <select className="select mt-1 w-full" value={deliveryFilter} onChange={(event) => setDeliveryFilter(event.target.value)}>
                   <option value="">All types</option>
+                  <option value="energy">Energy</option>
                   <option value="projectile">Projectile</option>
                   <option value="beam">Beam</option>
-                  <option value="mine">Mine</option>
-                  <option value="blast">Blast</option>
-                  <option value="status">Status-linked</option>
-                  <option value="utility">Utility / Other</option>
+                  <option value="other">Other</option>
                 </select>
               </div>
 
@@ -391,7 +389,21 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Delivery Type</div>
-                    <div className="input mt-1 flex items-center text-white/70 capitalize">{inferAbilityDeliveryType(selectedAbility)}</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedAbility.deliveryType}
+                      onChange={(event) =>
+                        updateSelectedAbility((current) => ({
+                          ...current,
+                          deliveryType: event.target.value as AbilityDraft["deliveryType"],
+                        }))
+                      }
+                    >
+                      <option value="energy">Energy</option>
+                      <option value="beam">Beam</option>
+                      <option value="projectile">Projectile</option>
+                      <option value="other">Other</option>
+                    </select>
                   </div>
                   <div className="md:col-span-2">
                     <div className="label">Script</div>
@@ -399,8 +411,44 @@ export default function AbilityManagerApp() {
                     {selectedAbility.scriptPathResolved ? <div className="mt-2 text-xs text-white/45 break-all">{selectedAbility.scriptPathResolved}</div> : null}
                   </div>
                   <div>
+                    <div className="label">Threat Type</div>
+                    <input className="input mt-1" value={selectedAbility.threatType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, threatType: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Threat Multiplier</div>
+                    <input className="input mt-1" value={selectedAbility.threatMultiplier} onChange={(event) => updateSelectedAbility((current) => ({ ...current, threatMultiplier: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Valid Targets</div>
+                    <input className="input mt-1" value={selectedAbility.validTargets} onChange={(event) => updateSelectedAbility((current) => ({ ...current, validTargets: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Facing Requirement</div>
+                    <input className="input mt-1" value={selectedAbility.facingRequirement} onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Min Range Type</div>
+                    <input className="input mt-1" value={selectedAbility.minRangeType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, minRangeType: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Max Range Type</div>
+                    <input className="input mt-1" value={selectedAbility.maxRangeType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, maxRangeType: event.target.value }))} />
+                  </div>
+                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedAbility.isGcdLocked}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, isGcdLocked: event.target.checked }))}
+                    />
+                    GCD Locked
+                  </label>
+                  <div>
                     <div className="label">Cooldown</div>
                     <input className="input mt-1" value={selectedAbility.cooldown} onChange={(event) => updateSelectedAbility((current) => ({ ...current, cooldown: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Charge Time</div>
+                    <input className="input mt-1" value={selectedAbility.chargeTime} onChange={(event) => updateSelectedAbility((current) => ({ ...current, chargeTime: event.target.value }))} />
                   </div>
                   <div>
                     <div className="label">Energy Cost</div>
@@ -409,6 +457,14 @@ export default function AbilityManagerApp() {
                   <div>
                     <div className="label">Attack Range</div>
                     <input className="input mt-1" value={selectedAbility.attackRange} onChange={(event) => updateSelectedAbility((current) => ({ ...current, attackRange: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Power Percent</div>
+                    <input className="input mt-1" value={selectedAbility.powerPercent} onChange={(event) => updateSelectedAbility((current) => ({ ...current, powerPercent: event.target.value }))} />
+                  </div>
+                  <div>
+                    <div className="label">Base Damage</div>
+                    <input className="input mt-1" value={selectedAbility.baseDamage} onChange={(event) => updateSelectedAbility((current) => ({ ...current, baseDamage: event.target.value }))} />
                   </div>
                   <div>
                     <div className="label">Projectile Scene</div>
@@ -511,6 +567,7 @@ export default function AbilityManagerApp() {
                       <div className="mt-2 font-mono text-xs text-white/55">{selectedAbility.id || "missing-id"}</div>
                       <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
                         <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
+                        {selectedAbility.threatType.trim() ? <span className="rounded bg-white/5 px-2 py-1">Threat Type {selectedAbility.threatType}</span> : null}
                         {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {selectedAbility.cooldown}</span> : null}
                         {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
                       </div>
@@ -553,4 +610,3 @@ export default function AbilityManagerApp() {
     </div>
   );
 }
-

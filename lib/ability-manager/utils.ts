@@ -104,15 +104,16 @@ function nextFileName(existingFileNames: string[], baseFileName: string) {
 }
 
 export function inferAbilityDeliveryType(draft: AbilityDraft) {
+  if (draft.deliveryType) return draft.deliveryType;
   const script = draft.script.toLowerCase();
   const fileName = draft.fileName.toLowerCase();
   const name = draft.name.toLowerCase();
   if (draft.projectileScene.trim()) return "projectile";
   if (script.includes("beam") || fileName.includes("beam") || name.includes("beam")) return "beam";
-  if (script.includes("mine") || fileName.includes("mine") || name.includes("mine")) return "mine";
-  if (script.includes("blast") || fileName.includes("blast") || name.includes("blast")) return "blast";
-  if (draft.linkedEffects.length) return "status";
-  return "utility";
+  if (script.includes("cannon") || script.includes("shot") || script.includes("bolt") || script.includes("blast") || script.includes("strike")) return "energy";
+  if (fileName.includes("cannon") || fileName.includes("shot") || fileName.includes("bolt") || fileName.includes("blast") || fileName.includes("strike")) return "energy";
+  if (name.includes("cannon") || name.includes("shot") || name.includes("bolt") || name.includes("blast") || name.includes("strike")) return "energy";
+  return "other";
 }
 
 export function computeAbilityLinkedEffects(draft: AbilityDraft, statusEffectOptions: AbilityManagerStatusEffectOption[]) {
@@ -153,10 +154,13 @@ export function computeAbilityLinkedEffects(draft: AbilityDraft, statusEffectOpt
 
 export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase | null): AbilityManagerStatusEffectOption[] {
   if (!database) return [];
+  const seen = new Set<number>();
   return database.statusEffects
     .map((effect) => {
       const numericId = parseNumericId(effect.numericId);
       if (numericId === null) return null;
+      if (seen.has(numericId)) return null;
+      seen.add(numericId);
       return {
         numericId,
         effectId: effect.effectId,
@@ -175,12 +179,23 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     id,
     fileName: nextFileName(existingFileNames, `${id.padStart(3, "0")}_new_ability`),
     script: "",
+    deliveryType: "other",
     name: "",
     description: "",
     icon: "",
+    threatType: "",
+    threatMultiplier: "",
+    validTargets: "",
+    facingRequirement: "",
+    minRangeType: "",
+    maxRangeType: "",
+    isGcdLocked: false,
     cooldown: "",
+    chargeTime: "",
     energyCost: "",
     attackRange: "",
+    powerPercent: "",
+    baseDamage: "",
     projectileScene: "",
     appliesEffectIds: [],
     extraPropertiesJson: "",
@@ -333,10 +348,22 @@ export function validateAbilityDrafts(abilities: AbilityDraft[], statusEffectOpt
     if (!draft.script.trim()) {
       issues.push({ level: "warning", draftKey: draft.key, field: "script", message: "Ability script path is blank." });
     }
+    if (!["energy", "beam", "projectile", "other"].includes(draft.deliveryType)) {
+      issues.push({ level: "error", draftKey: draft.key, field: "deliveryType", message: "Delivery Type must be energy, beam, projectile, or other." });
+    }
 
+    parseNumberField(draft.threatType, "Threat Type", issues, draft.key, "threatType");
+    parseNumberField(draft.threatMultiplier, "Threat Multiplier", issues, draft.key, "threatMultiplier");
+    parseNumberField(draft.validTargets, "Valid Targets", issues, draft.key, "validTargets");
+    parseNumberField(draft.facingRequirement, "Facing Requirement", issues, draft.key, "facingRequirement");
+    parseNumberField(draft.minRangeType, "Min Range Type", issues, draft.key, "minRangeType");
+    parseNumberField(draft.maxRangeType, "Max Range Type", issues, draft.key, "maxRangeType");
     parseNumberField(draft.cooldown, "Cooldown", issues, draft.key, "cooldown");
+    parseNumberField(draft.chargeTime, "Charge Time", issues, draft.key, "chargeTime");
     parseNumberField(draft.energyCost, "Energy Cost", issues, draft.key, "energyCost");
     parseNumberField(draft.attackRange, "Attack Range", issues, draft.key, "attackRange");
+    parseNumberField(draft.powerPercent, "Power Percent", issues, draft.key, "powerPercent");
+    parseNumberField(draft.baseDamage, "Base Damage", issues, draft.key, "baseDamage");
 
     try {
       parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON");
@@ -472,12 +499,23 @@ export function validateStatusEffectDrafts(statusEffects: StatusEffectDraft[]) {
 
 function exportAbilityObject(draft: AbilityDraft) {
   const properties = cleanObject({
+    delivery_type: draft.deliveryType,
+    threat_type: draft.threatType.trim() ? Number(draft.threatType.trim()) : undefined,
+    threat_multiplier: draft.threatMultiplier.trim() ? Number(draft.threatMultiplier.trim()) : undefined,
+    valid_targets: draft.validTargets.trim() ? Number(draft.validTargets.trim()) : undefined,
+    facing_requirement: draft.facingRequirement.trim() ? Number(draft.facingRequirement.trim()) : undefined,
     name: draft.name.trim(),
     description: draft.description.trim(),
     icon: draft.icon.trim(),
+    min_range_type: draft.minRangeType.trim() ? Number(draft.minRangeType.trim()) : undefined,
+    max_range_type: draft.maxRangeType.trim() ? Number(draft.maxRangeType.trim()) : undefined,
+    is_gcd_locked: draft.isGcdLocked,
     cooldown: draft.cooldown.trim() ? Number(draft.cooldown.trim()) : undefined,
+    charge_time: draft.chargeTime.trim() ? Number(draft.chargeTime.trim()) : undefined,
     energy_cost: draft.energyCost.trim() ? Number(draft.energyCost.trim()) : undefined,
     attack_range: draft.attackRange.trim() ? Number(draft.attackRange.trim()) : undefined,
+    power_percent: draft.powerPercent.trim() ? Number(draft.powerPercent.trim()) : undefined,
+    base_damage: draft.baseDamage.trim() ? Number(draft.baseDamage.trim()) : undefined,
     projectile_scene: draft.projectileScene.trim(),
     ...(draft.appliesEffectIds.length ? { applies_effect_ids: draft.appliesEffectIds.map((entry) => Number(entry)) } : {}),
     ...parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON"),
