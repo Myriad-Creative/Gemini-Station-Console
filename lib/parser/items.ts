@@ -14,6 +14,7 @@ function normalizeItems(data: RawItems): Item[] {
     rarity: Number(it.rarity ?? 0),
     icon: it.icon ?? it.icon_path ?? undefined,
     type: it.type ?? it.category ?? undefined,
+    description: typeof it.description === "string" ? it.description : undefined,
     stats: typeof it.stats === "object" ? it.stats : {}
   }));
 }

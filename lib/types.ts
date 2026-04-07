@@ -67,6 +67,7 @@ export interface Item {
   rarity: number;
   icon?: string;
   type?: string;
+  description?: string;
   stats?: Record<string, number>;
 }
 

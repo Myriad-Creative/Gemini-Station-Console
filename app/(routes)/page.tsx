@@ -19,6 +19,7 @@ type Summary = {
   counts: {
     mods: number;
     items: number;
+    itemsMissingDescriptions: number;
     missions: number;
     mobs: number;
     abilities: number;
@@ -39,6 +40,7 @@ type ServiceCard = {
   description: string;
   value: number;
   accent?: string;
+  notice?: string | null;
 };
 
 function DashboardCard({
@@ -56,13 +58,14 @@ function DashboardCard({
   );
 }
 
-function ServiceLinkCard({ href, label, description, value, accent }: ServiceCard) {
+function ServiceLinkCard({ href, label, description, value, accent, notice }: ServiceCard) {
   return (
     <Link href={href} className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-lg font-semibold text-white">{label}</div>
           <div className="mt-1 text-sm leading-6 text-white/55">{description}</div>
+          {notice ? <div className="mt-2 text-xs text-yellow-100/75">{notice}</div> : null}
         </div>
         <div className={`text-3xl font-semibold ${accent ?? "text-white"}`}>{value}</div>
       </div>
@@ -119,6 +122,7 @@ export default function DashboardPage() {
           counts: {
             mods: 0,
             items: 0,
+            itemsMissingDescriptions: 0,
             missions: 0,
             mobs: 0,
             abilities: 0,
@@ -161,6 +165,9 @@ export default function DashboardPage() {
       label: "Items",
       description: "Inspect the current item catalog.",
       value: data.counts.items,
+      notice: data.counts.itemsMissingDescriptions
+        ? `${data.counts.itemsMissingDescriptions} missing description${data.counts.itemsMissingDescriptions === 1 ? "" : "s"}`
+        : null,
     },
     {
       href: "/missions",

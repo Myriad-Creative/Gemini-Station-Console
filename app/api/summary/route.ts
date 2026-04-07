@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
     const [merchantProfilesResult, commsResult] = await Promise.all([countJsonEntries("merchantProfiles"), countJsonEntries("comms")]);
     const merchantProfiles = merchantProfilesResult.count;
     const comms = commsResult.count;
+    const itemsMissingDescriptions = store.items.filter((item) => !String(item.description ?? "").trim()).length;
 
     const missionRows = missionWorkspace.summary ? missionWorkspace.missions : [];
     const missionsByBand = missionWorkspace.summary
@@ -68,11 +69,13 @@ export async function GET(req: NextRequest) {
       if (!merchantProfiles) warnings.push("No merchant profiles were found in the local game root.");
       if (!comms) warnings.push("No comms contacts were found in the local game root.");
       if (!missionRows.length) warnings.push("No missions were found in the local game root.");
+      if (itemsMissingDescriptions) warnings.push(`${itemsMissingDescriptions} item${itemsMissingDescriptions === 1 ? " is" : "s are"} missing descriptions.`);
     }
 
     const counts = {
       mods: store.mods.length,
       items: store.items.length,
+      itemsMissingDescriptions,
       missions: missionRows.length,
       mobs: store.mobs.length,
       abilities: store.abilities.length,
@@ -104,7 +107,7 @@ export async function GET(req: NextRequest) {
         gameRootPath: null,
         lastValidated: null,
       },
-      counts: { mods: 0, items: 0, missions: 0, mobs: 0, abilities: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
+      counts: { mods: 0, items: 0, itemsMissingDescriptions: 0, missions: 0, mobs: 0, abilities: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });
   }
