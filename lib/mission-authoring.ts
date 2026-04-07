@@ -100,6 +100,7 @@ export interface MissionDraft {
   meta: MissionMetaDraft;
   arcs: string[];
   tags: string[];
+  dialogParticipants: string[];
   prerequisites: MissionPrerequisiteDraft[];
   rewards: MissionRewardDraft;
   steps: MissionStepDraft[];
@@ -236,10 +237,10 @@ export function createMissionConversationResponseDraft(text = ""): MissionConver
   };
 }
 
-export function createMissionConversationBeatDraft(): MissionConversationBeatDraft {
+export function createMissionConversationBeatDraft(speaker = ""): MissionConversationBeatDraft {
   return {
     key: uid("beat"),
-    speaker: "",
+    speaker,
     text: "",
     responses: [],
   };
@@ -302,6 +303,7 @@ export function createMissionDraft(): MissionDraft {
     },
     arcs: [],
     tags: [],
+    dialogParticipants: [],
     prerequisites: [],
     rewards: {
       credits: "0",
@@ -373,6 +375,7 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
     },
     arcs: [...draft.arcs],
     tags: [...draft.tags],
+    dialogParticipants: [...draft.dialogParticipants],
     prerequisites: draft.prerequisites.map((prerequisite) => ({
       key: uid("prerequisite"),
       id: prerequisite.id,
@@ -419,6 +422,24 @@ function normalizeImportedConversation(raw: unknown, fallbackId: string): Missio
     id: String(source.id ?? fallbackId),
     beats: Array.isArray(source.beats) ? (source.beats as unknown[]).map((entry) => normalizeImportedConversationBeat(entry)) : [],
   };
+}
+
+function inferDialogParticipants(
+  conversations: MissionConversationDraft[],
+  steps: MissionStepDraft[],
+  explicitParticipants: string[] = [],
+) {
+  return Array.from(
+    new Set([
+      ...explicitParticipants.map((entry) => entry.trim()).filter(Boolean),
+      ...conversations.flatMap((conversation) => conversation.beats.map((beat) => beat.speaker.trim()).filter(Boolean)),
+      ...steps
+        .flatMap((step) => step.objectives)
+        .filter((objective) => normalizeObjectiveType(objective.type) === "talk")
+        .map((objective) => objective.contactId.trim())
+        .filter(Boolean),
+    ]),
+  );
 }
 
 function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
@@ -495,6 +516,8 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     ? (source.steps as unknown[]).map((entry) => normalizeImportedStep(entry))
     : [createMissionStepDraft("single")];
   const conversationsSource = asObject(source.conversations);
+  const conversations = Object.entries(conversationsSource).map(([key, value]) => normalizeImportedConversation(value, key));
+  const explicitParticipants = stringList(source.dialogParticipants ?? source.dialog_participants);
 
   return {
     id: String(source.id ?? ""),
@@ -515,10 +538,11 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     },
     arcs: stringList(source.arcs),
     tags: stringList(source.tags),
+    dialogParticipants: inferDialogParticipants(conversations, steps, explicitParticipants),
     prerequisites: normalizeImportedPrerequisites(source.prerequisites),
     rewards: normalizeImportedRewards(source.rewards),
     steps: steps.length ? steps : [createMissionStepDraft("single")],
-    conversations: Object.entries(conversationsSource).map(([key, value]) => normalizeImportedConversation(value, key)),
+    conversations,
   };
 }
 

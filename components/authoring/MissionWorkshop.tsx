@@ -1,8 +1,9 @@
 "use client";
 
 import type { InputHTMLAttributes } from "react";
-import { KeyboardEvent, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
+import { KeyboardEvent, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ValidationMessage } from "@lib/authoring";
+import { parseLooseJson } from "@lib/json";
 import type { NormalizedMission } from "@lib/mission-lab/types";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import {
@@ -84,7 +85,10 @@ export default function MissionWorkshop({
   const [items, setItems] = useState<Item[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
+  const [commsOptions, setCommsOptions] = useState<LookupOption[]>([]);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const [pendingBeatFocusKey, setPendingBeatFocusKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedIndex <= missions.length - 1) return;
@@ -96,25 +100,29 @@ export default function MissionWorkshop({
 
     async function loadCatalogs() {
       try {
-        const [itemsResponse, modsResponse, mobsResponse] = await Promise.all([
+        const [itemsResponse, modsResponse, mobsResponse, commsResponse] = await Promise.all([
           fetch("/api/items"),
           fetch("/api/mods"),
           fetch("/api/mobs"),
+          fetch("/api/settings/data/source?kind=comms"),
         ]);
 
         const itemsJson = await itemsResponse.json().catch(() => ({ data: [] }));
         const modsJson = await modsResponse.json().catch(() => ({ data: [] }));
         const mobsJson = await mobsResponse.json().catch(() => ({ data: [] }));
+        const commsJson = await commsResponse.json().catch(() => ({ ok: false, text: "" }));
         if (cancelled) return;
 
         setItems(Array.isArray(itemsJson.data) ? itemsJson.data : []);
         setMods(Array.isArray(modsJson.data) ? modsJson.data : []);
         setMobs(Array.isArray(mobsJson.data) ? mobsJson.data : []);
+        setCommsOptions(commsJson.ok && typeof commsJson.text === "string" ? parseCommsLookupOptions(commsJson.text) : []);
       } catch {
         if (cancelled) return;
         setItems([]);
         setMods([]);
         setMobs([]);
+        setCommsOptions([]);
       }
     }
 
@@ -173,6 +181,24 @@ export default function MissionWorkshop({
     () => buildSortedOptions(selectedMission?.conversations.map((conversation) => conversation.id) ?? []),
     [selectedMission],
   );
+  const missionDialogueOptions = useMemo(
+    () => buildMissionDialogueOptions(selectedMission?.dialogParticipants ?? [], commsOptions),
+    [commsOptions, selectedMission],
+  );
+
+  useEffect(() => {
+    if (!pendingBeatFocusKey) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = beatTextAreaRefs.current[pendingBeatFocusKey];
+      if (target) {
+        target.focus();
+        const length = target.value.length;
+        target.setSelectionRange(length, length);
+        setPendingBeatFocusKey(null);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [missions, pendingBeatFocusKey]);
 
   const filteredMissions = useMemo(() => {
     return missions
@@ -281,6 +307,20 @@ export default function MissionWorkshop({
       ...beat,
       responses: beat.responses.map((response, index) => (index === responseIndex ? updater(response) : response)),
     }));
+  }
+
+  function queueBeatFocus(beatKey: string) {
+    setPendingBeatFocusKey(beatKey);
+  }
+
+  function addBeatAfter(conversationIndex: number, beatIndex: number, speaker: string) {
+    const nextBeat = createMissionConversationBeatDraft(speaker);
+    updateConversation(conversationIndex, (current) => {
+      const next = [...current.beats];
+      next.splice(beatIndex + 1, 0, nextBeat);
+      return { ...current, beats: next };
+    });
+    queueBeatFocus(nextBeat.key);
   }
 
   function addMission() {
@@ -828,6 +868,18 @@ export default function MissionWorkshop({
                       placeholder="step1"
                     />
 
+                    <div className="mt-4">
+                      <LookupIdListEditor
+                        label="Mission Dialogue Contacts"
+                        values={selectedMission.dialogParticipants}
+                        options={commsOptions}
+                        placeholder="Search comms contact name or id"
+                        emptyText="No dialogue contacts selected for this mission yet."
+                        helperText="This is an authoring-only mission speaker pool. Speaker dropdowns below use only the contacts selected here."
+                        onChange={(next) => updateSelected((draft) => ({ ...draft, dialogParticipants: next }))}
+                      />
+                    </div>
+
                     <div className="mt-4 space-y-3">
                       {conversation.beats.map((beat, beatIndex) => (
                         <div key={beat.key} className="rounded border border-white/10 bg-black/20 p-3">
@@ -878,11 +930,15 @@ export default function MissionWorkshop({
                           </div>
 
                           <div className="grid gap-4 md:grid-cols-2">
-                            <Field
+                            <SelectLookupField
                               label="Speaker"
                               value={beat.speaker}
-                              onChange={(value) => updateBeat(conversationIndex, beatIndex, (current) => ({ ...current, speaker: value }))}
-                              placeholder="jerry_leroy"
+                              options={buildSpeakerOptions(missionDialogueOptions, beat.speaker)}
+                              placeholder="Select a mission dialogue contact"
+                              onChange={(value) => {
+                                updateBeat(conversationIndex, beatIndex, (current) => ({ ...current, speaker: value }));
+                                queueBeatFocus(beat.key);
+                              }}
                             />
                           </div>
 
@@ -891,12 +947,21 @@ export default function MissionWorkshop({
                             value={beat.text}
                             onChange={(value) => updateBeat(conversationIndex, beatIndex, (current) => ({ ...current, text: value }))}
                             placeholder="What this speaker says in this beat."
+                            textareaRef={(node) => {
+                              beatTextAreaRefs.current[beat.key] = node;
+                            }}
                           />
 
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="label">Responses</div>
                               <div className="flex flex-wrap gap-2">
+                                <button
+                                  className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
+                                  onClick={() => addBeatAfter(conversationIndex, beatIndex, beat.speaker)}
+                                >
+                                  Add Beat
+                                </button>
                                 <button
                                   className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
                                   onClick={() =>
@@ -907,18 +972,6 @@ export default function MissionWorkshop({
                                   }
                                 >
                                   Add Response
-                                </button>
-                                <button
-                                  className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
-                                  onClick={() =>
-                                    updateConversation(conversationIndex, (current) => {
-                                      const next = [...current.beats];
-                                      next.splice(beatIndex + 1, 0, createMissionConversationBeatDraft());
-                                      return { ...current, beats: next };
-                                    })
-                                  }
-                                >
-                                  Add Beat
                                 </button>
                               </div>
                             </div>
@@ -1462,6 +1515,7 @@ function LookupIdListEditor({
   options,
   placeholder,
   emptyText,
+  helperText,
   onChange,
 }: {
   label: string;
@@ -1469,6 +1523,7 @@ function LookupIdListEditor({
   options: LookupOption[];
   placeholder: string;
   emptyText: string;
+  helperText?: string;
   onChange: (next: string[]) => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -1531,6 +1586,8 @@ function LookupIdListEditor({
           Add
         </button>
       </div>
+
+      {helperText ? <div className="text-xs text-white/50">{helperText}</div> : null}
 
       <datalist id={listId}>
         {options.map((option) => (
@@ -1601,6 +1658,39 @@ function DatalistField({
   );
 }
 
+function SelectLookupField({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: LookupOption[];
+  placeholder?: string;
+  onChange: (next: string) => void;
+}) {
+  const selected = options.find((option) => option.id === value.trim());
+
+  return (
+    <label className="space-y-2">
+      <div className="label">{label}</div>
+      <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{placeholder || "Select an option"}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <div className="text-xs text-white/50">
+        {selected ? `${selected.id}${selected.meta ? ` · ${selected.meta}` : ""}` : "Only mission-selected dialogue contacts appear in this dropdown."}
+      </div>
+    </label>
+  );
+}
+
 function Field({
   label,
   value,
@@ -1628,17 +1718,19 @@ function TextAreaField({
   onChange,
   placeholder,
   helperText,
+  textareaRef,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   helperText?: string;
+  textareaRef?: (node: HTMLTextAreaElement | null) => void;
 }) {
   return (
     <label className="space-y-2">
       <div className="label">{label}</div>
-      <textarea className="input min-h-24" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <textarea ref={textareaRef} className="input min-h-24" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
       {helperText ? <div className="text-xs text-white/50">{helperText}</div> : null}
     </label>
   );
@@ -1772,6 +1864,38 @@ function mobToLookupOption(mob: Mob): LookupOption {
     label: mob.displayName?.trim() || String(mob.id),
     meta: [mob.level != null ? `Level ${mob.level}` : "", mob.faction?.trim() || ""].filter(Boolean).join(" · "),
   };
+}
+
+function parseCommsLookupOptions(text: string): LookupOption[] {
+  try {
+    const parsed = parseLooseJson<Record<string, { name?: unknown; greeting?: unknown }>>(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    return Object.entries(parsed)
+      .map(([id, value]) => ({
+        id,
+        label: String((value && typeof value === "object" && "name" in value ? value.name : "") ?? id).trim() || id,
+        meta: String((value && typeof value === "object" && "greeting" in value ? value.greeting : "") ?? "").trim() || undefined,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  } catch {
+    return [];
+  }
+}
+
+function buildMissionDialogueOptions(selectedIds: string[], allOptions: LookupOption[]) {
+  return selectedIds
+    .map((id) => {
+      const matched = allOptions.find((option) => option.id === id);
+      return matched ?? { id, label: id };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function buildSpeakerOptions(options: LookupOption[], currentSpeaker: string) {
+  const speakerId = currentSpeaker.trim();
+  if (!speakerId) return options;
+  if (options.some((option) => option.id === speakerId)) return options;
+  return [{ id: speakerId, label: speakerId }, ...options];
 }
 
 async function copyText(value: string) {
