@@ -1,12 +1,14 @@
 import fs from "fs";
 import path from "path";
 import { parseLooseJson } from "@lib/json";
+import { STATUS_EFFECT_MODIFIER_KEYS } from "@lib/ability-manager/types";
 import type {
   AbilityDraft,
   AbilityEffectLink,
   AbilityLinkSource,
   AbilityManagerDatabase,
   AbilityManagerDiagnostic,
+  StatusEffectModifierMap,
   StatusEffectDraft,
 } from "@lib/ability-manager/types";
 
@@ -37,6 +39,25 @@ function stableJsonBlock(value: unknown) {
   const objectValue = asObject(value);
   if (!Object.keys(objectValue).length) return "";
   return JSON.stringify(objectValue, null, 2);
+}
+
+function normalizeModifierMap(value: unknown) {
+  const objectValue = asObject(value);
+  const keys = [...new Set([...STATUS_EFFECT_MODIFIER_KEYS, ...Object.keys(objectValue)])].sort((left, right) => {
+    const leftIndex = STATUS_EFFECT_MODIFIER_KEYS.indexOf(left as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number]);
+    const rightIndex = STATUS_EFFECT_MODIFIER_KEYS.indexOf(right as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number]);
+    if (leftIndex !== -1 && rightIndex !== -1) return leftIndex - rightIndex;
+    if (leftIndex !== -1) return -1;
+    if (rightIndex !== -1) return 1;
+    return left.localeCompare(right);
+  });
+
+  return Object.fromEntries(
+    keys.map((key) => {
+      const raw = objectValue[key];
+      return [key, raw === undefined || raw === null || raw === "" ? "0" : String(raw)];
+    }),
+  ) as StatusEffectModifierMap;
 }
 
 function stripKnownKeys(source: JsonObject, keys: string[]) {
@@ -292,8 +313,8 @@ function loadStatusEffects(gameRoot: string, diagnostics: AbilityManagerDiagnost
         canStack: Boolean(properties.can_stack),
         maxStacks: properties.max_stacks === undefined || properties.max_stacks === null ? "" : String(properties.max_stacks),
         showDuration: Boolean(properties.show_duration),
-        flatModifiersJson: stableJsonBlock(properties.flat_modifiers),
-        percentModifiersJson: stableJsonBlock(properties.percent_modifiers),
+        flatModifiers: normalizeModifierMap(properties.flat_modifiers),
+        percentModifiers: normalizeModifierMap(properties.percent_modifiers),
         extraPropertiesJson: stableJsonBlock(extraProperties),
         extraRootJson: stableJsonBlock(extraRoot),
         linkedAbilityIds: [],

@@ -175,7 +175,7 @@ export default function AbilityManagerApp() {
     setStatus({ tone: "success", message: "Downloaded abilities bundle zip." });
   }
 
-  if (loading) return <div>Loading…</div>;
+  if (loading && !database) return <div>Loading…</div>;
 
   if (!database) {
     return (
@@ -339,7 +339,7 @@ export default function AbilityManagerApp() {
                 </div>
               ) : (
                 <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
-                  The selected ability currently passes validation.
+                  no issues
                 </div>
               )
             ) : (

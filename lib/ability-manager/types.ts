@@ -1,6 +1,31 @@
 export type AbilityLinkSource = "json" | "script_constant" | "script_fallback";
 
-export type AbilityDeliveryType = "projectile" | "beam" | "mine" | "blast" | "status" | "utility";
+export type AbilityDeliveryType = "energy" | "beam" | "projectile" | "other";
+
+export const STATUS_EFFECT_MODIFIER_KEYS = [
+  "armor",
+  "armor_regen",
+  "cargo_shielding",
+  "cooldown_modifier",
+  "crit_chance",
+  "energy_regen_rate",
+  "evasion",
+  "hacking",
+  "heat_resistance",
+  "overclock",
+  "power",
+  "salvage_bonus",
+  "scan_bonus",
+  "sensors",
+  "shield_regen",
+  "shields",
+  "speed",
+  "stealth",
+  "targeting",
+  "threat_generation",
+] as const;
+
+export type StatusEffectModifierMap = Record<string, string>;
 
 export type AbilityManagerStatusEffectOption = {
   numericId: number;
@@ -67,8 +92,8 @@ export type StatusEffectDraft = {
   canStack: boolean;
   maxStacks: string;
   showDuration: boolean;
-  flatModifiersJson: string;
-  percentModifiersJson: string;
+  flatModifiers: StatusEffectModifierMap;
+  percentModifiers: StatusEffectModifierMap;
   extraPropertiesJson: string;
   extraRootJson: string;
   linkedAbilityIds: string[];

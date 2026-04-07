@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { AbilityManagerDatabase, AbilityManagerValidationIssue, StatusEffectDraft } from "@lib/ability-manager/types";
+import { STATUS_EFFECT_MODIFIER_KEYS, type AbilityManagerDatabase, type AbilityManagerValidationIssue, type StatusEffectDraft } from "@lib/ability-manager/types";
 import {
   buildStatusEffectBundleFiles,
   cloneStatusEffectDraft,
@@ -20,6 +20,12 @@ import { useAbilityDatabase } from "@components/ability-manager/useAbilityDataba
 
 function issueTone(issue: AbilityManagerValidationIssue["level"]) {
   return issue === "error" ? "border-red-400/25 bg-red-400/10 text-red-100" : "border-yellow-300/25 bg-yellow-300/10 text-yellow-100";
+}
+
+function modifierLabel(key: string) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export default function StatusEffectManagerApp() {
@@ -101,6 +107,16 @@ export default function StatusEffectManagerApp() {
     setDatabase(updateStatusEffectAt(database, selectedStatusEffect.key, updater));
   }
 
+  function updateModifierBucket(bucket: "flatModifiers" | "percentModifiers", key: string, value: string) {
+    updateSelectedStatusEffect((current) => ({
+      ...current,
+      [bucket]: {
+        ...current[bucket],
+        [key]: value,
+      },
+    }));
+  }
+
   function addBlankStatusEffect() {
     if (!database) return;
     const nextDraft = createBlankStatusEffect(
@@ -158,7 +174,7 @@ export default function StatusEffectManagerApp() {
     setStatus({ tone: "success", message: "Downloaded status effects bundle zip." });
   }
 
-  if (loading) return <div>Loading…</div>;
+  if (loading && !database) return <div>Loading…</div>;
 
   if (!database) {
     return (
@@ -318,7 +334,7 @@ export default function StatusEffectManagerApp() {
                 </div>
               ) : (
                 <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
-                  The selected status effect currently passes validation.
+                  no issues
                 </div>
               )
             ) : (
@@ -332,7 +348,7 @@ export default function StatusEffectManagerApp() {
             <>
               <Section
                 title="Status Effect Editor"
-                description="Edit the core status effect JSON fields directly and keep the rest of the runtime payload in the JSON blocks below."
+                description="Edit the core status effect runtime fields directly, including flat and percent modifiers, and keep only the remaining unknown payload in the JSON blocks below."
               >
                 <div className="flex flex-wrap gap-2">
                   <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={cloneSelectedStatusEffect}>
@@ -439,22 +455,48 @@ export default function StatusEffectManagerApp() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <div className="label">Flat Modifiers JSON</div>
-                    <textarea
-                      className="input mt-1 min-h-64 font-mono text-sm"
-                      value={selectedStatusEffect.flatModifiersJson}
-                      placeholder='{"power": 0.0, "speed": 0.0}'
-                      onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, flatModifiersJson: event.target.value }))}
-                    />
+                    <div className="label">Flat Modifiers</div>
+                    <div className="mt-1 grid gap-3 md:grid-cols-2">
+                      {Object.keys(selectedStatusEffect.flatModifiers).length
+                        ? Object.keys(selectedStatusEffect.flatModifiers).map((key) => (
+                            <div key={`flat-${key}`}>
+                              <div className="label">{modifierLabel(key)}</div>
+                              <input
+                                className="input mt-1"
+                                value={selectedStatusEffect.flatModifiers[key] ?? ""}
+                                onChange={(event) => updateModifierBucket("flatModifiers", key, event.target.value)}
+                              />
+                            </div>
+                          ))
+                        : STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                            <div key={`flat-${key}`}>
+                              <div className="label">{modifierLabel(key)}</div>
+                              <input className="input mt-1" value="" onChange={(event) => updateModifierBucket("flatModifiers", key, event.target.value)} />
+                            </div>
+                          ))}
+                    </div>
                   </div>
                   <div>
-                    <div className="label">Percent Modifiers JSON</div>
-                    <textarea
-                      className="input mt-1 min-h-64 font-mono text-sm"
-                      value={selectedStatusEffect.percentModifiersJson}
-                      placeholder='{"power": 0.1}'
-                      onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, percentModifiersJson: event.target.value }))}
-                    />
+                    <div className="label">Percent Modifiers</div>
+                    <div className="mt-1 grid gap-3 md:grid-cols-2">
+                      {Object.keys(selectedStatusEffect.percentModifiers).length
+                        ? Object.keys(selectedStatusEffect.percentModifiers).map((key) => (
+                            <div key={`percent-${key}`}>
+                              <div className="label">{modifierLabel(key)}</div>
+                              <input
+                                className="input mt-1"
+                                value={selectedStatusEffect.percentModifiers[key] ?? ""}
+                                onChange={(event) => updateModifierBucket("percentModifiers", key, event.target.value)}
+                              />
+                            </div>
+                          ))
+                        : STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                            <div key={`percent-${key}`}>
+                              <div className="label">{modifierLabel(key)}</div>
+                              <input className="input mt-1" value="" onChange={(event) => updateModifierBucket("percentModifiers", key, event.target.value)} />
+                            </div>
+                          ))}
+                    </div>
                   </div>
                   <div>
                     <div className="label">Additional Runtime JSON</div>
@@ -530,4 +572,3 @@ export default function StatusEffectManagerApp() {
     </div>
   );
 }
-

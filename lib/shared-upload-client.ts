@@ -21,7 +21,7 @@ export function useSharedDataWorkspaceVersion() {
   const [version, setVersion] = useState("0");
 
   useEffect(() => {
-    const sync = () => setVersion(`${readSharedDataWorkspaceVersion()}:${Date.now()}`);
+    const sync = () => setVersion(readSharedDataWorkspaceVersion());
     sync();
 
     const onStorage = (event: StorageEvent) => {
@@ -32,11 +32,9 @@ export function useSharedDataWorkspaceVersion() {
 
     window.addEventListener(SHARED_DATA_WORKSPACE_EVENT, sync as EventListener);
     window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", sync);
     return () => {
       window.removeEventListener(SHARED_DATA_WORKSPACE_EVENT, sync as EventListener);
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", sync);
     };
   }, []);
 

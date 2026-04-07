@@ -1,4 +1,5 @@
 import { parseLooseJson } from "@lib/json";
+import { STATUS_EFFECT_MODIFIER_KEYS } from "@lib/ability-manager/types";
 import type {
   AbilityDraft,
   AbilityEffectLink,
@@ -7,6 +8,7 @@ import type {
   AbilityManagerSummary,
   AbilityManagerValidationIssue,
   AbilityLinkSource,
+  StatusEffectModifierMap,
   StatusEffectDraft,
 } from "@lib/ability-manager/types";
 
@@ -101,6 +103,54 @@ function nextFileName(existingFileNames: string[], baseFileName: string) {
     index += 1;
   }
   return candidate;
+}
+
+function formatModifierLabel(key: string) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function sortModifierKeys(keys: Iterable<string>) {
+  const knownOrder = new Map<string, number>(STATUS_EFFECT_MODIFIER_KEYS.map((key, index) => [key, index]));
+  return [...new Set(keys)].sort((left, right) => {
+    const leftOrder = knownOrder.get(left);
+    const rightOrder = knownOrder.get(right);
+    if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
+    if (leftOrder !== undefined) return -1;
+    if (rightOrder !== undefined) return 1;
+    return left.localeCompare(right);
+  });
+}
+
+function createDefaultModifierMap(defaultValue = "0"): StatusEffectModifierMap {
+  return Object.fromEntries(STATUS_EFFECT_MODIFIER_KEYS.map((key) => [key, defaultValue]));
+}
+
+function validateModifierMap(modifiers: StatusEffectModifierMap, label: string, issues: AbilityManagerValidationIssue[], draftKey: string, field: string) {
+  for (const key of sortModifierKeys(Object.keys(modifiers))) {
+    const value = modifiers[key] ?? "";
+    const trimmed = value.trim();
+    if (!trimmed) {
+      issues.push({
+        level: "error",
+        draftKey,
+        field,
+        message: `${label} ${formatModifierLabel(key)} must be numeric.`,
+      });
+      continue;
+    }
+    parseNumberField(trimmed, `${label} ${formatModifierLabel(key)}`, issues, draftKey, field);
+  }
+}
+
+function exportModifierMap(modifiers: StatusEffectModifierMap) {
+  return Object.fromEntries(
+    sortModifierKeys(Object.keys(modifiers)).map((key) => {
+      const trimmed = (modifiers[key] ?? "").trim();
+      return [key, trimmed ? Number(trimmed) : 0];
+    }),
+  );
 }
 
 export function inferAbilityDeliveryType(draft: AbilityDraft) {
@@ -239,8 +289,8 @@ export function createBlankStatusEffect(existingNumericIds: string[] = [], exist
     canStack: false,
     maxStacks: "1",
     showDuration: true,
-    flatModifiersJson: "",
-    percentModifiersJson: "",
+    flatModifiers: createDefaultModifierMap("0"),
+    percentModifiers: createDefaultModifierMap("0"),
     extraPropertiesJson: "",
     extraRootJson: "",
     linkedAbilityIds: [],
@@ -256,6 +306,8 @@ export function cloneStatusEffectDraft(source: StatusEffectDraft, existingNumeri
     key: createStatusEffectKey(),
     numericId,
     fileName: nextFileName(existingFileNames, `${numericId}_${slugify(source.effectId || source.name || source.fileName.replace(/\.json$/i, ""))}`),
+    flatModifiers: { ...source.flatModifiers },
+    percentModifiers: { ...source.percentModifiers },
     linkedAbilityIds: [...source.linkedAbilityIds],
     linkedAbilityNames: [...source.linkedAbilityNames],
   } satisfies StatusEffectDraft;
@@ -450,17 +502,8 @@ export function validateStatusEffectDrafts(statusEffects: StatusEffectDraft[]) {
     parseNumberField(draft.tickInterval, "Tick Interval", issues, draft.key, "tickInterval");
     parseNumberField(draft.threatMultiplier, "Threat Multiplier", issues, draft.key, "threatMultiplier");
     parseNumberField(draft.maxStacks, "Max Stacks", issues, draft.key, "maxStacks");
-
-    try {
-      parseJsonBlock(draft.flatModifiersJson, "Flat modifiers JSON");
-    } catch (error) {
-      issues.push({ level: "error", draftKey: draft.key, field: "flatModifiersJson", message: error instanceof Error ? error.message : String(error) });
-    }
-    try {
-      parseJsonBlock(draft.percentModifiersJson, "Percent modifiers JSON");
-    } catch (error) {
-      issues.push({ level: "error", draftKey: draft.key, field: "percentModifiersJson", message: error instanceof Error ? error.message : String(error) });
-    }
+    validateModifierMap(draft.flatModifiers, "Flat Modifier", issues, draft.key, "flatModifiers");
+    validateModifierMap(draft.percentModifiers, "Percent Modifier", issues, draft.key, "percentModifiers");
     try {
       parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON");
     } catch (error) {
@@ -544,8 +587,8 @@ function exportStatusEffectObject(draft: StatusEffectDraft) {
     can_stack: draft.canStack,
     max_stacks: draft.maxStacks.trim() ? Number(draft.maxStacks.trim()) : undefined,
     show_duration: draft.showDuration,
-    flat_modifiers: parseJsonBlock(draft.flatModifiersJson, "Flat modifiers JSON"),
-    percent_modifiers: parseJsonBlock(draft.percentModifiersJson, "Percent modifiers JSON"),
+    flat_modifiers: exportModifierMap(draft.flatModifiers),
+    percent_modifiers: exportModifierMap(draft.percentModifiers),
     ...parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON"),
   });
 
