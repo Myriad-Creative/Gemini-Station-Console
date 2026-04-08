@@ -27,30 +27,28 @@ export default function SectionNav() {
   }
 
   return (
-    <div className="border-t border-white/10 pt-3">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <nav className="flex min-w-0 flex-wrap items-center gap-4">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`text-sm ${
-                isSectionLinkActive(pathname, link) ? "text-accent" : "text-white/60 hover:text-white"
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="shrink-0">
-          <button
-            className="rounded border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-50"
-            onClick={() => void handleReindexLocalData()}
-            disabled={reindexing}
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-4">
+      <nav className="flex min-w-0 flex-wrap items-center gap-4">
+        {links.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={`text-sm ${
+              isSectionLinkActive(pathname, link) ? "text-accent" : "text-white/60 hover:text-white"
+            }`}
           >
-            {reindexing ? "Re-indexing..." : "Refresh / Re-index Local Data"}
-          </button>
-        </div>
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="shrink-0 ml-auto">
+        <button
+          className="rounded border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-50"
+          onClick={() => void handleReindexLocalData()}
+          disabled={reindexing}
+        >
+          {reindexing ? "Refreshing..." : "Refresh data"}
+        </button>
       </div>
     </div>
   );
