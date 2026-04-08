@@ -137,8 +137,7 @@
         "Manifold",
         "Nozzle",
         "Turbine",
-        "Propulsor",
-        "Drive Core"
+        "Propulsor"
       ]
     },
     "utility": {
@@ -148,7 +147,6 @@
         "Module",
         "Relay",
         "Regulator",
-        "Core",
         "Node",
         "Interface",
         "Controller",
@@ -594,7 +592,7 @@
       "energy_regen_rate": [
         "Recovery Relay",
         "Capacitor Module",
-        "Recharge Core",
+        "Recharge Module",
         "Reserve Regulator"
       ],
       "hacking": [
@@ -624,19 +622,19 @@
       "shields": [
         "Shield Node",
         "Barrier Module",
-        "Deflector Core",
+        "Deflector Relay",
         "Guard Relay"
       ],
       "armor": [
         "Armor Module",
         "Reinforcement Harness",
         "Bracing Node",
-        "Fortified Core"
+        "Fortified Plating"
       ],
       "overclock": [
         "Overclock Chip",
         "Rapid-Cycle Module",
-        "Accelerated Core",
+        "Accelerated Regulator",
         "High-Cycle Relay"
       ],
       "threat_generation": {
