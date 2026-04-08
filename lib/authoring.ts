@@ -156,7 +156,7 @@ export function clearMissionCreatorWorkspaceStorage() {
 
 function incrementTrailingNumber(value: string) {
   const trimmed = value.trim();
-  if (!trimmed) return "mod_001";
+  if (!trimmed) return "1";
 
   const match = trimmed.match(/^(.*?)(\d+)$/);
   if (match) {
@@ -168,12 +168,27 @@ function incrementTrailingNumber(value: string) {
   return `${trimmed}_001`;
 }
 
+function nextNumericModId(existingIds: string[]) {
+  const numericIds = existingIds
+    .map((entry) => entry.trim())
+    .filter((entry) => /^\d+$/.test(entry))
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry));
+
+  if (!numericIds.length) return null;
+  return String(Math.max(...numericIds) + 1);
+}
+
 export function nextGeneratedModId(existingIds: string[], previousId?: string) {
   const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
-  let candidate = incrementTrailingNumber(previousId || existingIds[existingIds.length - 1] || "");
+  const numericFallback = nextNumericModId(existingIds);
+  const previous = previousId?.trim() ?? "";
+  let candidate = previous
+    ? incrementTrailingNumber(previous)
+    : numericFallback ?? incrementTrailingNumber(existingIds[existingIds.length - 1] || "");
 
   while (taken.has(candidate)) {
-    candidate = incrementTrailingNumber(candidate);
+    candidate = /^\d+$/.test(candidate) ? String(Number(candidate) + 1) : incrementTrailingNumber(candidate);
   }
 
   return candidate;

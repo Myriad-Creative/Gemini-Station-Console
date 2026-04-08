@@ -7,9 +7,9 @@ const modLinks = [
     description: "Browse the current console mod dataset with the existing filters, stats, and ability views.",
   },
   {
-    href: "/mods/builder",
-    title: "Mod Builder",
-    description: "Create, batch build, auto-generate, validate, and export mod drafts with the current budget rules.",
+    href: "/mods/manager",
+    title: "Mod Manager",
+    description: "Edit the full current mod list, batch create, auto-generate, validate, and export Mods.json with the current budget rules.",
   },
 ];
 
@@ -19,7 +19,7 @@ export default function ModsPage() {
       <div>
         <h1 className="page-title mb-1">Mods</h1>
         <p className="max-w-3xl text-sm text-white/70">
-          Mod tooling is now grouped here. This dashboard is a placeholder entry point for the mod explorer and the mod builder.
+          Mod tooling is now grouped here. This dashboard is the entry point for the mod explorer and the mod manager.
         </p>
       </div>
 

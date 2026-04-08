@@ -29,7 +29,7 @@ const MISSION_SECTION_LINKS: NavLink[] = [
 const MOD_SECTION_LINKS: NavLink[] = [
   { href: "/mods", label: "Mods Dashboard" },
   { href: "/mods/explorer", label: "Explorer" },
-  { href: "/mods/builder", label: "Builder", aliases: ["/authoring"] },
+  { href: "/mods/manager", label: "Manager", aliases: ["/authoring", "/mods/builder"] },
 ];
 
 const ABILITY_SECTION_LINKS: NavLink[] = [
