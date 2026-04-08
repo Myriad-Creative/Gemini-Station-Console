@@ -532,7 +532,7 @@ export default function ModWorkshop({
     }
 
     downloadJson(exportModsJson(mods), "Mods.json");
-    setStatus("Exported the full Mods.json draft.");
+    setStatus("Exported the full Mods.json file.");
   }
 
   async function copyAllModsJson() {
@@ -819,7 +819,7 @@ export default function ModWorkshop({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium">Shared Stats</div>
-                    <div className="text-xs text-white/50">Up to {MOD_MAX_STATS} stat rows. These values are copied into every created draft.</div>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_STATS} stat rows. These values are copied into every created mod.</div>
                   </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
@@ -894,7 +894,7 @@ export default function ModWorkshop({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium">Shared Abilities</div>
-                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created draft.</div>
+                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created mod.</div>
                     <div className="text-xs text-white/50">Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.</div>
                   </div>
                   <button

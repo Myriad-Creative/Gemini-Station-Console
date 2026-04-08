@@ -68,10 +68,10 @@ There is no manifest URL, no bundled runtime data, and no separate upload-based 
   - Prerequisite graph view and focused top-to-bottom chain cards
   - Read-only mission detail drawer with step/objective structure, rewards, descriptions, conversations summary, and source path
 - Authoring Workspace:
-  - Seed or import mod drafts, edit them live, and export `Mods.json`
+  - Load the current mod list from the active local game root, edit it live, and export `Mods.json`
   - Bulk create titled mod batches from a shared template
   - Auto-generate mods from the slot/role affinity config with count, slot pool, level range, rarity, role pool, and ability-pool controls
-  - Preserve authoring-only generation debug metadata on generated drafts without changing the exported game JSON
+  - Preserve authoring-only generation debug metadata on generated mods without changing the exported game JSON
 - Holes report (band × slot × rarity, colored, total, required=10 by default)
 - Outliers report with z-score explanation
 
@@ -202,7 +202,7 @@ Comms Manager is isolated from the existing mission, merchant, mob, and mod tool
 6. Use the export actions to copy or download the updated runtime JSON for the active dataset.
 
 ## Mod Auto Generator Usage
-1. Open `/mods/builder`.
+1. Open `/mods/manager`.
 2. Click `Auto Generate`.
 3. Choose:
    - batch count,
@@ -211,7 +211,7 @@ Comms Manager is isolated from the existing mission, merchant, mob, and mod tool
    - allowed slot pool,
    - allowed role/class pool,
    - optional ability pool from the loaded console abilities list.
-4. Generate the batch. Each new draft:
+4. Generate the batch. Each new mod:
    - keeps the normal mod export shape,
    - uses the existing level/rarity stat budget system for final values,
    - generates a hardware-style name from `lib/mod-naming-schema.json` using phrase overrides first and fallback naming only when needed,

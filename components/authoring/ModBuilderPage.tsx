@@ -25,7 +25,7 @@ type ExistingModRow = {
   description?: string;
 };
 
-export default function ModBuilderPage() {
+export default function ModManagerPage() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [mods, setMods] = useState<ModDraft[]>([]);
   const [workspaceMessage, setWorkspaceMessage] = useState("");

@@ -183,9 +183,7 @@ export function nextGeneratedModId(existingIds: string[], previousId?: string) {
   const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
   const numericFallback = nextNumericModId(existingIds);
   const previous = previousId?.trim() ?? "";
-  let candidate = previous
-    ? incrementTrailingNumber(previous)
-    : numericFallback ?? incrementTrailingNumber(existingIds[existingIds.length - 1] || "");
+  let candidate = numericFallback ?? (previous ? incrementTrailingNumber(previous) : incrementTrailingNumber(existingIds[existingIds.length - 1] || ""));
 
   while (taken.has(candidate)) {
     candidate = /^\d+$/.test(candidate) ? String(Number(candidate) + 1) : incrementTrailingNumber(candidate);
