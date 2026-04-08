@@ -14,7 +14,7 @@ type Config = {
 };
 
 const defaultConfig: Config = {
-  level_bands: [[1,9],[10,19],[20,29],[30,39],[40,49],[50,59],[60,69],[70,79],[80,89],[90,99],[100,100]],
+  level_bands: [[1,10],[11,20],[21,30],[31,40],[41,50],[51,60],[61,70],[71,80],[81,90],[91,100]],
   coverage_threshold_per_slot: 10,
   zscore_threshold: 2.0,
   rarity_labels: { 0: "Common", 1: "Uncommon", 2: "Rare", 3: "Epic", 4: "Legendary" },

@@ -3,6 +3,7 @@ import {
   ModDraft,
   ModGeneratorMetadata,
   autoBalanceModDraft,
+  buildModBudgetSummary,
   createModAbilityDraft,
   createModDraft,
   parseNumber,
@@ -499,6 +500,54 @@ function floorGeneratedStatValues(mod: ModDraft) {
   });
 }
 
+function enforceWholeNumberBudgetCap(mod: ModDraft) {
+  let nextMod = floorGeneratedStatValues(syncDerivedModFields(mod));
+  let safety = 0;
+
+  while (safety < 1000) {
+    safety += 1;
+    const budget = buildModBudgetSummary(nextMod);
+    if (!budget.isOverBudget || budget.targetScore === undefined) {
+      return floorGeneratedStatValues(syncDerivedModFields(nextMod));
+    }
+
+    const candidate = nextMod.stats
+      .map((entry, index) => {
+        const numericValue = parseNumber(entry.value);
+        const budgetStat = budget.stats[index];
+        return {
+          index,
+          numericValue,
+          powerScore: budgetStat?.powerScore ?? 0,
+        };
+      })
+      .filter(
+        (entry): entry is { index: number; numericValue: number; powerScore: number } =>
+          entry.numericValue !== undefined && Math.abs(entry.numericValue) > 0,
+      )
+      .sort((left, right) => right.powerScore - left.powerScore || Math.abs(right.numericValue) - Math.abs(left.numericValue))[0];
+
+    if (!candidate) {
+      return floorGeneratedStatValues(syncDerivedModFields(nextMod));
+    }
+
+    nextMod = syncDerivedModFields({
+      ...nextMod,
+      stats: nextMod.stats.map((entry, index) => {
+        if (index !== candidate.index) return entry;
+        const magnitude = Math.max(0, Math.floor(Math.abs(candidate.numericValue)) - 1);
+        const signedValue = candidate.numericValue < 0 ? -magnitude : magnitude;
+        return {
+          ...entry,
+          value: String(signedValue),
+        };
+      }),
+    });
+  }
+
+  return floorGeneratedStatValues(syncDerivedModFields(nextMod));
+}
+
 function collectFinalRolledStats(mod: ModDraft) {
   return Object.fromEntries(
     mod.stats
@@ -615,6 +664,7 @@ function generateOneMod(
   });
   draft = applyThreatSigns(draft, selectedStats);
   draft = floorGeneratedStatValues(draft);
+  draft = enforceWholeNumberBudgetCap(draft);
   draft = syncDerivedModFields({
     ...draft,
     generatorMeta: buildGeneratorMeta(request, roleId, slotId, level, primaryStatId, selectedStats, selectedAbilities, draft, generatedName),

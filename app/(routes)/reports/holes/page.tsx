@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { RARITY_COLOR } from "@lib/constants";
 
 export default function HolesPage() {
@@ -32,17 +32,17 @@ export default function HolesPage() {
           <thead>{header}</thead>
           <tbody>
             {Object.keys(grouped).map(band => (
-              <>
+              <Fragment key={band}>
                 {grouped[band].map((r:any, idx:number) => (
                   <tr key={band + r.slot}>
                     <td className={idx===0 ? "font-medium" : ""}>{idx===0 ? band : ""}</td>
                     <td className="font-medium">{r.slot}</td>
                     {rarities.map(rr => <td key={rr} style={{color: RARITY_COLOR[rr] || "#C0C0C0"}}>{r[`r${rr}`] ?? 0}</td>)}
-                    <td>{r.total}</td>
+                    <td className={r.total >= r.required ? "font-semibold text-emerald-300" : "font-semibold text-red-300"}>{r.total}</td>
                     <td>{r.required}</td>
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
