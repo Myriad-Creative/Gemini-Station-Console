@@ -214,9 +214,10 @@ Comms Manager is isolated from the existing mission, merchant, mob, and mod tool
 4. Generate the batch. Each new draft:
    - keeps the normal mod export shape,
    - uses the existing level/rarity stat budget system for final values,
+   - generates a hardware-style name from `lib/mod-naming-schema.json` using phrase overrides first and fallback naming only when needed,
    - stores authoring-only generation debug metadata for the selected role, slot, primary stat, secondary stats, ability picks, threat sign, and final rolled values.
 
-The auto generator is data-driven from `lib/mod-auto-generator-config.json`, so future balance tuning can be done in config without rewriting the generation logic.
+The auto generator is data-driven from `lib/mod-auto-generator-config.json`, and procedural naming is driven from `lib/mod-naming-schema.json`, so future balance and naming tuning can be done in config without rewriting the generator logic.
 
 ## Config
 See `config.json` for level bands, thresholds, rarity labels, and weights.

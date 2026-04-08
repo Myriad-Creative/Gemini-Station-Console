@@ -74,6 +74,17 @@ export interface ModAbilityDraft {
   budgetCost: string;
 }
 
+export interface ModGeneratedNameMetadata {
+  displayName: string;
+  source: "phrase_override" | "two_word_fallback" | "three_word_fallback";
+  threatSign?: "positive" | "negative";
+  phrase?: string;
+  descriptor?: string;
+  baseTerm?: string;
+  component?: string;
+  modifier?: string;
+}
+
 export interface ModGeneratorMetadata {
   generatedBy: "auto";
   requestedRoles: string[];
@@ -88,6 +99,7 @@ export interface ModGeneratorMetadata {
   selectedAbilities: Array<number | string>;
   finalRolledStats: Record<string, number>;
   threatSign?: "positive" | "negative";
+  naming?: ModGeneratedNameMetadata;
 }
 
 export interface ModDraft {
@@ -260,6 +272,26 @@ function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | unde
       .filter(([, entry]) => Number.isFinite(entry)),
   ) as Record<string, number>;
 
+  const namingSource = asObject(source.naming);
+  const displayName = String(namingSource.displayName ?? "").trim();
+  const sourceType = String(namingSource.source ?? "").trim();
+  const normalizedNaming =
+    displayName && ["phrase_override", "two_word_fallback", "three_word_fallback"].includes(sourceType)
+      ? {
+          displayName,
+          source: sourceType as ModGeneratedNameMetadata["source"],
+          threatSign:
+            namingSource.threatSign === "positive" || namingSource.threatSign === "negative"
+              ? (namingSource.threatSign as "positive" | "negative")
+              : undefined,
+          phrase: String(namingSource.phrase ?? "").trim() || undefined,
+          descriptor: String(namingSource.descriptor ?? "").trim() || undefined,
+          baseTerm: String(namingSource.baseTerm ?? "").trim() || undefined,
+          component: String(namingSource.component ?? "").trim() || undefined,
+          modifier: String(namingSource.modifier ?? "").trim() || undefined,
+        }
+      : undefined;
+
   return {
     generatedBy: "auto",
     requestedRoles: stringList(source.requestedRoles),
@@ -277,6 +309,7 @@ function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | unde
       source.threatSign === "positive" || source.threatSign === "negative"
         ? (source.threatSign as "positive" | "negative")
         : undefined,
+    naming: normalizedNaming,
   };
 }
 

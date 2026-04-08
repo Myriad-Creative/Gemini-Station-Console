@@ -1576,6 +1576,28 @@ function GeneratorMetaCard({ mod }: { mod: ModDraft }) {
       </div>
 
       <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
+        <div className="label mb-2">Generated Name</div>
+        <div className="font-medium text-white">{meta.naming?.displayName || mod.name || "—"}</div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
+            Source: {meta.naming?.source ? meta.naming.source.replace(/_/g, " ") : "legacy"}
+          </span>
+          {meta.naming?.threatSign ? (
+            <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">Threat sign: {meta.naming.threatSign}</span>
+          ) : null}
+        </div>
+        {meta.naming ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/65">
+            {meta.naming.phrase ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Phrase: {meta.naming.phrase}</div> : null}
+            {meta.naming.descriptor ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Descriptor: {meta.naming.descriptor}</div> : null}
+            {meta.naming.modifier ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Modifier: {meta.naming.modifier}</div> : null}
+            {meta.naming.baseTerm ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Base Term: {meta.naming.baseTerm}</div> : null}
+            {meta.naming.component ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Component: {meta.naming.component}</div> : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
         <div className="label mb-2">Primary Stat</div>
         <div className="font-medium text-white">{meta.primaryStat}</div>
         <div className="mt-3 label mb-2">Secondary Stats</div>

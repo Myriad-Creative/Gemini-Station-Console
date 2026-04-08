@@ -1,0 +1,663 @@
+{
+  "schema_version": "1.0",
+  "config_name": "space_ship_mod_naming",
+  "description": "Functional, hardware-like procedural naming for normal procedural gear. Manufacturer or program prefixes are reserved for future higher-end gear.",
+  "normal_procedural_style": {
+    "manufacturer_prefixes_enabled": false,
+    "program_names_enabled": false,
+    "goal_examples": [
+      "Armored Panels",
+      "Shield Generator",
+      "Stealth Chip",
+      "Energy Blaster",
+      "Targeting Module",
+      "Recovery Relay"
+    ]
+  },
+  "naming_order": [
+    "phrase_override_by_slot_and_primary_stat",
+    "fallback_two_word_name",
+    "optional_three_word_name_for_higher_rarity"
+  ],
+  "templates": {
+    "two_word": "{descriptor} {component}",
+    "three_word": "{modifier} {base_term} {component}"
+  },
+  "generation_preferences": {
+    "use_phrase_override_when_available": true,
+    "allow_fallback_when_override_exists": false,
+    "three_word_names_reserved_for_higher_rarity": true,
+    "three_word_modifier_source_priority": [
+      "secondary_stat_descriptor",
+      "primary_stat_descriptor"
+    ],
+    "fallback_descriptor_source": "primary_stat",
+    "fallback_component_source": "slot",
+    "title_case_output": true,
+    "preserve_hyphenation": true
+  },
+  "style_rules": {
+    "disallow_of_construction": true,
+    "disallow_duplicate_full_tokens": true,
+    "disallow_duplicate_roots": true,
+    "disallow_component_repetition": true,
+    "avoid_descriptor_component_echo": true,
+    "armor_components_can_be_plural": true,
+    "electronic_components_prefer_singular": true,
+    "weapon_mod_component_preference": [
+      "Coupler",
+      "Lens",
+      "Emitter",
+      "Chamber",
+      "Hardpoint",
+      "Mount",
+      "Accelerator",
+      "Rail",
+      "Blaster",
+      "Cannon"
+    ]
+  },
+  "slot_component_seeds": {
+    "armor": {
+      "number_style": "prefer_plural",
+      "terms": [
+        "Panels",
+        "Plating",
+        "Mesh",
+        "Bracing",
+        "Sheathing",
+        "Hull Plates",
+        "Bulkheads",
+        "Segments",
+        "Lining",
+        "Shell"
+      ]
+    },
+    "shields": {
+      "number_style": "prefer_singular",
+      "terms": [
+        "Generator",
+        "Emitter",
+        "Projector",
+        "Screen",
+        "Array",
+        "Coil",
+        "Battery",
+        "Node",
+        "Deflector",
+        "Matrix"
+      ]
+    },
+    "weapons": {
+      "number_style": "prefer_singular",
+      "terms": [
+        "Blaster",
+        "Cannon",
+        "Emitter",
+        "Coupler",
+        "Chamber",
+        "Hardpoint",
+        "Accelerator",
+        "Lens",
+        "Mount",
+        "Rail"
+      ],
+      "preferred_mod_terms": [
+        "Coupler",
+        "Lens",
+        "Emitter",
+        "Chamber",
+        "Hardpoint",
+        "Mount",
+        "Accelerator",
+        "Rail"
+      ]
+    },
+    "sensors": {
+      "number_style": "prefer_singular",
+      "terms": [
+        "Scanner",
+        "Array",
+        "Relay",
+        "Uplink",
+        "Receiver",
+        "Scope",
+        "Module",
+        "Suite",
+        "Package"
+      ]
+    },
+    "engines": {
+      "number_style": "prefer_singular",
+      "terms": [
+        "Thruster",
+        "Drive",
+        "Injector",
+        "Booster",
+        "Manifold",
+        "Nozzle",
+        "Turbine",
+        "Propulsor",
+        "Drive Core"
+      ]
+    },
+    "utility": {
+      "number_style": "prefer_singular",
+      "terms": [
+        "Chip",
+        "Module",
+        "Relay",
+        "Regulator",
+        "Core",
+        "Node",
+        "Interface",
+        "Controller",
+        "Harness",
+        "Package"
+      ]
+    }
+  },
+  "primary_stat_naming": {
+    "speed": {
+      "base_term": "Vector",
+      "descriptor_seeds": [
+        "Boost",
+        "Vector",
+        "Rapid",
+        "Impulse",
+        "Maneuvering",
+        "Drift",
+        "Thrust",
+        "Intercept"
+      ]
+    },
+    "sensors": {
+      "base_term": "Sensor",
+      "descriptor_seeds": [
+        "Sensor",
+        "Recon",
+        "Scan",
+        "Signal",
+        "Telemetry",
+        "Survey",
+        "Detection",
+        "Pulse"
+      ]
+    },
+    "energy_regen_rate": {
+      "base_term": "Recovery",
+      "descriptor_seeds": [
+        "Recharge",
+        "Recovery",
+        "Capacitor",
+        "Reserve",
+        "Recirculation",
+        "Reclaim",
+        "Power-Recovery",
+        "Recharge-Cycle"
+      ]
+    },
+    "power": {
+      "base_term": "Energy",
+      "descriptor_seeds": [
+        "Energy",
+        "Surge",
+        "Pulse",
+        "Assault",
+        "High-Output",
+        "Charged",
+        "Heavy-Output",
+        "Boosted"
+      ]
+    },
+    "targeting": {
+      "base_term": "Targeting",
+      "descriptor_seeds": [
+        "Targeting",
+        "Tracking",
+        "Guidance",
+        "Lock",
+        "Fire-Control",
+        "Calibrated",
+        "Aim",
+        "Precision"
+      ]
+    },
+    "threat_generation": {
+      "signed": true,
+      "positive": {
+        "base_term": "Threat",
+        "descriptor_seeds": [
+          "Threat",
+          "Beacon",
+          "Broadcast",
+          "Aggressor",
+          "Challenge",
+          "Decoy",
+          "Lure",
+          "Signal"
+        ]
+      },
+      "negative": {
+        "base_term": "Signal",
+        "descriptor_seeds": [
+          "Masking",
+          "Baffle",
+          "Suppressor",
+          "Shroud",
+          "Dampening",
+          "Fade",
+          "Low-Signature",
+          "Cutout"
+        ]
+      }
+    },
+    "hacking": {
+      "base_term": "Cipher",
+      "descriptor_seeds": [
+        "Hacking",
+        "Intrusion",
+        "Cipher",
+        "Override",
+        "Breach",
+        "Splice",
+        "Backdoor",
+        "Access"
+      ]
+    },
+    "armor": {
+      "base_term": "Armor",
+      "descriptor_seeds": [
+        "Armored",
+        "Reinforced",
+        "Hardened",
+        "Composite",
+        "Plated",
+        "Fortified",
+        "Heavy",
+        "Braced"
+      ]
+    },
+    "shields": {
+      "base_term": "Shield",
+      "descriptor_seeds": [
+        "Shield",
+        "Barrier",
+        "Deflector",
+        "Guard",
+        "Field",
+        "Protective",
+        "Projected",
+        "Defensive"
+      ]
+    },
+    "shield_regen": {
+      "base_term": "Recovery",
+      "descriptor_seeds": [
+        "Recharge",
+        "Recovery",
+        "Renewal",
+        "Refresh",
+        "Recirculation",
+        "Restore",
+        "Regenerative",
+        "Reserve"
+      ]
+    },
+    "evasion": {
+      "base_term": "Maneuvering",
+      "descriptor_seeds": [
+        "Evasive",
+        "Maneuvering",
+        "Drift",
+        "Jink",
+        "Scatter",
+        "Skew",
+        "Slip",
+        "Offset"
+      ]
+    },
+    "damage_reflect": {
+      "base_term": "Reflective",
+      "descriptor_seeds": [
+        "Reflective",
+        "Rebound",
+        "Mirror",
+        "Backscatter",
+        "Ricochet",
+        "Return",
+        "Feedback",
+        "Retaliatory"
+      ]
+    },
+    "damage_reduction": {
+      "base_term": "Dampening",
+      "descriptor_seeds": [
+        "Dampening",
+        "Impact",
+        "Kinetic",
+        "Shock-Absorb",
+        "Mitigation",
+        "Buffered",
+        "Protective",
+        "Absorber"
+      ]
+    },
+    "heat_resistance": {
+      "base_term": "Thermal",
+      "descriptor_seeds": [
+        "Thermal",
+        "Heat-Sink",
+        "Insulated",
+        "Cooling",
+        "Radiation",
+        "Sunshield",
+        "Heat-Shielded",
+        "Thermal-Guard"
+      ]
+    },
+    "overclock": {
+      "base_term": "Overclock",
+      "descriptor_seeds": [
+        "Overclock",
+        "Rapid-Cycle",
+        "Fast-Cycle",
+        "Accelerated",
+        "Burst-Cycle",
+        "Quick-Cycle",
+        "Boosted",
+        "High-Cycle"
+      ]
+    },
+    "stealth": {
+      "base_term": "Stealth",
+      "descriptor_seeds": [
+        "Stealth",
+        "Cloaking",
+        "Masked",
+        "Silent",
+        "Low-Signature",
+        "Hidden",
+        "Ghost",
+        "Emission-Silent"
+      ]
+    },
+    "crit_damage": {
+      "base_term": "Breach",
+      "descriptor_seeds": [
+        "Breach",
+        "Rupture",
+        "Penetrator",
+        "Puncture",
+        "Spike",
+        "Heavy-Impact",
+        "Breaker",
+        "Finisher"
+      ]
+    },
+    "crit_chance": {
+      "base_term": "Precision",
+      "descriptor_seeds": [
+        "Precision",
+        "Calibrated",
+        "Focused",
+        "Aligned",
+        "Fine-Tuned",
+        "Guided",
+        "Accurate",
+        "Locked"
+      ]
+    }
+  },
+  "phrase_overrides": {
+    "armor": {
+      "armor": [
+        "Armored Panels",
+        "Reinforced Plating",
+        "Composite Mesh",
+        "Hardened Bracing"
+      ],
+      "damage_reduction": [
+        "Dampening Plating",
+        "Impact Mesh",
+        "Kinetic Bracing",
+        "Shock-Absorb Panels"
+      ],
+      "damage_reflect": [
+        "Reflective Mesh",
+        "Rebound Plating",
+        "Mirror Sheathing",
+        "Backscatter Panels"
+      ],
+      "heat_resistance": [
+        "Thermal Sheathing",
+        "Heat-Sink Plating",
+        "Insulated Panels",
+        "Thermal-Guard Mesh"
+      ],
+      "stealth": [
+        "Masked Panels",
+        "Silent Mesh",
+        "Low-Signature Sheathing",
+        "Cloaking Bracing"
+      ]
+    },
+    "shields": {
+      "shields": [
+        "Shield Generator",
+        "Barrier Emitter",
+        "Deflector Array",
+        "Guard Projector"
+      ],
+      "shield_regen": [
+        "Recharge Generator",
+        "Recovery Emitter",
+        "Renewal Array",
+        "Restore Node"
+      ],
+      "damage_reduction": [
+        "Dampening Screen",
+        "Kinetic Deflector",
+        "Impact Projector",
+        "Buffered Field Coil"
+      ],
+      "damage_reflect": [
+        "Reflective Screen",
+        "Rebound Projector",
+        "Mirror Deflector",
+        "Backscatter Shield"
+      ],
+      "stealth": [
+        "Masking Screen",
+        "Silent Emitter",
+        "Low-Signature Projector",
+        "Cloaking Array"
+      ]
+    },
+    "weapons": {
+      "power": [
+        "Energy Blaster",
+        "Surge Cannon",
+        "Pulse Emitter",
+        "Assault Coupler"
+      ],
+      "targeting": [
+        "Targeting Lens",
+        "Guidance Mount",
+        "Tracking Emitter",
+        "Fire-Control Hardpoint"
+      ],
+      "overclock": [
+        "Overclock Coupler",
+        "Rapid-Cycle Blaster",
+        "Accelerated Chamber",
+        "Fast-Cycle Emitter"
+      ],
+      "crit_damage": [
+        "Breach Cannon",
+        "Penetrator Blaster",
+        "Rupture Chamber",
+        "Spike Emitter"
+      ],
+      "crit_chance": [
+        "Precision Lens",
+        "Calibrated Emitter",
+        "Focused Hardpoint",
+        "Fine-Tuned Mount"
+      ],
+      "threat_generation": {
+        "positive": [
+          "Threat Beacon",
+          "Aggressor Blaster",
+          "Broadcast Emitter",
+          "Decoy Cannon"
+        ]
+      },
+      "stealth": [
+        "Silent Blaster",
+        "Ghost Mount",
+        "Low-Signature Emitter",
+        "Masked Hardpoint"
+      ]
+    },
+    "sensors": {
+      "sensors": [
+        "Sensor Array",
+        "Recon Scanner",
+        "Signal Relay",
+        "Survey Suite"
+      ],
+      "targeting": [
+        "Targeting Array",
+        "Tracking Relay",
+        "Guidance Scanner",
+        "Fire-Control Scope"
+      ],
+      "hacking": [
+        "Cipher Relay",
+        "Override Suite",
+        "Breach Scanner",
+        "Intrusion Module"
+      ],
+      "stealth": [
+        "Ghost Array",
+        "Low-Signature Relay",
+        "Cloaking Suite",
+        "Silent Scanner"
+      ],
+      "crit_chance": [
+        "Precision Scope",
+        "Focused Array",
+        "Calibrated Scanner",
+        "Guided Relay"
+      ]
+    },
+    "engines": {
+      "speed": [
+        "Boost Thruster",
+        "Vector Drive",
+        "Impulse Injector",
+        "Rapid Booster"
+      ],
+      "evasion": [
+        "Maneuvering Thruster",
+        "Drift Drive",
+        "Jink Injector",
+        "Scatter Booster"
+      ],
+      "overclock": [
+        "Rapid-Cycle Drive",
+        "Accelerated Injector",
+        "High-Cycle Booster",
+        "Quick-Cycle Manifold"
+      ],
+      "heat_resistance": [
+        "Thermal Nozzle",
+        "Heat-Sink Manifold",
+        "Insulated Drive",
+        "Cooling Injector"
+      ],
+      "stealth": [
+        "Silent Thruster",
+        "Low-Signature Drive",
+        "Ghost Injector",
+        "Masking Propulsor"
+      ],
+      "armor": [
+        "Reinforced Thruster",
+        "Armored Drive",
+        "Hardened Manifold",
+        "Braced Injector"
+      ]
+    },
+    "utility": {
+      "energy_regen_rate": [
+        "Recovery Relay",
+        "Capacitor Module",
+        "Recharge Core",
+        "Reserve Regulator"
+      ],
+      "hacking": [
+        "Hacking Chip",
+        "Cipher Module",
+        "Override Relay",
+        "Access Interface"
+      ],
+      "stealth": [
+        "Stealth Chip",
+        "Cloaking Module",
+        "Masking Node",
+        "Low-Signature Interface"
+      ],
+      "sensors": [
+        "Sensor Package",
+        "Recon Module",
+        "Telemetry Node",
+        "Signal Interface"
+      ],
+      "targeting": [
+        "Targeting Module",
+        "Guidance Chip",
+        "Tracking Node",
+        "Fire-Control Interface"
+      ],
+      "shields": [
+        "Shield Node",
+        "Barrier Module",
+        "Deflector Core",
+        "Guard Relay"
+      ],
+      "armor": [
+        "Armor Module",
+        "Reinforcement Harness",
+        "Bracing Node",
+        "Fortified Core"
+      ],
+      "overclock": [
+        "Overclock Chip",
+        "Rapid-Cycle Module",
+        "Accelerated Core",
+        "High-Cycle Relay"
+      ],
+      "threat_generation": {
+        "positive": [
+          "Threat Beacon",
+          "Aggressor Module",
+          "Broadcast Node",
+          "Decoy Relay"
+        ],
+        "negative": [
+          "Signal Baffle",
+          "Threat Suppressor",
+          "Masking Relay",
+          "Fade Chip"
+        ]
+      }
+    }
+  },
+  "reserved_for_future": {
+    "manufacturer_prefixes": true,
+    "program_names": true,
+    "series_suffixes": true
+  }
+}

@@ -9,6 +9,7 @@ import {
   syncDerivedModFields,
 } from "@lib/authoring";
 import { getModSupportedStatCounts } from "@lib/mod-budget";
+import { generateModDisplayName } from "@lib/mod-naming";
 
 type ModAutoGeneratorConfig = typeof configData;
 
@@ -254,6 +255,7 @@ function normalizeRequest(request: AutoGenerateModsRequest) {
   const levelMin = Math.floor(Number(request.levelMin));
   const levelMax = Math.floor(Number(request.levelMax));
   const rarity = Math.floor(Number(request.rarity));
+  const seed = Number.isFinite(request.seed) ? Number(request.seed) : undefined;
   const allowedSlots = [...new Set(request.allowedSlots.map((entry) => entry.trim()).filter(Boolean))] as GeneratorSlotId[];
   const allowedRoles = [...new Set(request.allowedRoles.map((entry) => entry.trim()).filter(Boolean))] as GeneratorRoleId[];
   const abilityPool = [...new Set(request.abilityPool.map((entry) => (typeof entry === "number" ? entry : String(entry).trim())).filter(Boolean))];
@@ -280,6 +282,7 @@ function normalizeRequest(request: AutoGenerateModsRequest) {
     rarity,
     allowedRoles,
     abilityPool,
+    seed,
   };
 }
 
@@ -411,13 +414,6 @@ function roleHasValidSlot(roleId: GeneratorRoleId, slotId: GeneratorSlotId) {
   return getValidPrimaryOptions(slotId, roleId).length > 0;
 }
 
-function buildGeneratedName(roleId: GeneratorRoleId, slotId: GeneratorSlotId, primaryStatId: GeneratorStatId) {
-  const roleLabel = GENERATOR_CONFIG.roles[roleId].label;
-  const slotLabel = GENERATOR_CONFIG.slots[slotId].label;
-  const primaryLabel = getStatConfig(primaryStatId).label;
-  return `${roleLabel} ${slotLabel} ${primaryLabel} Mod`;
-}
-
 function rollLevel(min: number, max: number, random: RandomSource) {
   if (min === max) return min;
   return min + Math.floor(random.next() * (max - min + 1));
@@ -520,6 +516,7 @@ function buildGeneratorMeta(
   selectedStats: GeneratedStatSelection[],
   selectedAbilities: Array<number | string>,
   mod: ModDraft,
+  generatedName: ReturnType<typeof generateModDisplayName>,
 ): ModGeneratorMetadata {
   const finalRolledStats = collectFinalRolledStats(mod);
   const threatSignEntry = selectedStats.find((entry) => entry.key === "threat_generation" && entry.sign);
@@ -537,6 +534,16 @@ function buildGeneratorMeta(
     selectedAbilities: [...selectedAbilities],
     finalRolledStats,
     threatSign: threatSignEntry?.sign,
+    naming: {
+      displayName: generatedName.displayName,
+      source: generatedName.source,
+      threatSign: generatedName.threatSign,
+      phrase: generatedName.phrase,
+      descriptor: generatedName.descriptor,
+      baseTerm: generatedName.baseTerm,
+      component: generatedName.component,
+      modifier: generatedName.modifier,
+    },
   };
 }
 
@@ -544,6 +551,8 @@ function generateOneMod(
   request: ReturnType<typeof normalizeRequest>,
   existingIds: string[],
   previousId: string | undefined,
+  usedNames: Set<string>,
+  generationIndex: number,
   random: RandomSource,
 ) {
   const roleId = chooseRole(request.allowedRoles, request.allowedSlots, random);
@@ -567,11 +576,24 @@ function generateOneMod(
 
   const level = rollLevel(request.levelMin, request.levelMax, random);
   const selectedAbilities = maybePickAbility(request.abilityPool, request.rarity, random);
+  const threatSign = selectedStats.find((entry) => entry.key === "threat_generation")?.sign;
+  const generatedName = generateModDisplayName(
+    {
+      slotId,
+      primaryStatId,
+      rarity: request.rarity,
+      secondaryStatIds: selectedStats.slice(1).map((entry) => entry.key),
+      threatSign,
+      seed: request.seed,
+      batchIndex: generationIndex,
+    },
+    { existingNames: usedNames },
+  );
 
   let draft = createModDraft(existingIds, previousId);
   draft = {
     ...draft,
-    name: buildGeneratedName(roleId, slotId, primaryStatId),
+    name: generatedName.displayName,
     slot: SLOT_EXPORT_LABELS[slotId],
     classRestriction: ["None"],
     levelRequirement: String(level),
@@ -595,7 +617,7 @@ function generateOneMod(
   draft = floorGeneratedStatValues(draft);
   draft = syncDerivedModFields({
     ...draft,
-    generatorMeta: buildGeneratorMeta(request, roleId, slotId, level, primaryStatId, selectedStats, selectedAbilities, draft),
+    generatorMeta: buildGeneratorMeta(request, roleId, slotId, level, primaryStatId, selectedStats, selectedAbilities, draft, generatedName),
   });
 
   return draft;
@@ -606,6 +628,7 @@ export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: 
   const random = createRandom(request.seed);
   const warnings: string[] = [];
   const knownIds = [...existingIds];
+  const usedNames = new Set<string>();
   const mods: ModDraft[] = [];
   let currentPreviousId = previousId;
 
@@ -615,9 +638,10 @@ export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: 
   }
 
   for (let index = 0; index < normalized.count; index += 1) {
-    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, random);
+    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, usedNames, index, random);
     mods.push(nextDraft);
     knownIds.push(nextDraft.id.trim());
+    usedNames.add(nextDraft.name.trim().toLowerCase());
     currentPreviousId = nextDraft.id.trim() || currentPreviousId;
   }
 
