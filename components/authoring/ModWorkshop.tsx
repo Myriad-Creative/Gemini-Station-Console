@@ -82,6 +82,7 @@ const AUTO_MOD_STAT_OPTIONS = AUTO_MOD_GENERATOR_CONFIG.stat_order
     value: statId,
     label: AUTO_MOD_GENERATOR_CONFIG.stats[statId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.stats].label,
   }));
+const AUTO_MOD_DEFAULT_EXCLUDED_STATS = new Set(["damage_reduction", "heat_resistance", "damage_reflect"]);
 
 const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   titles: "",
@@ -104,7 +105,7 @@ const EMPTY_AUTO_GENERATE_STATE: AutoGenerateState = {
   rarity: "0",
   allowedSlots: [...AUTO_MOD_GENERATOR_CONFIG.slot_order],
   allowedRoles: [...AUTO_MOD_GENERATOR_CONFIG.role_order],
-  allowedStats: AUTO_MOD_STAT_OPTIONS.map((option) => option.value),
+  allowedStats: AUTO_MOD_STAT_OPTIONS.map((option) => option.value).filter((value) => !AUTO_MOD_DEFAULT_EXCLUDED_STATS.has(value)),
   abilityPool: [],
   abilitySearch: "",
 };

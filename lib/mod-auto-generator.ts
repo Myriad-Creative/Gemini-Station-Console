@@ -682,7 +682,7 @@ function generateOneMod(
       key: entry.key,
       value: "",
     })),
-    description: `Auto-generated ${GENERATOR_CONFIG.slots[slotId].label.toLowerCase()} mod for ${GENERATOR_CONFIG.roles[roleId].label}.`,
+    description: "",
     generatorMeta: undefined,
   };
 
