@@ -10,7 +10,8 @@ import {
   syncDerivedModFields,
 } from "@lib/authoring";
 import { getModSupportedStatCounts } from "@lib/mod-budget";
-import { generateModDisplayName } from "@lib/mod-naming";
+import { createModNamingScope, generateModDisplayName } from "@lib/mod-naming";
+import type { ModNamingExistingEntry } from "@lib/mod-naming";
 
 type ModAutoGeneratorConfig = typeof configData;
 
@@ -610,11 +611,13 @@ function buildGeneratorMeta(
       displayName: generatedName.displayName,
       source: generatedName.source,
       threatSign: generatedName.threatSign,
-      phrase: generatedName.phrase,
+      corePhrase: generatedName.corePhrase,
+      selectedPrefix: generatedName.selectedPrefix,
       descriptor: generatedName.descriptor,
       baseTerm: generatedName.baseTerm,
       component: generatedName.component,
       modifier: generatedName.modifier,
+      collisionResolved: generatedName.collisionResolved,
     },
   };
 }
@@ -623,7 +626,7 @@ function generateOneMod(
   request: ReturnType<typeof normalizeRequest>,
   existingIds: string[],
   previousId: string | undefined,
-  usedNames: Set<string>,
+  namingScope: ReturnType<typeof createModNamingScope>,
   generationIndex: number,
   random: RandomSource,
 ) {
@@ -655,12 +658,13 @@ function generateOneMod(
       slotId,
       primaryStatId,
       rarity: request.rarity,
+      level,
       secondaryStatIds: selectedStats.slice(1).map((entry) => entry.key),
       threatSign,
       seed: request.seed,
       batchIndex: generationIndex,
     },
-    { existingNames: usedNames },
+    { scope: namingScope },
   );
 
   let draft = createModDraft(existingIds, previousId);
@@ -697,14 +701,27 @@ function generateOneMod(
   return draft;
 }
 
-export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: string[] = [], previousId?: string): AutoGenerateModsResult {
+export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: string[] = [], previousId?: string, existingMods: ModDraft[] = []): AutoGenerateModsResult {
   const normalized = normalizeRequest(request);
   const random = createRandom(request.seed);
   const warnings: string[] = [];
   const knownIds = [...existingIds];
-  const usedNames = new Set<string>();
   const mods: ModDraft[] = [];
   let currentPreviousId = previousId;
+  const existingNamingEntries = existingMods.flatMap<ModNamingExistingEntry>((mod) => {
+      const name = mod.name.trim();
+      const level = parseNumber(mod.levelRequirement) ?? 1;
+      if (!name) return [];
+      return [{
+        name,
+        level,
+        corePhrase: mod.generatorMeta?.naming?.corePhrase,
+        selectedPrefix: mod.generatorMeta?.naming?.selectedPrefix,
+      }];
+    });
+  const namingScope = createModNamingScope({
+    existingEntries: existingNamingEntries,
+  });
 
   const allowedStatSet = new Set(normalized.allowedStats);
   const skippedRoles = normalized.allowedRoles.filter((roleId) => !normalized.allowedSlots.some((slotId) => roleHasValidSlot(roleId, slotId, allowedStatSet)));
@@ -713,10 +730,9 @@ export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: 
   }
 
   for (let index = 0; index < normalized.count; index += 1) {
-    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, usedNames, index, random);
+    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, namingScope, index, random);
     mods.push(nextDraft);
     knownIds.push(nextDraft.id.trim());
-    usedNames.add(nextDraft.name.trim().toLowerCase());
     currentPreviousId = nextDraft.id.trim() || currentPreviousId;
   }
 

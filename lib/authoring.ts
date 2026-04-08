@@ -76,13 +76,15 @@ export interface ModAbilityDraft {
 
 export interface ModGeneratedNameMetadata {
   displayName: string;
-  source: "phrase_override" | "two_word_fallback" | "three_word_fallback";
+  source: "phrase_override" | "two_word_fallback" | "prefixed_phrase_override" | "prefixed_fallback";
   threatSign?: "positive" | "negative";
-  phrase?: string;
+  corePhrase?: string;
+  selectedPrefix?: string;
   descriptor?: string;
   baseTerm?: string;
   component?: string;
   modifier?: string;
+  collisionResolved?: boolean;
 }
 
 export interface ModGeneratorMetadata {
@@ -277,7 +279,7 @@ function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | unde
   const displayName = String(namingSource.displayName ?? "").trim();
   const sourceType = String(namingSource.source ?? "").trim();
   const normalizedNaming =
-    displayName && ["phrase_override", "two_word_fallback", "three_word_fallback"].includes(sourceType)
+    displayName && ["phrase_override", "two_word_fallback", "prefixed_phrase_override", "prefixed_fallback"].includes(sourceType)
       ? {
           displayName,
           source: sourceType as ModGeneratedNameMetadata["source"],
@@ -285,11 +287,13 @@ function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | unde
             namingSource.threatSign === "positive" || namingSource.threatSign === "negative"
               ? (namingSource.threatSign as "positive" | "negative")
               : undefined,
-          phrase: String(namingSource.phrase ?? "").trim() || undefined,
+          corePhrase: String(namingSource.corePhrase ?? namingSource.phrase ?? "").trim() || undefined,
+          selectedPrefix: String(namingSource.selectedPrefix ?? "").trim() || undefined,
           descriptor: String(namingSource.descriptor ?? "").trim() || undefined,
           baseTerm: String(namingSource.baseTerm ?? "").trim() || undefined,
           component: String(namingSource.component ?? "").trim() || undefined,
           modifier: String(namingSource.modifier ?? "").trim() || undefined,
+          collisionResolved: Boolean(namingSource.collisionResolved),
         }
       : undefined;
 

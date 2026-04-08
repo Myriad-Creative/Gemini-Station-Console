@@ -498,6 +498,7 @@ export default function ModWorkshop({
         },
         existingIds,
         previousId,
+        mods,
       );
 
       const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
@@ -1614,10 +1615,14 @@ function GeneratorMetaCard({ mod }: { mod: ModDraft }) {
           {meta.naming?.threatSign ? (
             <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">Threat sign: {meta.naming.threatSign}</span>
           ) : null}
+          {meta.naming?.collisionResolved ? (
+            <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">Collision resolved</span>
+          ) : null}
         </div>
         {meta.naming ? (
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/65">
-            {meta.naming.phrase ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Phrase: {meta.naming.phrase}</div> : null}
+            {meta.naming.corePhrase ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Core Phrase: {meta.naming.corePhrase}</div> : null}
+            {meta.naming.selectedPrefix ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Prefix: {meta.naming.selectedPrefix}</div> : null}
             {meta.naming.descriptor ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Descriptor: {meta.naming.descriptor}</div> : null}
             {meta.naming.modifier ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Modifier: {meta.naming.modifier}</div> : null}
             {meta.naming.baseTerm ? <div className="rounded border border-white/10 bg-black/20 px-2 py-2">Base Term: {meta.naming.baseTerm}</div> : null}

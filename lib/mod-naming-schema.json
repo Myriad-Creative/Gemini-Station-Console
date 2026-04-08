@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "config_name": "space_ship_mod_naming",
-  "description": "Functional, hardware-like procedural naming for normal procedural gear. Manufacturer or program prefixes are reserved for future higher-end gear.",
+  "description": "Functional, hardware-like procedural naming for normal procedural gear. Uses primary-stat-based leading prefixes and level-band uniqueness controls to reduce duplicate names. Manufacturer or program prefixes are reserved for future higher-end gear.",
   "normal_procedural_style": {
     "manufacturer_prefixes_enabled": false,
     "program_names_enabled": false,
@@ -11,23 +11,39 @@
       "Stealth Chip",
       "Energy Blaster",
       "Targeting Module",
-      "Recovery Relay"
+      "Recovery Relay",
+      "Deepfield Recon Scanner",
+      "Sentinel Barrier Emitter",
+      "Flux Recovery Relay",
+      "Pinpoint Targeting Module"
     ]
   },
   "naming_order": [
-    "phrase_override_by_slot_and_primary_stat",
-    "fallback_two_word_name",
-    "optional_three_word_name_for_higher_rarity"
+    "select_core_phrase_from_phrase_override_or_two_word_fallback",
+    "check_uniqueness_within_batch_and_level_band",
+    "reroll_unused_core_phrase_when_available",
+    "apply_primary_stat_prefix_for_collision_or_rarity",
+    "reroll_prefix_until_unique_or_pool_exhausted",
+    "fallback_to_constructed_prefixed_name_if_needed"
   ],
   "templates": {
     "two_word": "{descriptor} {component}",
-    "three_word": "{modifier} {base_term} {component}"
+    "prefixed_phrase": "{prefix} {core_phrase}",
+    "prefixed_two_word": "{prefix} {descriptor} {component}",
+    "prefixed_base_term": "{prefix} {base_term} {component}"
   },
   "generation_preferences": {
     "use_phrase_override_when_available": true,
     "allow_fallback_when_override_exists": false,
-    "three_word_names_reserved_for_higher_rarity": true,
-    "three_word_modifier_source_priority": [
+    "core_phrase_is_two_word_by_default": true,
+    "prefix_on_collision_before_allowing_reuse": true,
+    "prefix_can_be_used_even_if_unique_based_on_rarity": true,
+    "three_word_names_allowed_for_all_rarities_on_collision": true,
+    "three_word_names_preferred_for_higher_rarity": true,
+    "prefer_unused_phrase_overrides_within_scope": true,
+    "prefer_unused_prefixes_within_scope": true,
+    "prefix_source": "primary_stat",
+    "secondary_modifier_source_priority": [
       "secondary_stat_descriptor",
       "primary_stat_descriptor"
     ],
@@ -56,6 +72,50 @@
       "Blaster",
       "Cannon"
     ]
+  },
+  "uniqueness_rules": {
+    "scope": "level_band_and_batch",
+    "level_band_size": 10,
+    "allow_exact_name_reuse_across_bands": true,
+    "block_exact_name_reuse_within_band": true,
+    "block_exact_name_reuse_within_batch": true,
+    "avoid_same_core_phrase_within_band_when_alternatives_exist": true,
+    "avoid_same_prefix_with_same_core_phrase_within_band_when_alternatives_exist": true,
+    "upgrade_to_prefixed_name_on_collision": true,
+    "reroll_core_phrase_before_prefix_if_unused_core_phrase_exists": true,
+    "reroll_prefix_on_collision": true,
+    "max_core_phrase_rerolls": 8,
+    "max_prefix_rerolls": 12,
+    "resolution_sequence": [
+      "reroll_unused_core_phrase",
+      "apply_prefix",
+      "reroll_prefix",
+      "fallback_to_constructed_name",
+      "least_recently_used"
+    ],
+    "fallback_strategy_when_pool_exhausted": "least_recently_used"
+  },
+  "prefix_usage_rules": {
+    "common": {
+      "use_prefix_if_unique_chance": 0.15,
+      "use_prefix_on_collision": 1.0
+    },
+    "uncommon": {
+      "use_prefix_if_unique_chance": 0.35,
+      "use_prefix_on_collision": 1.0
+    },
+    "rare": {
+      "use_prefix_if_unique_chance": 0.65,
+      "use_prefix_on_collision": 1.0
+    },
+    "epic": {
+      "use_prefix_if_unique_chance": 0.85,
+      "use_prefix_on_collision": 1.0
+    },
+    "legendary": {
+      "use_prefix_if_unique_chance": 1.0,
+      "use_prefix_on_collision": 1.0
+    }
   },
   "slot_component_seeds": {
     "armor": {
@@ -137,7 +197,8 @@
         "Manifold",
         "Nozzle",
         "Turbine",
-        "Propulsor"
+        "Propulsor",
+        "Drive Core"
       ]
     },
     "utility": {
@@ -147,6 +208,7 @@
         "Module",
         "Relay",
         "Regulator",
+        "Core",
         "Node",
         "Interface",
         "Controller",
@@ -407,6 +469,162 @@
       ]
     }
   },
+  "leading_prefix_seeds": {
+    "speed": [
+      "Slipstream",
+      "Afterburn",
+      "Vectorline",
+      "Intercept",
+      "Driftline",
+      "Pursuit"
+    ],
+    "sensors": [
+      "Horizon",
+      "Deepfield",
+      "Wideband",
+      "Spectral",
+      "Echo",
+      "Farcast"
+    ],
+    "energy_regen_rate": [
+      "Flux",
+      "Chargewell",
+      "Reservoir",
+      "Loopback",
+      "Reserve",
+      "Dynaline"
+    ],
+    "power": [
+      "Siege",
+      "Reactor",
+      "Strike",
+      "Highline",
+      "Shockline",
+      "Burstline"
+    ],
+    "targeting": [
+      "Pinpoint",
+      "Sightline",
+      "Lockline",
+      "Truepoint",
+      "Gridfire",
+      "Leadmark"
+    ],
+    "threat_generation": {
+      "positive": [
+        "Vanguard",
+        "Anchor",
+        "Aggressor",
+        "Decoy",
+        "Challenge",
+        "Provoker"
+      ],
+      "negative": [
+        "Null",
+        "Veil",
+        "Quietline",
+        "Fade",
+        "Shroud",
+        "Cutout"
+      ]
+    },
+    "hacking": [
+      "Ghostwire",
+      "Darkwire",
+      "Nullcode",
+      "Breachline",
+      "Splice",
+      "Backdoor"
+    ],
+    "armor": [
+      "Bulwark",
+      "Titan",
+      "Rampart",
+      "Hardline",
+      "Bastion",
+      "Ironwall"
+    ],
+    "shields": [
+      "Aegis",
+      "Sentinel",
+      "Phase",
+      "Halo",
+      "Wardline",
+      "Guardline"
+    ],
+    "shield_regen": [
+      "Reflow",
+      "Renewal",
+      "Sustain",
+      "Loopback",
+      "Reserve",
+      "Flux"
+    ],
+    "evasion": [
+      "Flicker",
+      "Slip",
+      "Skirmish",
+      "Driftline",
+      "Jitter",
+      "Sidewinder"
+    ],
+    "damage_reflect": [
+      "Backlash",
+      "Ricochet",
+      "Mirrorline",
+      "Counterline",
+      "Rebound",
+      "Feedback"
+    ],
+    "damage_reduction": [
+      "Shockguard",
+      "Buffer",
+      "Guardline",
+      "Impactline",
+      "Absorb",
+      "Dampguard"
+    ],
+    "heat_resistance": [
+      "Sunward",
+      "Corona",
+      "Helio",
+      "Radiant",
+      "Ember",
+      "Burnguard"
+    ],
+    "overclock": [
+      "Turbo",
+      "Hyper",
+      "Burstline",
+      "Overdrive",
+      "Quickline",
+      "High-Gear"
+    ],
+    "stealth": [
+      "Ghost",
+      "Veil",
+      "Null",
+      "Shade",
+      "Blackout",
+      "Cloakline"
+    ],
+    "crit_damage": [
+      "Hammer",
+      "Deadfall",
+      "Heavystrike",
+      "Spike",
+      "Breaker",
+      "Finisher"
+    ],
+    "crit_chance": [
+      "Focal",
+      "Truepoint",
+      "Sightline",
+      "Pinpoint",
+      "Finepoint",
+      "Keen"
+    ]
+  },
   "phrase_overrides": {
     "armor": {
       "armor": [
@@ -592,7 +810,7 @@
       "energy_regen_rate": [
         "Recovery Relay",
         "Capacitor Module",
-        "Recharge Module",
+        "Recharge Core",
         "Reserve Regulator"
       ],
       "hacking": [
@@ -622,19 +840,19 @@
       "shields": [
         "Shield Node",
         "Barrier Module",
-        "Deflector Relay",
+        "Deflector Core",
         "Guard Relay"
       ],
       "armor": [
         "Armor Module",
         "Reinforcement Harness",
         "Bracing Node",
-        "Fortified Plating"
+        "Fortified Core"
       ],
       "overclock": [
         "Overclock Chip",
         "Rapid-Cycle Module",
-        "Accelerated Regulator",
+        "Accelerated Core",
         "High-Cycle Relay"
       ],
       "threat_generation": {
