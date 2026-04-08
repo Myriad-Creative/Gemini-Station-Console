@@ -61,6 +61,7 @@ type AutoGenerateState = {
   rarity: string;
   allowedSlots: string[];
   allowedRoles: string[];
+  allowedStats: string[];
   abilityPool: string[];
   abilitySearch: string;
 };
@@ -74,6 +75,15 @@ const AUTO_MOD_ROLE_OPTIONS = AUTO_MOD_GENERATOR_CONFIG.role_order.map((roleId) 
   value: roleId,
   label: AUTO_MOD_GENERATOR_CONFIG.roles[roleId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.roles].label,
 }));
+const AUTO_MOD_STAT_OPTIONS = AUTO_MOD_GENERATOR_CONFIG.stat_order
+  .filter((statId) => {
+    const stat = AUTO_MOD_GENERATOR_CONFIG.stats[statId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.stats];
+    return !!stat?.rollable && !AUTO_MOD_GENERATOR_CONFIG.manual_only_stats.includes(statId);
+  })
+  .map((statId) => ({
+    value: statId,
+    label: AUTO_MOD_GENERATOR_CONFIG.stats[statId as keyof typeof AUTO_MOD_GENERATOR_CONFIG.stats].label,
+  }));
 
 const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   titles: "",
@@ -96,6 +106,7 @@ const EMPTY_AUTO_GENERATE_STATE: AutoGenerateState = {
   rarity: "0",
   allowedSlots: [...AUTO_MOD_GENERATOR_CONFIG.slot_order],
   allowedRoles: [...AUTO_MOD_GENERATOR_CONFIG.role_order],
+  allowedStats: AUTO_MOD_STAT_OPTIONS.map((option) => option.value),
   abilityPool: [],
   abilitySearch: "",
 };
@@ -172,11 +183,9 @@ function autoBalanceBulkCreateState(
 export default function ModWorkshop({
   mods,
   onChange,
-  consoleModCount,
 }: {
   mods: ModDraft[];
   onChange: (next: ModDraft[]) => void;
-  consoleModCount: number;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
@@ -397,7 +406,7 @@ export default function ModWorkshop({
     setAutoGenerate((current) => ({ ...current, [key]: value }));
   }
 
-  function toggleAutoGenerateValue(key: "allowedSlots" | "allowedRoles" | "abilityPool", value: string) {
+  function toggleAutoGenerateValue(key: "allowedSlots" | "allowedRoles" | "allowedStats" | "abilityPool", value: string) {
     setAutoGenerate((current) => {
       const currentValues = current[key];
       return {
@@ -484,6 +493,7 @@ export default function ModWorkshop({
           levelMax: Number(autoGenerate.levelMax),
           rarity: Number(autoGenerate.rarity),
           allowedRoles: autoGenerate.allowedRoles,
+          allowedStats: autoGenerate.allowedStats,
           abilityPool: autoGenerate.abilityPool,
         },
         existingIds,
@@ -585,7 +595,7 @@ export default function ModWorkshop({
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Mod Library</h2>
             <div className="text-xs text-white/50">
-              {mods.length} draft(s) · {filteredMods.length} filtered · {MOD_SLOT_OPTIONS.length} slot(s) · {consoleModCount} console mod seed(s)
+              {mods.length} draft(s) · {filteredMods.length} filtered · {MOD_SLOT_OPTIONS.length} slot(s)
             </div>
           </div>
 
@@ -1018,7 +1028,7 @@ export default function ModWorkshop({
                   </div>
                 </div>
                 <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/70">
-                  {autoGenerate.count || "0"} requested · {autoGenerate.abilityPool.length} ability option(s)
+                  {autoGenerate.count || "0"} requested · {autoGenerate.allowedStats.length} stat option(s) · {autoGenerate.abilityPool.length} ability option(s)
                 </div>
               </div>
 
@@ -1096,6 +1106,25 @@ export default function ModWorkshop({
                       label={option.label}
                       checked={autoGenerate.allowedRoles.includes(option.value)}
                       onChange={() => toggleAutoGenerateValue("allowedRoles", option.value)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium">Allowed Stats</div>
+                  <div className="text-xs text-white/50">
+                    Uncheck any stats you want excluded from the procedural stat pool for this batch.
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {AUTO_MOD_STAT_OPTIONS.map((option) => (
+                    <CheckboxField
+                      key={`auto-stat-${option.value}`}
+                      label={option.label}
+                      checked={autoGenerate.allowedStats.includes(option.value)}
+                      onChange={() => toggleAutoGenerateValue("allowedStats", option.value)}
                     />
                   ))}
                 </div>
@@ -1600,6 +1629,18 @@ function GeneratorMetaCard({ mod }: { mod: ModDraft }) {
       <div className="rounded border border-white/10 bg-black/20 p-3 text-sm">
         <div className="label mb-2">Primary Stat</div>
         <div className="font-medium text-white">{meta.primaryStat}</div>
+        <div className="mt-3 label mb-2">Allowed Stat Pool</div>
+        <div className="flex flex-wrap gap-2">
+          {meta.requestedStats.length ? (
+            meta.requestedStats.map((statId) => (
+              <span key={`requested-stat-${statId}`} className="rounded border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/70">
+                {statId}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-white/50">All procedural stats were eligible.</span>
+          )}
+        </div>
         <div className="mt-3 label mb-2">Secondary Stats</div>
         <div className="flex flex-wrap gap-2">
           {meta.secondaryStats.length ? (

@@ -27,6 +27,7 @@ export interface AutoGenerateModsRequest {
   levelMax: number;
   rarity: number;
   allowedRoles: string[];
+  allowedStats?: string[];
   abilityPool: Array<number | string>;
   seed?: number;
 }
@@ -41,6 +42,7 @@ export interface AutoGenerateModsResult {
     levelMax: number;
     rarity: number;
     allowedRoles: GeneratorRoleId[];
+    allowedStats: GeneratorStatId[];
     abilityPool: Array<number | string>;
   };
 }
@@ -251,6 +253,15 @@ function pickWeighted<T>(options: Array<WeightedOption<T>>, random: RandomSource
   return filtered[filtered.length - 1].value;
 }
 
+function getProceduralStatIds() {
+  return GENERATOR_CONFIG.stat_order
+    .filter((statId): statId is GeneratorStatId => statId in GENERATOR_CONFIG.stats)
+    .filter((statId) => {
+      const stat = getStatConfig(statId);
+      return !!stat?.rollable && !GENERATOR_CONFIG.manual_only_stats.includes(statId) && statRarityMultiplier(statId) > 0;
+    });
+}
+
 function normalizeRequest(request: AutoGenerateModsRequest) {
   const count = Math.floor(Number(request.count));
   const levelMin = Math.floor(Number(request.levelMin));
@@ -259,12 +270,16 @@ function normalizeRequest(request: AutoGenerateModsRequest) {
   const seed = Number.isFinite(request.seed) ? Number(request.seed) : undefined;
   const allowedSlots = [...new Set(request.allowedSlots.map((entry) => entry.trim()).filter(Boolean))] as GeneratorSlotId[];
   const allowedRoles = [...new Set(request.allowedRoles.map((entry) => entry.trim()).filter(Boolean))] as GeneratorRoleId[];
+  const defaultAllowedStats = getProceduralStatIds();
+  const requestedAllowedStats = request.allowedStats?.length ? request.allowedStats : defaultAllowedStats;
+  const allowedStats = [...new Set(requestedAllowedStats.map((entry) => entry.trim()).filter(Boolean))] as GeneratorStatId[];
   const abilityPool = [...new Set(request.abilityPool.map((entry) => (typeof entry === "number" ? entry : String(entry).trim())).filter(Boolean))];
 
   if (!Number.isFinite(count) || count <= 0) throw new Error("Auto-generation count must be a positive integer.");
   if (count > 250) throw new Error("Auto-generation count must stay at 250 or below.");
   if (!allowedSlots.length) throw new Error("Select at least one allowed slot.");
   if (!allowedRoles.length) throw new Error("Select at least one allowed class.");
+  if (!allowedStats.length) throw new Error("Select at least one allowed stat.");
   if (!Number.isFinite(levelMin) || !Number.isFinite(levelMax)) throw new Error("Level range must be numeric.");
   if (levelMin < 1 || levelMax > 100 || levelMin > levelMax) throw new Error("Level range must stay between 1 and 100, with min <= max.");
   if (!(rarity in ABILITY_ROLL_CHANCE_BY_RARITY)) throw new Error("Rarity must be between 0 and 4.");
@@ -275,6 +290,10 @@ function normalizeRequest(request: AutoGenerateModsRequest) {
   const invalidRoles = allowedRoles.filter((role) => !(role in GENERATOR_CONFIG.roles));
   if (invalidRoles.length) throw new Error(`Invalid class name(s): ${invalidRoles.join(", ")}.`);
 
+  const proceduralStatSet = new Set(defaultAllowedStats);
+  const invalidStats = allowedStats.filter((stat) => !proceduralStatSet.has(stat));
+  if (invalidStats.length) throw new Error(`Invalid or non-procedural stat name(s): ${invalidStats.join(", ")}.`);
+
   return {
     count,
     allowedSlots,
@@ -282,6 +301,7 @@ function normalizeRequest(request: AutoGenerateModsRequest) {
     levelMax,
     rarity,
     allowedRoles,
+    allowedStats,
     abilityPool,
     seed,
   };
@@ -314,7 +334,8 @@ function getPairAffinity(primaryStatId: GeneratorStatId, secondaryStatId: Genera
   return matrix[primaryStatId]?.[secondaryStatId] ?? 0;
 }
 
-function isRollableStatForContext(statId: GeneratorStatId, slotId: GeneratorSlotId, roleId: GeneratorRoleId) {
+function isRollableStatForContext(statId: GeneratorStatId, slotId: GeneratorSlotId, roleId: GeneratorRoleId, allowedStats: Set<GeneratorStatId>) {
+  if (!allowedStats.has(statId)) return false;
   const stat = getStatConfig(statId);
   if (!stat?.rollable) return false;
   if (GENERATOR_CONFIG.manual_only_stats.includes(statId)) return false;
@@ -344,13 +365,13 @@ function getPrimaryThreatProfile(roleId: GeneratorRoleId) {
     : GENERATOR_CONFIG.matrices.pair_affinity_profiles.threat_generation.negative) as Record<string, number>;
 }
 
-function getValidPrimaryOptions(slotId: GeneratorSlotId, roleId: GeneratorRoleId) {
+function getValidPrimaryOptions(slotId: GeneratorSlotId, roleId: GeneratorRoleId, allowedStats: Set<GeneratorStatId>) {
   const defaultPrimary =
     slotId === "utility" ? null : GENERATOR_CONFIG.generation_rules.primary_stat_selection.dedicated_slot_default_primary[slotId];
 
   return getCandidatePrimaryStats(slotId, roleId)
     .filter((statId): statId is GeneratorStatId => statId in GENERATOR_CONFIG.stats)
-    .filter((statId) => isRollableStatForContext(statId, slotId, roleId))
+    .filter((statId) => isRollableStatForContext(statId, slotId, roleId, allowedStats))
     .map<WeightedOption<GeneratorStatId>>((statId, index, all) => {
       const slotWeight = getSlotStatAffinity(slotId, statId);
       const roleWeight = getRoleStatWeight(roleId, statId);
@@ -385,11 +406,12 @@ function getSecondaryOptions(
   slotId: GeneratorSlotId,
   roleId: GeneratorRoleId,
   excludedStatIds: Set<GeneratorStatId>,
+  allowedStats: Set<GeneratorStatId>,
 ) {
   return GENERATOR_CONFIG.stat_order
     .filter((statId): statId is GeneratorStatId => statId in GENERATOR_CONFIG.stats)
     .filter((statId) => !excludedStatIds.has(statId))
-    .filter((statId) => isRollableStatForContext(statId, slotId, roleId))
+    .filter((statId) => isRollableStatForContext(statId, slotId, roleId, allowedStats))
     .map<WeightedOption<GeneratedStatSelection>>((statId) => {
       const slotWeight = getSlotStatAffinity(slotId, statId);
       const roleWeight = getRoleStatWeight(roleId, statId);
@@ -411,8 +433,8 @@ function getSecondaryOptions(
     .filter((option) => option.weight > 0);
 }
 
-function roleHasValidSlot(roleId: GeneratorRoleId, slotId: GeneratorSlotId) {
-  return getValidPrimaryOptions(slotId, roleId).length > 0;
+function roleHasValidSlot(roleId: GeneratorRoleId, slotId: GeneratorSlotId, allowedStats: Set<GeneratorStatId>) {
+  return getValidPrimaryOptions(slotId, roleId, allowedStats).length > 0;
 }
 
 function rollLevel(min: number, max: number, random: RandomSource) {
@@ -427,14 +449,14 @@ function maybePickAbility(abilityPool: Array<number | string>, rarity: number, r
   return [pickWeighted(abilityPool.map((ability) => ({ value: ability, weight: 1 })), random)];
 }
 
-function chooseRole(allowedRoles: GeneratorRoleId[], allowedSlots: GeneratorSlotId[], random: RandomSource) {
-  const validRoles = allowedRoles.filter((roleId) => allowedSlots.some((slotId) => roleHasValidSlot(roleId, slotId)));
+function chooseRole(allowedRoles: GeneratorRoleId[], allowedSlots: GeneratorSlotId[], allowedStats: Set<GeneratorStatId>, random: RandomSource) {
+  const validRoles = allowedRoles.filter((roleId) => allowedSlots.some((slotId) => roleHasValidSlot(roleId, slotId, allowedStats)));
   if (!validRoles.length) throw new Error("No valid class and slot combinations were available for auto-generation.");
   return pickWeighted(validRoles.map((roleId) => ({ value: roleId, weight: 1 })), random);
 }
 
-function chooseSlot(roleId: GeneratorRoleId, allowedSlots: GeneratorSlotId[], random: RandomSource) {
-  const validSlots = allowedSlots.filter((slotId) => roleHasValidSlot(roleId, slotId));
+function chooseSlot(roleId: GeneratorRoleId, allowedSlots: GeneratorSlotId[], allowedStats: Set<GeneratorStatId>, random: RandomSource) {
+  const validSlots = allowedSlots.filter((slotId) => roleHasValidSlot(roleId, slotId, allowedStats));
   if (!validSlots.length) {
     throw new Error(`No valid slots remain for class "${roleId}" within the selected slot pool.`);
   }
@@ -450,8 +472,8 @@ function chooseSlot(roleId: GeneratorRoleId, allowedSlots: GeneratorSlotId[], ra
   );
 }
 
-function choosePrimaryStat(slotId: GeneratorSlotId, roleId: GeneratorRoleId, random: RandomSource) {
-  const candidates = getValidPrimaryOptions(slotId, roleId);
+function choosePrimaryStat(slotId: GeneratorSlotId, roleId: GeneratorRoleId, allowedStats: Set<GeneratorStatId>, random: RandomSource) {
+  const candidates = getValidPrimaryOptions(slotId, roleId, allowedStats);
   if (!candidates.length) {
     throw new Error(`No legal primary stats were available for ${roleId} on ${slotId}.`);
   }
@@ -573,6 +595,7 @@ function buildGeneratorMeta(
     generatedBy: "auto",
     requestedRoles: [...request.allowedRoles],
     requestedSlots: [...request.allowedSlots],
+    requestedStats: [...request.allowedStats],
     roleId,
     slotId,
     level,
@@ -604,21 +627,22 @@ function generateOneMod(
   generationIndex: number,
   random: RandomSource,
 ) {
-  const roleId = chooseRole(request.allowedRoles, request.allowedSlots, random);
-  const slotId = chooseSlot(roleId, request.allowedSlots, random);
-  const primaryStatId = choosePrimaryStat(slotId, roleId, random);
+  const allowedStatSet = new Set(request.allowedStats);
+  const roleId = chooseRole(request.allowedRoles, request.allowedSlots, allowedStatSet, random);
+  const slotId = chooseSlot(roleId, request.allowedSlots, allowedStatSet, random);
+  const primaryStatId = choosePrimaryStat(slotId, roleId, allowedStatSet, random);
   const primarySelection: GeneratedStatSelection = {
     key: primaryStatId,
     sign: primaryStatId === "threat_generation" ? getThreatSignBias(roleId) : undefined,
   };
 
-  const secondaryOptions = getSecondaryOptions(primaryStatId, slotId, roleId, new Set([primaryStatId]));
+  const secondaryOptions = getSecondaryOptions(primaryStatId, slotId, roleId, new Set([primaryStatId]), allowedStatSet);
   const statCount = chooseStatCount(1 + secondaryOptions.length, request.rarity, random);
   const selectedStats: GeneratedStatSelection[] = [primarySelection];
 
   while (selectedStats.length < statCount) {
     const excluded = new Set(selectedStats.map((entry) => entry.key));
-    const nextOptions = getSecondaryOptions(primaryStatId, slotId, roleId, excluded);
+    const nextOptions = getSecondaryOptions(primaryStatId, slotId, roleId, excluded, allowedStatSet);
     if (!nextOptions.length) break;
     selectedStats.push(pickWeighted(nextOptions, random));
   }
@@ -682,7 +706,8 @@ export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: 
   const mods: ModDraft[] = [];
   let currentPreviousId = previousId;
 
-  const skippedRoles = normalized.allowedRoles.filter((roleId) => !normalized.allowedSlots.some((slotId) => roleHasValidSlot(roleId, slotId)));
+  const allowedStatSet = new Set(normalized.allowedStats);
+  const skippedRoles = normalized.allowedRoles.filter((roleId) => !normalized.allowedSlots.some((slotId) => roleHasValidSlot(roleId, slotId, allowedStatSet)));
   if (skippedRoles.length) {
     warnings.push(`Skipped class options with no valid slot/stat combinations: ${skippedRoles.join(", ")}.`);
   }

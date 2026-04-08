@@ -47,9 +47,11 @@ export default function ModBuilderPage() {
   const [existingMods, setExistingMods] = useState<ExistingModRow[]>([]);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const [hasStoredDrafts, setHasStoredDrafts] = useState(false);
 
   useEffect(() => {
     const stored = loadDrafts<ModDraft[]>(MOD_STORAGE_KEY, []);
+    setHasStoredDrafts(stored.length > 0);
     setMods(stored.length ? stored.map((mod) => hydrateStoredModDraft(mod)) : [createModDraft()]);
     setHydrated(true);
   }, [sharedDataVersion]);
@@ -78,23 +80,21 @@ export default function ModBuilderPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sharedDataVersion]);
 
-  function seedModDrafts() {
-    if (!existingMods.length) {
-      setWorkspaceMessage("No mod data is currently loaded in the console.");
-      return;
-    }
-
+  useEffect(() => {
+    if (!hydrated || hasStoredDrafts || !existingMods.length) return;
     const seeded = existingMods.map((mod) => normalizeImportedMod(mod));
     startTransition(() => {
       setMods(seeded.length ? seeded : [createModDraft()]);
     });
-    setWorkspaceMessage(`Seeded ${seeded.length} mod draft(s) from the current console data.`);
-  }
+    setHasStoredDrafts(true);
+    setWorkspaceMessage(`Loaded ${seeded.length} mod draft(s).`);
+  }, [existingMods, hasStoredDrafts, hydrated]);
 
   function clearModDrafts() {
     setMods([createModDraft()]);
+    setHasStoredDrafts(true);
     setWorkspaceMessage("Cleared mod drafts.");
   }
 
@@ -111,13 +111,13 @@ export default function ModBuilderPage() {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">
           <div className="space-y-3">
             <div className="text-sm text-white/70">
-              Seed from the live console mod dataset when you want a starting point, or keep building new drafts in the builder and auto-generator.
+              Build and auto-generate mod drafts here, then export runtime-ready JSON when the workspace is ready.
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded border border-white/10 bg-black/20 p-3">
                 <div className="label">Draft mods</div>
                 <div className="mt-1 text-2xl font-semibold">{mods.length}</div>
-                <div className="mt-1 text-xs text-white/50">Console mod seeds available: {existingMods.length}</div>
+                <div className="mt-1 text-xs text-white/50">Current working drafts in this builder workspace.</div>
               </div>
               <div className="rounded border border-white/10 bg-black/20 p-3">
                 <div className="label">Generator mode</div>
@@ -127,12 +127,9 @@ export default function ModBuilderPage() {
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button className="btn justify-center" onClick={seedModDrafts}>
-              Seed Mod Drafts
-            </button>
+          <div className="grid gap-2 sm:grid-cols-1">
             <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={clearModDrafts}>
-              Clear Mods
+              Clear Drafts
             </button>
           </div>
         </div>
@@ -140,7 +137,7 @@ export default function ModBuilderPage() {
         {workspaceMessage ? <div className="text-sm text-accent">{workspaceMessage}</div> : null}
       </div>
 
-      <ModWorkshop mods={mods} onChange={setMods} consoleModCount={existingMods.length} />
+      <ModWorkshop mods={mods} onChange={setMods} />
     </div>
   );
 }

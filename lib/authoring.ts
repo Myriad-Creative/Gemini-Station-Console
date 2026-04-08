@@ -89,6 +89,7 @@ export interface ModGeneratorMetadata {
   generatedBy: "auto";
   requestedRoles: string[];
   requestedSlots: string[];
+  requestedStats: string[];
   roleId: string;
   slotId: string;
   level: number;
@@ -296,6 +297,7 @@ function normalizeGeneratorMetadata(value: unknown): ModGeneratorMetadata | unde
     generatedBy: "auto",
     requestedRoles: stringList(source.requestedRoles),
     requestedSlots: stringList(source.requestedSlots),
+    requestedStats: stringList(source.requestedStats),
     roleId,
     slotId,
     level: Number(source.level ?? 0),

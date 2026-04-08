@@ -247,7 +247,7 @@ export default function AuthoringWorkbench() {
           consoleMissionCount={existingMissions.length}
         />
       ) : (
-        <ModWorkshop mods={mods} onChange={setMods} consoleModCount={existingMods.length} />
+        <ModWorkshop mods={mods} onChange={setMods} />
       )}
     </div>
   );
