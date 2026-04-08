@@ -69,7 +69,6 @@ function ServiceLinkCard({ href, label, description, value, accent, notice }: Se
         </div>
         <div className={`text-3xl font-semibold ${accent ?? "text-white"}`}>{value}</div>
       </div>
-      <div className="text-xs uppercase tracking-[0.24em] text-cyan-100/65">Open</div>
     </Link>
   );
 }
@@ -220,32 +219,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <DashboardCard title="Source">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
-          <div className="min-w-0">
-            <div className="label">Game Root</div>
-            <div className="mt-2 break-all font-mono text-xs text-white/75">{data.source.gameRootPath || "No local game root configured."}</div>
-          </div>
-          <div>
-            <div className="label">Last Loaded</div>
-            <div className="mt-2 text-sm text-white/80">{data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
-          </div>
-          <div>
-            <div className="label">Last Validated</div>
-            <div className="mt-2 text-sm text-white/80">{data.source.lastValidated ? new Date(data.source.lastValidated).toLocaleString() : "—"}</div>
-          </div>
-        </div>
-
-        {!data.source.active ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-            <span>No active local game root is configured.</span>
-            <Link href="/settings" className="btn">
-              Open Settings
-            </Link>
-          </div>
-        ) : null}
-      </DashboardCard>
-
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {serviceCards.map((card) => (
           <ServiceLinkCard key={card.href} {...card} />
@@ -297,6 +270,32 @@ export default function DashboardPage() {
         ) : (
           <div className="text-sm text-white/55">No mod coverage data loaded yet.</div>
         )}
+      </DashboardCard>
+
+      <DashboardCard title="Source">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
+          <div className="min-w-0">
+            <div className="label">Game Root</div>
+            <div className="mt-2 break-all font-mono text-xs text-white/75">{data.source.gameRootPath || "No local game root configured."}</div>
+          </div>
+          <div>
+            <div className="label">Last Loaded</div>
+            <div className="mt-2 text-sm text-white/80">{data.lastLoaded ? new Date(data.lastLoaded).toLocaleString() : "—"}</div>
+          </div>
+          <div>
+            <div className="label">Last Validated</div>
+            <div className="mt-2 text-sm text-white/80">{data.source.lastValidated ? new Date(data.source.lastValidated).toLocaleString() : "—"}</div>
+          </div>
+        </div>
+
+        {!data.source.active ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
+            <span>No active local game root is configured.</span>
+            <Link href="/settings" className="btn">
+              Open Settings
+            </Link>
+          </div>
+        ) : null}
       </DashboardCard>
     </div>
   );
