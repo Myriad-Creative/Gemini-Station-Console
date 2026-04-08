@@ -32,5 +32,12 @@ export async function GET(req: NextRequest) {
   const classes = Array.from(new Set(store.mods.flatMap(m => m.classRestriction || []))).sort();
   const stats = Array.from(new Set(store.mods.flatMap(m => Object.keys(m.stats)))).sort();
 
-  return NextResponse.json({ data, slots, rarities, classes, stats });
+  return NextResponse.json(
+    { data, slots, rarities, classes, stats },
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    },
+  );
 }

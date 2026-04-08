@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getActiveSection, getSectionLinks, isSectionLinkActive } from "@components/nav-config";
 import { publishSharedDataWorkspaceUpdate } from "@lib/shared-upload-client";
 
@@ -17,6 +17,12 @@ export default function SectionNav() {
   const activeSection = getActiveSection(pathname);
   const [reindexing, setReindexing] = useState(false);
   const [refreshState, setRefreshState] = useState<RefreshState>(null);
+
+  useEffect(() => {
+    if (!refreshState) return;
+    const timeout = window.setTimeout(() => setRefreshState(null), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [refreshState]);
 
   async function handleReindexLocalData() {
     if (reindexing) return;

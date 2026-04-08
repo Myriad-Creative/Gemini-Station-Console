@@ -38,7 +38,8 @@ export default function ModsExplorerPage() {
       if (query.stat) params.set("stat", query.stat);
       if (query.ability) params.set("ability", query.ability);
       if (query.q) params.set("q", query.q);
-      const response = await fetch(`/api/mods?${params.toString()}`);
+      params.set("_v", sharedDataVersion);
+      const response = await fetch(`/api/mods?${params.toString()}`, { cache: "no-store" });
       const json = await response.json();
       if (cancelled) return;
       setRows(json.data);
