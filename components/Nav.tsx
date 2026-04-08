@@ -6,7 +6,7 @@ import { isMainLinkActive, MAIN_NAV_LINKS } from "@components/nav-config";
 export default function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap justify-end gap-4">
+    <nav className="flex flex-wrap gap-4">
       {MAIN_NAV_LINKS.map((t) => (
         <Link
           key={t.href}

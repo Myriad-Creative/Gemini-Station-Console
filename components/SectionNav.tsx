@@ -12,8 +12,6 @@ export default function SectionNav() {
   const activeSection = getActiveSection(pathname);
   const [reindexing, setReindexing] = useState(false);
 
-  if (!links.length) return null;
-
   async function handleReindexLocalData() {
     if (reindexing) return;
     setReindexing(true);
@@ -30,19 +28,21 @@ export default function SectionNav() {
 
   return (
     <div className="border-t border-white/10 pt-3">
-      <nav className="flex flex-wrap items-center gap-4">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`text-sm ${
-              isSectionLinkActive(pathname, link) ? "text-accent" : "text-white/60 hover:text-white"
-            }`}
-          >
-            {link.label}
-          </Link>
-        ))}
-        {activeSection === "settings" ? (
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <nav className="flex min-w-0 flex-wrap items-center gap-4">
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`text-sm ${
+                isSectionLinkActive(pathname, link) ? "text-accent" : "text-white/60 hover:text-white"
+              }`}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="shrink-0">
           <button
             className="rounded border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-50"
             onClick={() => void handleReindexLocalData()}
@@ -50,8 +50,8 @@ export default function SectionNav() {
           >
             {reindexing ? "Re-indexing..." : "Refresh / Re-index Local Data"}
           </button>
-        ) : null}
-      </nav>
+        </div>
+      </div>
     </div>
   );
 }
