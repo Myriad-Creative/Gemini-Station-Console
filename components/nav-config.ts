@@ -52,7 +52,9 @@ const DATA_SECTION_LINKS: NavLink[] = [
   { href: "/data/systems", label: "Systems" },
 ];
 
-export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "abilities" | "items" | "data" | null {
+const SETTINGS_SECTION_LINKS: NavLink[] = [{ href: "/settings", label: "Settings Dashboard" }];
+
+export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "abilities" | "items" | "data" | "settings" | null {
   if (!pathname) return null;
 
   if (pathname === "/mission-lab" || pathname === "/missions" || pathname.startsWith("/missions/")) {
@@ -75,6 +77,10 @@ export function getActiveSection(pathname: string | null | undefined): "missions
     return "data";
   }
 
+  if (pathname === "/settings" || pathname.startsWith("/settings/")) {
+    return "settings";
+  }
+
   return null;
 }
 
@@ -85,17 +91,8 @@ export function getSectionLinks(pathname: string | null | undefined): NavLink[] 
   if (section === "abilities") return ABILITY_SECTION_LINKS;
   if (section === "items") return ITEM_SECTION_LINKS;
   if (section === "data") return DATA_SECTION_LINKS;
+  if (section === "settings") return SETTINGS_SECTION_LINKS;
   return [];
-}
-
-export function getSectionAnchorHref(pathname: string | null | undefined) {
-  const section = getActiveSection(pathname);
-  if (section === "missions") return "/missions";
-  if (section === "mods") return "/mods";
-  if (section === "abilities") return "/abilities";
-  if (section === "items") return "/items";
-  if (section === "data") return "/data";
-  return null;
 }
 
 export function isMainLinkActive(pathname: string | null | undefined, href: string) {
@@ -105,6 +102,7 @@ export function isMainLinkActive(pathname: string | null | undefined, href: stri
   if (href === "/abilities") return getActiveSection(pathname) === "abilities";
   if (href === "/items") return getActiveSection(pathname) === "items";
   if (href === "/data") return getActiveSection(pathname) === "data";
+  if (href === "/settings") return getActiveSection(pathname) === "settings";
   return pathname === href || pathname?.startsWith(`${href}/`) || false;
 }
 

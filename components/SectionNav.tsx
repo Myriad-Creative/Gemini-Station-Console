@@ -2,47 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { getSectionAnchorHref, getSectionLinks, isSectionLinkActive } from "@components/nav-config";
+import { useState } from "react";
+import { getActiveSection, getSectionLinks, isSectionLinkActive } from "@components/nav-config";
+import { publishSharedDataWorkspaceUpdate } from "@lib/shared-upload-client";
 
 export default function SectionNav() {
   const pathname = usePathname();
   const links = getSectionLinks(pathname);
-  const anchorHref = getSectionAnchorHref(pathname);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [offset, setOffset] = useState<number | null>(null);
-
-  useEffect(() => {
-    function updateOffset() {
-      const root = rootRef.current;
-      if (!root || !anchorHref) {
-        setOffset(null);
-        return;
-      }
-
-      const anchor = document.querySelector<HTMLElement>(`[data-main-nav-link="true"][data-nav-href="${anchorHref}"]`);
-      if (!anchor) {
-        setOffset(null);
-        return;
-      }
-
-      const rootRect = root.getBoundingClientRect();
-      const anchorRect = anchor.getBoundingClientRect();
-      setOffset(Math.max(0, anchorRect.left - rootRect.left));
-    }
-
-    updateOffset();
-    window.addEventListener("resize", updateOffset);
-    return () => {
-      window.removeEventListener("resize", updateOffset);
-    };
-  }, [anchorHref, pathname]);
+  const activeSection = getActiveSection(pathname);
+  const [reindexing, setReindexing] = useState(false);
 
   if (!links.length) return null;
 
+  async function handleReindexLocalData() {
+    if (reindexing) return;
+    setReindexing(true);
+    try {
+      const response = await fetch("/api/reload", { method: "POST" });
+      const json = await response.json().catch(() => ({}));
+      if (response.ok && json.ok) {
+        publishSharedDataWorkspaceUpdate();
+      }
+    } finally {
+      setReindexing(false);
+    }
+  }
+
   return (
-    <div ref={rootRef} className="border-t border-white/10 pt-3">
-      <nav className="flex flex-wrap gap-4" style={offset !== null ? { paddingLeft: `${offset}px` } : undefined}>
+    <div className="border-t border-white/10 pt-3">
+      <nav className="flex flex-wrap items-center gap-4">
         {links.map((link) => (
           <Link
             key={link.href}
@@ -54,6 +42,15 @@ export default function SectionNav() {
             {link.label}
           </Link>
         ))}
+        {activeSection === "settings" ? (
+          <button
+            className="rounded border border-white/10 px-3 py-1.5 text-sm text-white/70 hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-50"
+            onClick={() => void handleReindexLocalData()}
+            disabled={reindexing}
+          >
+            {reindexing ? "Re-indexing..." : "Refresh / Re-index Local Data"}
+          </button>
+        ) : null}
       </nav>
     </div>
   );
