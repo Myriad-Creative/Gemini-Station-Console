@@ -429,6 +429,14 @@ export default function AbilityManagerApp() {
                     <div className="label">Valid Targets</div>
                     <input className="input mt-1" value={selectedAbility.validTargets} onChange={(event) => updateSelectedAbility((current) => ({ ...current, validTargets: event.target.value }))} />
                   </div>
+                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={selectedAbility.requiresTarget}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, requiresTarget: event.target.checked }))}
+                    />
+                    Requires Target
+                  </label>
                   <div>
                     <div className="label">Facing Requirement</div>
                     <input className="input mt-1" value={selectedAbility.facingRequirement} onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))} />
@@ -460,6 +468,18 @@ export default function AbilityManagerApp() {
                   <div>
                     <div className="label">Energy Cost</div>
                     <input className="input mt-1" value={selectedAbility.energyCost} onChange={(event) => updateSelectedAbility((current) => ({ ...current, energyCost: event.target.value }))} />
+                  </div>
+                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      checked={selectedAbility.applyEffectsToCaster}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, applyEffectsToCaster: event.target.checked }))}
+                    />
+                    Apply Effects To Caster
+                  </label>
+                  <div>
+                    <div className="label">Effect VFX Scene</div>
+                    <input className="input mt-1" value={selectedAbility.effectVfxScene} onChange={(event) => updateSelectedAbility((current) => ({ ...current, effectVfxScene: event.target.value }))} />
                   </div>
                   <div>
                     <div className="label">Attack Range</div>

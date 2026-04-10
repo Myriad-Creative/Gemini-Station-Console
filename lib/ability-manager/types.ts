@@ -54,6 +54,7 @@ export type AbilityDraft = {
   threatType: string;
   threatMultiplier: string;
   validTargets: string;
+  requiresTarget: boolean;
   facingRequirement: string;
   minRangeType: string;
   maxRangeType: string;
@@ -61,6 +62,8 @@ export type AbilityDraft = {
   cooldown: string;
   chargeTime: string;
   energyCost: string;
+  applyEffectsToCaster: boolean;
+  effectVfxScene: string;
   attackRange: string;
   powerPercent: string;
   baseDamage: string;
