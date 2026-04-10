@@ -10,6 +10,7 @@ import {
   createBlankStatusEffect,
   deleteStatusEffectAt,
   insertStatusEffectAfter,
+  syncDerivedStatusEffectFields,
   stringifyStatusEffectDraft,
   stringifyStatusEffectIndexJson,
   summarizeAbilityManager,
@@ -40,8 +41,14 @@ export default function StatusEffectManagerApp() {
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
 
   useEffect(() => {
-    setDatabase(loadedDatabase);
-    setSelectedStatusEffectKey(loadedDatabase?.statusEffects[0]?.key ?? null);
+    const syncedDatabase = loadedDatabase
+      ? {
+          ...loadedDatabase,
+          statusEffects: loadedDatabase.statusEffects.map((draft) => syncDerivedStatusEffectFields(draft)),
+        }
+      : loadedDatabase;
+    setDatabase(syncedDatabase);
+    setSelectedStatusEffectKey(syncedDatabase?.statusEffects[0]?.key ?? null);
   }, [loadedDatabase]);
 
   const statusEffectIssues = useMemo(() => validateStatusEffectDrafts(database?.statusEffects ?? []), [database]);
@@ -108,7 +115,7 @@ export default function StatusEffectManagerApp() {
 
   function updateSelectedStatusEffect(updater: (current: StatusEffectDraft) => StatusEffectDraft) {
     if (!database || !selectedStatusEffect) return;
-    setDatabase(updateStatusEffectAt(database, selectedStatusEffect.key, updater));
+    setDatabase(updateStatusEffectAt(database, selectedStatusEffect.key, (current) => syncDerivedStatusEffectFields(updater(current))));
   }
 
   function updateModifierBucket(bucket: "flatModifiers" | "percentModifiers", key: string, value: string) {
@@ -383,11 +390,13 @@ export default function StatusEffectManagerApp() {
                   </div>
                   <div>
                     <div className="label">File Name</div>
-                    <input className="input mt-1" value={selectedStatusEffect.fileName} onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, fileName: event.target.value }))} />
+                    <input className="input mt-1 cursor-default text-white/70" value={selectedStatusEffect.fileName} readOnly />
+                    <div className="mt-2 text-xs text-white/45">Auto-generated as numeric id + name in lower case.</div>
                   </div>
                   <div>
                     <div className="label">properties.id</div>
-                    <input className="input mt-1" value={selectedStatusEffect.effectId} onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, effectId: event.target.value }))} />
+                    <input className="input mt-1 cursor-default text-white/70" value={selectedStatusEffect.effectId} readOnly />
+                    <div className="mt-2 text-xs text-white/45">Auto-generated from the name with spaces removed.</div>
                   </div>
                   <div>
                     <div className="label">Name</div>

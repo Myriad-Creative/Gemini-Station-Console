@@ -53,6 +53,16 @@ function slugify(value: string) {
   return slug || "entry";
 }
 
+function deriveStatusEffectId(name: string) {
+  return name.replace(/\s+/g, "").trim();
+}
+
+function deriveStatusEffectFileName(numericId: string, name: string) {
+  const normalizedId = numericId.trim() || "status";
+  const slug = slugify(name.trim() || "status_effect");
+  return `${normalizedId}_${slug}.json`;
+}
+
 function parseJsonBlock(text: string, label: string) {
   const trimmed = text.trim();
   if (!trimmed) return {};
@@ -273,7 +283,7 @@ export function cloneAbilityDraft(source: AbilityDraft, existingIds: string[] = 
 
 export function createBlankStatusEffect(existingNumericIds: string[] = [], existingFileNames: string[] = []) {
   const numericId = nextNumericId(existingNumericIds, 101);
-  return {
+  return syncDerivedStatusEffectFields({
     key: createStatusEffectKey(),
     sourceIndex: -1,
     numericId,
@@ -299,12 +309,12 @@ export function createBlankStatusEffect(existingNumericIds: string[] = [], exist
     linkedAbilityIds: [],
     linkedAbilityNames: [],
     sourcePath: null,
-  } satisfies StatusEffectDraft;
+  } satisfies StatusEffectDraft);
 }
 
 export function cloneStatusEffectDraft(source: StatusEffectDraft, existingNumericIds: string[] = [], existingFileNames: string[] = []) {
   const numericId = nextNumericId(existingNumericIds, Math.max(parseNumericId(source.numericId) ?? 100, 100) + 1);
-  return {
+  return syncDerivedStatusEffectFields({
     ...source,
     key: createStatusEffectKey(),
     numericId,
@@ -313,7 +323,7 @@ export function cloneStatusEffectDraft(source: StatusEffectDraft, existingNumeri
     percentModifiers: { ...source.percentModifiers },
     linkedAbilityIds: [...source.linkedAbilityIds],
     linkedAbilityNames: [...source.linkedAbilityNames],
-  } satisfies StatusEffectDraft;
+  } satisfies StatusEffectDraft);
 }
 
 export function updateAbilityAt(database: AbilityManagerDatabase, draftKey: string, updater: (current: AbilityDraft) => AbilityDraft) {
@@ -345,6 +355,14 @@ export function updateStatusEffectAt(database: AbilityManagerDatabase, draftKey:
   return {
     ...database,
     statusEffects: database.statusEffects.map((draft) => (draft.key === draftKey ? updater(draft) : draft)),
+  };
+}
+
+export function syncDerivedStatusEffectFields(draft: StatusEffectDraft): StatusEffectDraft {
+  return {
+    ...draft,
+    fileName: deriveStatusEffectFileName(draft.numericId, draft.name),
+    effectId: deriveStatusEffectId(draft.name),
   };
 }
 
