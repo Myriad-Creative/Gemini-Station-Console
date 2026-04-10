@@ -17,7 +17,7 @@ import {
   updateStatusEffectAt,
   validateStatusEffectDrafts,
 } from "@lib/ability-manager/utils";
-import { buildIconSrc, copyToClipboard, downloadTextFile, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
+import { buildIconSrc, copyToClipboard, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
 import { useAbilityDatabase } from "@components/ability-manager/useAbilityDatabase";
 
 function issueTone(issue: AbilityManagerValidationIssue["level"]) {
@@ -28,6 +28,22 @@ function modifierLabel(key: string) {
   return key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatWholePercentInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const numericValue = Number(trimmed);
+  if (!Number.isFinite(numericValue)) return trimmed;
+  return Number((numericValue * 100).toFixed(4)).toString();
+}
+
+function parseWholePercentInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const numericValue = Number(trimmed);
+  if (!Number.isFinite(numericValue)) return trimmed;
+  return Number((numericValue / 100).toFixed(6)).toString();
 }
 
 export default function StatusEffectManagerApp() {
@@ -177,6 +193,49 @@ export default function StatusEffectManagerApp() {
       tone: copied ? "success" : "error",
       message: copied ? `Copied ${selectedStatusEffect.fileName} to the clipboard.` : "Clipboard copy failed in this browser context.",
     });
+  }
+
+  async function handleSaveCurrentStatusEffectToBuild() {
+    if (!database || !selectedStatusEffect || selectedHasErrors) return;
+
+    try {
+      const response = await fetch("/api/abilities/status-effects/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          draft: selectedStatusEffect,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save the current status effect into the configured game build.",
+        });
+        return;
+      }
+
+      setDatabase(
+        updateStatusEffectAt(database, selectedStatusEffect.key, (current) =>
+          syncDerivedStatusEffectFields({
+            ...current,
+            sourcePath: typeof payload?.savedPath === "string" ? payload.savedPath : current.sourcePath,
+          }),
+        ),
+      );
+      setStatus({
+        tone: "success",
+        message: `Saved ${selectedStatusEffect.fileName} into the game build and updated _StatusEffectIndex.json.`,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async function handleDownloadBundle() {
@@ -377,9 +436,9 @@ export default function StatusEffectManagerApp() {
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={selectedHasErrors}
-                    onClick={() => downloadTextFile(selectedStatusEffect.fileName.trim() || "status_effect.json", stringifyStatusEffectDraft(selectedStatusEffect))}
+                    onClick={() => void handleSaveCurrentStatusEffectToBuild()}
                   >
-                    Download Current Status Effect JSON
+                    Save Current Status Effect To Build
                   </button>
                 </div>
 
@@ -417,6 +476,7 @@ export default function StatusEffectManagerApp() {
                   <div>
                     <div className="label">Effect Type</div>
                     <input className="input mt-1" value={selectedStatusEffect.effectType} onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, effectType: event.target.value }))} />
+                    <div className="mt-2 text-xs text-white/45">Numeric runtime type for the effect. Existing game data currently uses values like 0, 1, and 2, so reuse a similar effect if you are unsure.</div>
                   </div>
                   <div>
                     <div className="label">Threat Multiplier</div>
@@ -494,22 +554,30 @@ export default function StatusEffectManagerApp() {
                   </div>
                   <div>
                     <div className="label">Percent Modifiers</div>
+                    <div className="mt-1 text-xs text-white/45">Enter whole percentages here, like 10 for 10%. The exporter converts them back to decimals automatically.</div>
                     <div className="mt-1 grid gap-3 md:grid-cols-2">
                       {Object.keys(selectedStatusEffect.percentModifiers).length
                         ? Object.keys(selectedStatusEffect.percentModifiers).map((key) => (
                             <div key={`percent-${key}`}>
                               <div className="label">{modifierLabel(key)}</div>
-                              <input
-                                className="input mt-1"
-                                value={selectedStatusEffect.percentModifiers[key] ?? ""}
-                                onChange={(event) => updateModifierBucket("percentModifiers", key, event.target.value)}
-                              />
+                              <div className="relative mt-1">
+                                <input
+                                  className="input pr-8"
+                                  inputMode="decimal"
+                                  value={formatWholePercentInput(selectedStatusEffect.percentModifiers[key] ?? "")}
+                                  onChange={(event) => updateModifierBucket("percentModifiers", key, parseWholePercentInput(event.target.value))}
+                                />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
+                              </div>
                             </div>
                           ))
                         : STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
                             <div key={`percent-${key}`}>
                               <div className="label">{modifierLabel(key)}</div>
-                              <input className="input mt-1" value="" onChange={(event) => updateModifierBucket("percentModifiers", key, event.target.value)} />
+                              <div className="relative mt-1">
+                                <input className="input pr-8" inputMode="decimal" value="" onChange={(event) => updateModifierBucket("percentModifiers", key, parseWholePercentInput(event.target.value))} />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
+                              </div>
                             </div>
                           ))}
                     </div>
