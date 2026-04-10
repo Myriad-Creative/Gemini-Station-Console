@@ -46,6 +46,57 @@ function parseWholePercentInput(value: string) {
   return Number((numericValue / 100).toFixed(6)).toString();
 }
 
+function splitDurationFields(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {
+      minutes: "",
+      seconds: "",
+    };
+  }
+
+  const numericValue = Number(trimmed);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return {
+      minutes: "",
+      seconds: "",
+    };
+  }
+
+  const wholeSeconds = Math.max(0, Math.round(numericValue));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const seconds = wholeSeconds % 60;
+
+  return {
+    minutes: String(minutes),
+    seconds: String(seconds),
+  };
+}
+
+function buildDurationValue(minutesValue: string, secondsValue: string) {
+  const trimmedMinutes = minutesValue.trim();
+  const trimmedSeconds = secondsValue.trim();
+  if (!trimmedMinutes && !trimmedSeconds) return "";
+
+  const minutes = trimmedMinutes ? Number(trimmedMinutes) : 0;
+  const seconds = trimmedSeconds ? Number(trimmedSeconds) : 0;
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return "";
+
+  const safeMinutes = Math.max(0, Math.round(minutes));
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  return String(safeMinutes * 60 + safeSeconds);
+}
+
+function formatDurationSummary(value: string) {
+  const { minutes, seconds } = splitDurationFields(value);
+  const numericMinutes = minutes ? Number(minutes) : 0;
+  const numericSeconds = seconds ? Number(seconds) : 0;
+  if (!numericMinutes && !numericSeconds) return "";
+  if (numericMinutes && numericSeconds) return `${numericMinutes}m ${numericSeconds}s`;
+  if (numericMinutes) return `${numericMinutes}m`;
+  return `${numericSeconds}s`;
+}
+
 export default function StatusEffectManagerApp() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
@@ -117,6 +168,7 @@ export default function StatusEffectManagerApp() {
     const statusEffects = database?.statusEffects ?? [];
     return statusEffects.find((draft) => draft.key === selectedStatusEffectKey) ?? filteredStatusEffects[0] ?? statusEffects[0] ?? null;
   }, [database, filteredStatusEffects, selectedStatusEffectKey]);
+  const selectedDurationFields = useMemo(() => splitDurationFields(selectedStatusEffect?.duration ?? ""), [selectedStatusEffect?.duration]);
 
   const selectedIssues = selectedStatusEffect ? issuesByKey.get(selectedStatusEffect.key) ?? [] : [];
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
@@ -141,6 +193,16 @@ export default function StatusEffectManagerApp() {
         ...current[bucket],
         [key]: value,
       },
+    }));
+  }
+
+  function updateDurationField(part: "minutes" | "seconds", value: string) {
+    const current = splitDurationFields(selectedStatusEffect?.duration ?? "");
+    const nextMinutes = part === "minutes" ? value : current.minutes;
+    const nextSeconds = part === "seconds" ? value : current.seconds;
+    updateSelectedStatusEffect((draft) => ({
+      ...draft,
+      duration: buildDurationValue(nextMinutes, nextSeconds),
     }));
   }
 
@@ -484,7 +546,33 @@ export default function StatusEffectManagerApp() {
                   </div>
                   <div>
                     <div className="label">Duration</div>
-                    <input className="input mt-1" value={selectedStatusEffect.duration} onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, duration: event.target.value }))} />
+                    <div className="mt-1 grid grid-cols-2 gap-3">
+                      <div>
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={selectedDurationFields.minutes}
+                          onChange={(event) => updateDurationField("minutes", event.target.value)}
+                        />
+                        <div className="mt-2 text-xs text-white/45">Minutes</div>
+                      </div>
+                      <div>
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={selectedDurationFields.seconds}
+                          onChange={(event) => updateDurationField("seconds", event.target.value)}
+                        />
+                        <div className="mt-2 text-xs text-white/45">Seconds</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-white/45">Stored and exported automatically as total seconds.</div>
                   </div>
                   <div>
                     <div className="label">Tick Interval</div>
@@ -614,7 +702,7 @@ export default function StatusEffectManagerApp() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
                         <span className="rounded bg-white/5 px-2 py-1">{selectedStatusEffect.isBuff ? "Buff" : "Debuff"}</span>
-                        {selectedStatusEffect.duration.trim() ? <span className="rounded bg-white/5 px-2 py-1">Duration {selectedStatusEffect.duration}</span> : null}
+                        {selectedStatusEffect.duration.trim() ? <span className="rounded bg-white/5 px-2 py-1">Duration {formatDurationSummary(selectedStatusEffect.duration) || selectedStatusEffect.duration}</span> : null}
                         {selectedStatusEffect.canStack ? <span className="rounded bg-white/5 px-2 py-1">Stacks</span> : null}
                       </div>
                       {selectedStatusEffect.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedStatusEffect.description}</div> : null}
