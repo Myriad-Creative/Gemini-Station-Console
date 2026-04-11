@@ -110,7 +110,6 @@ function formatDurationSummary(value: string) {
   if (numericMinutes) return `${numericMinutes}m`;
   return `${numericSeconds}s`;
 }
-
 export default function StatusEffectManagerApp() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
@@ -185,11 +184,11 @@ export default function StatusEffectManagerApp() {
     const statusEffects = database?.statusEffects ?? [];
     return statusEffects.find((draft) => draft.key === selectedStatusEffectKey) ?? filteredStatusEffects[0] ?? statusEffects[0] ?? null;
   }, [database, filteredStatusEffects, selectedStatusEffectKey]);
-  const selectedDurationFields = useMemo(() => splitDurationFields(selectedStatusEffect?.duration ?? ""), [selectedStatusEffect?.duration]);
 
   const selectedIssues = selectedStatusEffect ? issuesByKey.get(selectedStatusEffect.key) ?? [] : [];
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const workspaceHasErrors = statusEffectIssues.some((issue) => issue.level === "error");
+  const selectedDurationFields = useMemo(() => splitDurationFields(selectedStatusEffect?.duration ?? ""), [selectedStatusEffect?.duration]);
 
   useEffect(() => {
     if (!selectedStatusEffect) return;
@@ -202,12 +201,13 @@ export default function StatusEffectManagerApp() {
       return;
     }
 
+    const dismissAfterMs = status.dismissAfterMs;
     const startedAt = Date.now();
-    const totalSeconds = Math.max(1, Math.ceil(status.dismissAfterMs / 1000));
+    const totalSeconds = Math.max(1, Math.ceil(dismissAfterMs / 1000));
     setStatusCountdown(totalSeconds);
 
     const interval = window.setInterval(() => {
-      const remainingMs = status.dismissAfterMs - (Date.now() - startedAt);
+      const remainingMs = dismissAfterMs - (Date.now() - startedAt);
       if (remainingMs <= 0) {
         setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
         setStatusCountdown(null);
@@ -219,7 +219,7 @@ export default function StatusEffectManagerApp() {
     const timeout = window.setTimeout(() => {
       setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
       setStatusCountdown(null);
-    }, status.dismissAfterMs);
+    }, dismissAfterMs);
 
     return () => {
       window.clearInterval(interval);
