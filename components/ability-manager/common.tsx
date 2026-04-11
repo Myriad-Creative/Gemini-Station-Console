@@ -6,6 +6,14 @@ import { buildIconSrc as buildVersionedIconSrc } from "@lib/icon-src";
 
 export type StatusTone = "neutral" | "success" | "error";
 
+export type DismissibleStatusBannerProps = {
+  tone: StatusTone;
+  message: string;
+  onDismiss?: () => void;
+  dismissLabel?: string;
+  countdownSeconds?: number | null;
+};
+
 export function buildIconSrc(icon: string | undefined, id: string, name: string, version?: string) {
   return buildVersionedIconSrc(icon, id, name, version);
 }
@@ -98,6 +106,32 @@ export function StatusBanner({ tone, message }: { tone: StatusTone; message: str
       }`}
     >
       {message}
+    </div>
+  );
+}
+
+export function DismissibleStatusBanner({ tone, message, onDismiss, dismissLabel = "Dismiss", countdownSeconds = null }: DismissibleStatusBannerProps) {
+  return (
+    <div
+      className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+        tone === "error"
+          ? "border-red-400/30 bg-red-400/10 text-red-100"
+          : tone === "success"
+            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+            : "border-white/10 bg-white/5 text-white/70"
+      }`}
+    >
+      <div className="min-w-0 flex-1">{message}</div>
+      {onDismiss ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="shrink-0 rounded border border-current/25 px-3 py-1 text-xs font-medium hover:bg-white/10"
+        >
+          {dismissLabel}
+          {countdownSeconds !== null ? ` (${countdownSeconds}s)` : ""}
+        </button>
+      ) : null}
     </div>
   );
 }

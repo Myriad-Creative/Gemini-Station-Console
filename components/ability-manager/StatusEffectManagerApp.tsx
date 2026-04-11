@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import { STATUS_EFFECT_MODIFIER_KEYS, type AbilityManagerDatabase, type AbilityManagerValidationIssue, type StatusEffectDraft } from "@lib/ability-manager/types";
 import {
@@ -17,7 +17,7 @@ import {
   updateStatusEffectAt,
   validateStatusEffectDrafts,
 } from "@lib/ability-manager/utils";
-import { buildIconSrc, copyToClipboard, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
+import { buildIconSrc, copyToClipboard, DismissibleStatusBanner, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
 import { useAbilityDatabase } from "@components/ability-manager/useAbilityDatabase";
 
 function issueTone(issue: AbilityManagerValidationIssue["level"]) {
@@ -87,6 +87,20 @@ function buildDurationValue(minutesValue: string, secondsValue: string) {
   return String(safeMinutes * 60 + safeSeconds);
 }
 
+type StatusState = {
+  tone: StatusTone;
+  message: string;
+  dismissAfterMs?: number | null;
+};
+
+function detectModifierKeySelection(flatModifiers: Record<string, string>, percentModifiers: Record<string, string>) {
+  for (const key of STATUS_EFFECT_MODIFIER_KEYS) {
+    if ((flatModifiers[key] ?? "").trim() && Number(flatModifiers[key]) !== 0) return key;
+    if ((percentModifiers[key] ?? "").trim() && Number(percentModifiers[key]) !== 0) return key;
+  }
+  return STATUS_EFFECT_MODIFIER_KEYS[0];
+}
+
 function formatDurationSummary(value: string) {
   const { minutes, seconds } = splitDurationFields(value);
   const numericMinutes = minutes ? Number(minutes) : 0;
@@ -105,7 +119,10 @@ export default function StatusEffectManagerApp() {
   const [search, setSearch] = useState("");
   const [buffFilter, setBuffFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
+  const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
+  const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
+  const [selectedModifierKey, setSelectedModifierKey] = useState<(typeof STATUS_EFFECT_MODIFIER_KEYS)[number]>(STATUS_EFFECT_MODIFIER_KEYS[0]);
+  const statusTopRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const syncedDatabase = loadedDatabase
@@ -173,6 +190,42 @@ export default function StatusEffectManagerApp() {
   const selectedIssues = selectedStatusEffect ? issuesByKey.get(selectedStatusEffect.key) ?? [] : [];
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const workspaceHasErrors = statusEffectIssues.some((issue) => issue.level === "error");
+
+  useEffect(() => {
+    if (!selectedStatusEffect) return;
+    setSelectedModifierKey(detectModifierKeySelection(selectedStatusEffect.flatModifiers, selectedStatusEffect.percentModifiers));
+  }, [selectedStatusEffect?.key]);
+
+  useEffect(() => {
+    if (status.tone === "neutral" || !status.message || !status.dismissAfterMs || status.dismissAfterMs <= 0) {
+      setStatusCountdown(null);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const totalSeconds = Math.max(1, Math.ceil(status.dismissAfterMs / 1000));
+    setStatusCountdown(totalSeconds);
+
+    const interval = window.setInterval(() => {
+      const remainingMs = status.dismissAfterMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) {
+        setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
+        setStatusCountdown(null);
+        return;
+      }
+      setStatusCountdown(Math.max(1, Math.ceil(remainingMs / 1000)));
+    }, 250);
+
+    const timeout = window.setTimeout(() => {
+      setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
+      setStatusCountdown(null);
+    }, status.dismissAfterMs);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [status]);
   const previewIcon = buildIconSrc(
     selectedStatusEffect?.icon || "icon_lootbox.png",
     selectedStatusEffect?.numericId || "status-effect",
@@ -215,7 +268,7 @@ export default function StatusEffectManagerApp() {
     const nextDatabase = insertStatusEffectAfter(database, selectedStatusEffect?.key ?? null, nextDraft);
     setDatabase(nextDatabase);
     setSelectedStatusEffectKey(nextDraft.key);
-    setStatus({ tone: "success", message: "Added a new blank status effect draft." });
+    setStatus({ tone: "success", message: "Added a new blank status effect draft.", dismissAfterMs: 3000 });
   }
 
   function cloneSelectedStatusEffect() {
@@ -228,7 +281,7 @@ export default function StatusEffectManagerApp() {
     const nextDatabase = insertStatusEffectAfter(database, selectedStatusEffect.key, nextDraft);
     setDatabase(nextDatabase);
     setSelectedStatusEffectKey(nextDraft.key);
-    setStatus({ tone: "success", message: `Cloned status effect "${selectedStatusEffect.name || selectedStatusEffect.numericId}" into "${nextDraft.numericId}".` });
+    setStatus({ tone: "success", message: `Cloned status effect "${selectedStatusEffect.name || selectedStatusEffect.numericId}" into "${nextDraft.numericId}".`, dismissAfterMs: null });
   }
 
   function deleteSelectedStatusEffect() {
@@ -236,7 +289,7 @@ export default function StatusEffectManagerApp() {
     const nextDatabase = deleteStatusEffectAt(database, selectedStatusEffect.key);
     setDatabase(nextDatabase);
     setSelectedStatusEffectKey(nextDatabase.statusEffects[0]?.key ?? null);
-    setStatus({ tone: "success", message: `Deleted status effect "${selectedStatusEffect.name || selectedStatusEffect.numericId}".` });
+    setStatus({ tone: "success", message: `Deleted status effect "${selectedStatusEffect.name || selectedStatusEffect.numericId}".`, dismissAfterMs: null });
   }
 
   async function handleCopyIndexJson() {
@@ -245,6 +298,7 @@ export default function StatusEffectManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? "Copied the updated _StatusEffectIndex.json to the clipboard." : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: null,
     });
   }
 
@@ -254,6 +308,7 @@ export default function StatusEffectManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? `Copied ${selectedStatusEffect.fileName} to the clipboard.` : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: null,
     });
   }
 
@@ -276,6 +331,7 @@ export default function StatusEffectManagerApp() {
         setStatus({
           tone: "error",
           message: payload?.error || "Could not save the current status effect into the configured game build.",
+          dismissAfterMs: null,
         });
         return;
       }
@@ -291,11 +347,14 @@ export default function StatusEffectManagerApp() {
       setStatus({
         tone: "success",
         message: `Saved ${selectedStatusEffect.fileName} into the game build and updated _StatusEffectIndex.json.`,
+        dismissAfterMs: 10000,
       });
+      statusTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -303,7 +362,7 @@ export default function StatusEffectManagerApp() {
   async function handleDownloadBundle() {
     if (!database || workspaceHasErrors) return;
     await downloadZipBundle("status_effects_bundle.zip", buildStatusEffectBundleFiles(database.statusEffects));
-    setStatus({ tone: "success", message: "Downloaded status effects bundle zip." });
+    setStatus({ tone: "success", message: "Downloaded status effects bundle zip.", dismissAfterMs: null });
   }
 
   if (loading && !database) return <div>Loading…</div>;
@@ -356,7 +415,16 @@ export default function StatusEffectManagerApp() {
         </div>
       </div>
 
-      {status.tone !== "neutral" && status.message ? <StatusBanner tone={status.tone} message={status.message} /> : null}
+      {/* status banner */}
+      <div ref={statusTopRef} />
+      {status.tone !== "neutral" && status.message ? (
+        <DismissibleStatusBanner
+          tone={status.tone}
+          message={status.message}
+          onDismiss={() => setStatus({ tone: "neutral", message: "", dismissAfterMs: null })}
+          countdownSeconds={statusCountdown}
+        />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Status Effects" value={summary.totalStatusEffects} />
@@ -620,54 +688,53 @@ export default function StatusEffectManagerApp() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <div className="label">Flat Modifiers</div>
-                    <div className="mt-1 grid gap-3 md:grid-cols-2">
-                      {Object.keys(selectedStatusEffect.flatModifiers).length
-                        ? Object.keys(selectedStatusEffect.flatModifiers).map((key) => (
-                            <div key={`flat-${key}`}>
-                              <div className="label">{modifierLabel(key)}</div>
-                              <input
-                                className="input mt-1"
-                                value={selectedStatusEffect.flatModifiers[key] ?? ""}
-                                onChange={(event) => updateModifierBucket("flatModifiers", key, event.target.value)}
-                              />
-                            </div>
-                          ))
-                        : STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
-                            <div key={`flat-${key}`}>
-                              <div className="label">{modifierLabel(key)}</div>
-                              <input className="input mt-1" value="" onChange={(event) => updateModifierBucket("flatModifiers", key, event.target.value)} />
-                            </div>
+                    <div className="mt-1 space-y-3">
+                      <div>
+                        <div className="label">Stat</div>
+                        <select className="select mt-1 w-full" value={selectedModifierKey} onChange={(event) => setSelectedModifierKey(event.target.value as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number])}>
+                          {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                            <option key={`flat-select-${key}`} value={key}>
+                              {modifierLabel(key)}
+                            </option>
                           ))}
+                        </select>
+                      </div>
+                      <div>
+                        <div className="label">{modifierLabel(selectedModifierKey)}</div>
+                        <input
+                          className="input mt-1"
+                          value={selectedStatusEffect.flatModifiers[selectedModifierKey] ?? ""}
+                          onChange={(event) => updateModifierBucket("flatModifiers", selectedModifierKey, event.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
                   <div>
                     <div className="label">Percent Modifiers</div>
                     <div className="mt-1 text-xs text-white/45">Enter whole percentages here, like 10 for 10%. The exporter converts them back to decimals automatically.</div>
-                    <div className="mt-1 grid gap-3 md:grid-cols-2">
-                      {Object.keys(selectedStatusEffect.percentModifiers).length
-                        ? Object.keys(selectedStatusEffect.percentModifiers).map((key) => (
-                            <div key={`percent-${key}`}>
-                              <div className="label">{modifierLabel(key)}</div>
-                              <div className="relative mt-1">
-                                <input
-                                  className="input pr-8"
-                                  inputMode="decimal"
-                                  value={formatWholePercentInput(selectedStatusEffect.percentModifiers[key] ?? "")}
-                                  onChange={(event) => updateModifierBucket("percentModifiers", key, parseWholePercentInput(event.target.value))}
-                                />
-                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
-                              </div>
-                            </div>
-                          ))
-                        : STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
-                            <div key={`percent-${key}`}>
-                              <div className="label">{modifierLabel(key)}</div>
-                              <div className="relative mt-1">
-                                <input className="input pr-8" inputMode="decimal" value="" onChange={(event) => updateModifierBucket("percentModifiers", key, parseWholePercentInput(event.target.value))} />
-                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
-                              </div>
-                            </div>
+                    <div className="mt-1 space-y-3">
+                      <div>
+                        <div className="label">Stat</div>
+                        <select className="select mt-1 w-full" value={selectedModifierKey} onChange={(event) => setSelectedModifierKey(event.target.value as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number])}>
+                          {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                            <option key={`percent-select-${key}`} value={key}>
+                              {modifierLabel(key)}
+                            </option>
                           ))}
+                        </select>
+                      </div>
+                      <div>
+                        <div className="label">{modifierLabel(selectedModifierKey)}</div>
+                        <div className="relative mt-1">
+                          <input
+                            className="input pr-8"
+                            inputMode="decimal"
+                            value={formatWholePercentInput(selectedStatusEffect.percentModifiers[selectedModifierKey] ?? "")}
+                            onChange={(event) => updateModifierBucket("percentModifiers", selectedModifierKey, parseWholePercentInput(event.target.value))}
+                          />
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div>

@@ -297,7 +297,7 @@ export function createBlankStatusEffect(existingNumericIds: string[] = [], exist
     duration: "",
     tickInterval: "",
     threatMultiplier: "1",
-    isBuff: false,
+    isBuff: true,
     isDispellable: true,
     canStack: false,
     maxStacks: "1",
