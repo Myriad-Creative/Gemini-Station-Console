@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import { STATUS_EFFECT_MODIFIER_KEYS, type AbilityManagerDatabase, type AbilityManagerValidationIssue, type StatusEffectDraft } from "@lib/ability-manager/types";
 import {
@@ -93,12 +93,9 @@ type StatusState = {
   dismissAfterMs?: number | null;
 };
 
-function detectModifierKeySelection(flatModifiers: Record<string, string>, percentModifiers: Record<string, string>) {
-  for (const key of STATUS_EFFECT_MODIFIER_KEYS) {
-    if ((flatModifiers[key] ?? "").trim() && Number(flatModifiers[key]) !== 0) return key;
-    if ((percentModifiers[key] ?? "").trim() && Number(percentModifiers[key]) !== 0) return key;
-  }
-  return STATUS_EFFECT_MODIFIER_KEYS[0];
+function selectInputContentsOnFocus(event: FocusEvent<HTMLInputElement>) {
+  const target = event.currentTarget;
+  window.requestAnimationFrame(() => target.select());
 }
 
 function formatDurationSummary(value: string) {
@@ -120,7 +117,6 @@ export default function StatusEffectManagerApp() {
   const [linkedFilter, setLinkedFilter] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
-  const [selectedModifierKey, setSelectedModifierKey] = useState<(typeof STATUS_EFFECT_MODIFIER_KEYS)[number]>(STATUS_EFFECT_MODIFIER_KEYS[0]);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -189,11 +185,6 @@ export default function StatusEffectManagerApp() {
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const workspaceHasErrors = statusEffectIssues.some((issue) => issue.level === "error");
   const selectedDurationFields = useMemo(() => splitDurationFields(selectedStatusEffect?.duration ?? ""), [selectedStatusEffect?.duration]);
-
-  useEffect(() => {
-    if (!selectedStatusEffect) return;
-    setSelectedModifierKey(detectModifierKeySelection(selectedStatusEffect.flatModifiers, selectedStatusEffect.percentModifiers));
-  }, [selectedStatusEffect?.key]);
 
   useEffect(() => {
     if (status.tone === "neutral" || !status.message || !status.dismissAfterMs || status.dismissAfterMs <= 0) {
@@ -688,53 +679,39 @@ export default function StatusEffectManagerApp() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <div className="label">Flat Modifiers</div>
-                    <div className="mt-1 space-y-3">
-                      <div>
-                        <div className="label">Stat</div>
-                        <select className="select mt-1 w-full" value={selectedModifierKey} onChange={(event) => setSelectedModifierKey(event.target.value as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number])}>
-                          {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
-                            <option key={`flat-select-${key}`} value={key}>
-                              {modifierLabel(key)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="label">{modifierLabel(selectedModifierKey)}</div>
-                        <input
-                          className="input mt-1"
-                          value={selectedStatusEffect.flatModifiers[selectedModifierKey] ?? ""}
-                          onChange={(event) => updateModifierBucket("flatModifiers", selectedModifierKey, event.target.value)}
-                        />
-                      </div>
+                    <div className="mt-1 grid gap-3 sm:grid-cols-2">
+                      {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                        <div key={`flat-${key}`}>
+                          <div className="label">{modifierLabel(key)}</div>
+                          <input
+                            className="input mt-1"
+                            value={selectedStatusEffect.flatModifiers[key] ?? ""}
+                            onChange={(event) => updateModifierBucket("flatModifiers", key, event.target.value)}
+                            onFocus={selectInputContentsOnFocus}
+                          />
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div>
                     <div className="label">Percent Modifiers</div>
                     <div className="mt-1 text-xs text-white/45">Enter whole percentages here, like 10 for 10%. The exporter converts them back to decimals automatically.</div>
-                    <div className="mt-1 space-y-3">
-                      <div>
-                        <div className="label">Stat</div>
-                        <select className="select mt-1 w-full" value={selectedModifierKey} onChange={(event) => setSelectedModifierKey(event.target.value as (typeof STATUS_EFFECT_MODIFIER_KEYS)[number])}>
-                          {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
-                            <option key={`percent-select-${key}`} value={key}>
-                              {modifierLabel(key)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="label">{modifierLabel(selectedModifierKey)}</div>
-                        <div className="relative mt-1">
-                          <input
-                            className="input pr-8"
-                            inputMode="decimal"
-                            value={formatWholePercentInput(selectedStatusEffect.percentModifiers[selectedModifierKey] ?? "")}
-                            onChange={(event) => updateModifierBucket("percentModifiers", selectedModifierKey, parseWholePercentInput(event.target.value))}
-                          />
-                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
+                    <div className="mt-1 grid gap-3 sm:grid-cols-2">
+                      {STATUS_EFFECT_MODIFIER_KEYS.map((key) => (
+                        <div key={`percent-${key}`}>
+                          <div className="label">{modifierLabel(key)}</div>
+                          <div className="relative mt-1">
+                            <input
+                              className="input pr-8"
+                              inputMode="decimal"
+                              value={formatWholePercentInput(selectedStatusEffect.percentModifiers[key] ?? "")}
+                              onChange={(event) => updateModifierBucket("percentModifiers", key, parseWholePercentInput(event.target.value))}
+                              onFocus={selectInputContentsOnFocus}
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-white/45">%</span>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                   <div>
