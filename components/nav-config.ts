@@ -34,7 +34,7 @@ const MOD_SECTION_LINKS: NavLink[] = [
 
 const ABILITY_SECTION_LINKS: NavLink[] = [
   { href: "/abilities", label: "Abilities Dashboard" },
-  { href: "/abilities/manager", label: "Manager" },
+  { href: "/abilities/manager", label: "Abilities" },
   { href: "/abilities/status-effects", label: "Status Effects" },
 ];
 
@@ -53,6 +53,8 @@ const DATA_SECTION_LINKS: NavLink[] = [
 ];
 
 const SETTINGS_SECTION_LINKS: NavLink[] = [{ href: "/settings", label: "Settings Dashboard" }];
+
+const SECTION_DASHBOARD_HREFS = new Set(["/missions", "/mods", "/abilities", "/items", "/data", "/settings"]);
 
 export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "abilities" | "items" | "data" | "settings" | null {
   if (!pathname) return null;
@@ -108,6 +110,10 @@ export function isMainLinkActive(pathname: string | null | undefined, href: stri
 
 export function isSectionLinkActive(pathname: string | null | undefined, link: NavLink) {
   if (!pathname) return false;
-  if (pathname === link.href || pathname.startsWith(`${link.href}/`)) return true;
+  if (SECTION_DASHBOARD_HREFS.has(link.href)) {
+    if (pathname === link.href) return true;
+  } else if (pathname === link.href || pathname.startsWith(`${link.href}/`)) {
+    return true;
+  }
   return (link.aliases ?? []).some((alias) => pathname === alias || pathname.startsWith(`${alias}/`));
 }
