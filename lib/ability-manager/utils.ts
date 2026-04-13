@@ -63,6 +63,20 @@ function deriveStatusEffectFileName(numericId: string, name: string) {
   return `${normalizedId}_${slug}.json`;
 }
 
+function deriveAbilityFileName(id: string, name: string, fallbackName = "new_ability") {
+  const normalizedId = id.trim() || "ability";
+  const slug = slugify(name.trim() || fallbackName);
+  return `${normalizedId}_${slug}.json`;
+}
+
+function deriveAbilityFileNameFallback(fileName: string) {
+  const baseName = fileName.trim().replace(/\.json$/i, "");
+  if (!baseName) return "new_ability";
+  const underscoreIndex = baseName.indexOf("_");
+  if (underscoreIndex === -1) return baseName || "new_ability";
+  return baseName.slice(underscoreIndex + 1) || "new_ability";
+}
+
 function parseJsonBlock(text: string, label: string) {
   const trimmed = text.trim();
   if (!trimmed) return {};
@@ -214,6 +228,21 @@ export function computeAbilityLinkedEffects(draft: AbilityDraft, statusEffectOpt
 
 export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase | null): AbilityManagerStatusEffectOption[] {
   if (!database) return [];
+  const linkedAbilityCountByStatusId = new Map<number, number>();
+  for (const ability of database.abilities) {
+    const linkedNumericIds = new Set<number>();
+    for (const link of ability.linkedEffects) {
+      linkedNumericIds.add(link.numericId);
+    }
+    for (const effectId of ability.appliesEffectIds) {
+      const numericId = parseNumericId(effectId);
+      if (numericId !== null) linkedNumericIds.add(numericId);
+    }
+    for (const numericId of linkedNumericIds) {
+      linkedAbilityCountByStatusId.set(numericId, (linkedAbilityCountByStatusId.get(numericId) ?? 0) + 1);
+    }
+  }
+
   const seen = new Set<number>();
   return database.statusEffects
     .map((effect) => {
@@ -225,6 +254,7 @@ export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase
         numericId,
         effectId: effect.effectId,
         name: effect.name || effect.effectId || `Status ${numericId}`,
+        linkedAbilityCount: linkedAbilityCountByStatusId.get(numericId) ?? 0,
       };
     })
     .filter((entry): entry is AbilityManagerStatusEffectOption => entry !== null)
@@ -233,11 +263,11 @@ export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase
 
 export function createBlankAbility(existingIds: string[] = [], existingFileNames: string[] = []) {
   const id = nextNumericId(existingIds, 1);
-  return {
+  return syncDerivedAbilityFields({
     key: createAbilityKey(),
     sourceIndex: -1,
     id,
-    fileName: nextFileName(existingFileNames, `${id.padStart(3, "0")}_new_ability`),
+    fileName: nextFileName(existingFileNames, deriveAbilityFileName(id, "")),
     script: "res://scripts/abilities/Ability.gd",
     deliveryType: "other",
     name: "",
@@ -266,19 +296,22 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     linkedEffects: [],
     scriptPathResolved: null,
     sourcePath: null,
-  } satisfies AbilityDraft;
+  } satisfies AbilityDraft);
 }
 
 export function cloneAbilityDraft(source: AbilityDraft, existingIds: string[] = [], existingFileNames: string[] = []) {
   const id = nextNumericId(existingIds, Math.max(parseNumericId(source.id) ?? 0, 0) + 1);
-  return {
+  return syncDerivedAbilityFields({
     ...source,
     key: createAbilityKey(),
     id,
-    fileName: nextFileName(existingFileNames, `${id.padStart(3, "0")}_${slugify(source.name || source.fileName.replace(/\.json$/i, ""))}`),
+    fileName: nextFileName(
+      existingFileNames,
+      deriveAbilityFileName(id, source.name, deriveAbilityFileNameFallback(source.fileName)),
+    ),
     appliesEffectIds: [...source.appliesEffectIds],
     linkedEffects: [...source.linkedEffects],
-  } satisfies AbilityDraft;
+  } satisfies AbilityDraft);
 }
 
 export function createBlankStatusEffect(existingNumericIds: string[] = [], existingFileNames: string[] = []) {
@@ -355,6 +388,13 @@ export function updateStatusEffectAt(database: AbilityManagerDatabase, draftKey:
   return {
     ...database,
     statusEffects: database.statusEffects.map((draft) => (draft.key === draftKey ? updater(draft) : draft)),
+  };
+}
+
+export function syncDerivedAbilityFields(draft: AbilityDraft): AbilityDraft {
+  return {
+    ...draft,
+    fileName: deriveAbilityFileName(draft.id, draft.name, deriveAbilityFileNameFallback(draft.fileName)),
   };
 }
 

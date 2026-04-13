@@ -31,6 +31,7 @@ export type AbilityManagerStatusEffectOption = {
   numericId: number;
   effectId: string;
   name: string;
+  linkedAbilityCount: number;
 };
 
 export type AbilityEffectLink = {

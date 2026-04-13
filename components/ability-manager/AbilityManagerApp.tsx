@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
 import {
@@ -13,13 +13,14 @@ import {
   inferAbilityDeliveryType,
   insertAbilityAfter,
   statusEffectOptionsFromDatabase,
+  syncDerivedAbilityFields,
   stringifyAbilityDraft,
   stringifyAbilityIndexJson,
   summarizeAbilityManager,
   updateAbilityAt,
   validateAbilityDrafts,
 } from "@lib/ability-manager/utils";
-import { buildIconSrc, copyToClipboard, downloadTextFile, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
+import { buildIconSrc, copyToClipboard, DismissibleStatusBanner, downloadTextFile, downloadZipBundle, Section, StatusBanner, SummaryCard, type StatusTone } from "@components/ability-manager/common";
 import { useAbilityDatabase } from "@components/ability-manager/useAbilityDatabase";
 
 function issueTone(issue: AbilityManagerValidationIssue["level"]) {
@@ -36,6 +37,12 @@ function sourceLabel(sources: string[]) {
     .join(" + ");
 }
 
+type StatusState = {
+  tone: StatusTone;
+  message: string;
+  dismissAfterMs?: number | null;
+};
+
 export default function AbilityManagerApp() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
@@ -44,11 +51,19 @@ export default function AbilityManagerApp() {
   const [search, setSearch] = useState("");
   const [deliveryFilter, setDeliveryFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
+  const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
+  const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
+  const statusTopRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setDatabase(loadedDatabase);
-    setSelectedAbilityKey(loadedDatabase?.abilities[0]?.key ?? null);
+    const syncedDatabase = loadedDatabase
+      ? {
+          ...loadedDatabase,
+          abilities: loadedDatabase.abilities.map((draft) => syncDerivedAbilityFields(draft)),
+        }
+      : loadedDatabase;
+    setDatabase(syncedDatabase);
+    setSelectedAbilityKey(syncedDatabase?.abilities[0]?.key ?? null);
   }, [loadedDatabase]);
 
   const statusEffectOptions = useMemo(() => statusEffectOptionsFromDatabase(database), [database]);
@@ -117,9 +132,41 @@ export default function AbilityManagerApp() {
     sharedDataVersion,
   );
 
+  useEffect(() => {
+    if (status.tone === "neutral" || !status.message || !status.dismissAfterMs || status.dismissAfterMs <= 0) {
+      setStatusCountdown(null);
+      return;
+    }
+
+    const dismissAfterMs = status.dismissAfterMs;
+    const startedAt = Date.now();
+    const totalSeconds = Math.max(1, Math.ceil(dismissAfterMs / 1000));
+    setStatusCountdown(totalSeconds);
+
+    const interval = window.setInterval(() => {
+      const remainingMs = dismissAfterMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) {
+        setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
+        setStatusCountdown(null);
+        return;
+      }
+      setStatusCountdown(Math.max(1, Math.ceil(remainingMs / 1000)));
+    }, 250);
+
+    const timeout = window.setTimeout(() => {
+      setStatus({ tone: "neutral", message: "", dismissAfterMs: null });
+      setStatusCountdown(null);
+    }, dismissAfterMs);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [status]);
+
   function updateSelectedAbility(updater: (current: AbilityDraft) => AbilityDraft) {
     if (!database || !selectedAbility) return;
-    setDatabase(updateAbilityAt(database, selectedAbility.key, updater));
+    setDatabase(updateAbilityAt(database, selectedAbility.key, (current) => syncDerivedAbilityFields(updater(current))));
   }
 
   function addBlankAbility() {
@@ -131,7 +178,7 @@ export default function AbilityManagerApp() {
     const nextDatabase = insertAbilityAfter(database, selectedAbility?.key ?? null, nextDraft);
     setDatabase(nextDatabase);
     setSelectedAbilityKey(nextDraft.key);
-    setStatus({ tone: "success", message: "Added a new blank ability draft." });
+    setStatus({ tone: "success", message: "Added a new blank ability draft.", dismissAfterMs: 3000 });
   }
 
   function cloneSelectedAbility() {
@@ -144,7 +191,7 @@ export default function AbilityManagerApp() {
     const nextDatabase = insertAbilityAfter(database, selectedAbility.key, nextDraft);
     setDatabase(nextDatabase);
     setSelectedAbilityKey(nextDraft.key);
-    setStatus({ tone: "success", message: `Cloned ability "${selectedAbility.name || selectedAbility.id}" into "${nextDraft.id}".` });
+    setStatus({ tone: "success", message: `Cloned ability "${selectedAbility.name || selectedAbility.id}" into "${nextDraft.id}".`, dismissAfterMs: null });
   }
 
   function deleteSelectedAbility() {
@@ -152,7 +199,7 @@ export default function AbilityManagerApp() {
     const nextDatabase = deleteAbilityAt(database, selectedAbility.key);
     setDatabase(nextDatabase);
     setSelectedAbilityKey(nextDatabase.abilities[0]?.key ?? null);
-    setStatus({ tone: "success", message: `Deleted ability "${selectedAbility.name || selectedAbility.id}".` });
+    setStatus({ tone: "success", message: `Deleted ability "${selectedAbility.name || selectedAbility.id}".`, dismissAfterMs: null });
   }
 
   async function handleCopyIndexJson() {
@@ -161,6 +208,7 @@ export default function AbilityManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? "Copied the updated _AbilityIndex.json to the clipboard." : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: null,
     });
   }
 
@@ -170,13 +218,61 @@ export default function AbilityManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? `Copied ${selectedAbility.fileName} to the clipboard.` : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: null,
     });
+  }
+
+  async function handleSaveCurrentAbilityToBuild() {
+    if (!database || !selectedAbility || selectedHasErrors) return;
+
+    try {
+      const response = await fetch("/api/abilities/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          draft: selectedAbility,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save the current ability into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      setDatabase(
+        updateAbilityAt(database, selectedAbility.key, (current) =>
+          syncDerivedAbilityFields({
+            ...current,
+            sourcePath: typeof payload?.savedPath === "string" ? payload.savedPath : current.sourcePath,
+          }),
+        ),
+      );
+      setStatus({
+        tone: "success",
+        message: `Saved ${selectedAbility.fileName} into the game build and updated _AbilityIndex.json.`,
+        dismissAfterMs: 10000,
+      });
+      statusTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
   }
 
   async function handleDownloadBundle() {
     if (!database || workspaceHasErrors) return;
     await downloadZipBundle("abilities_bundle.zip", buildAbilityBundleFiles(database.abilities));
-    setStatus({ tone: "success", message: "Downloaded abilities bundle zip." });
+    setStatus({ tone: "success", message: "Downloaded abilities bundle zip.", dismissAfterMs: null });
   }
 
   if (loading && !database) return <div>Loading…</div>;
@@ -229,7 +325,15 @@ export default function AbilityManagerApp() {
         </div>
       </div>
 
-      {status.tone !== "neutral" && status.message ? <StatusBanner tone={status.tone} message={status.message} /> : null}
+      <div ref={statusTopRef} />
+      {status.tone !== "neutral" && status.message ? (
+        <DismissibleStatusBanner
+          tone={status.tone}
+          message={status.message}
+          onDismiss={() => setStatus({ tone: "neutral", message: "", dismissAfterMs: null })}
+          countdownSeconds={statusCountdown}
+        />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Abilities" value={summary.totalAbilities} />
@@ -375,6 +479,13 @@ export default function AbilityManagerApp() {
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={selectedHasErrors}
+                    onClick={() => void handleSaveCurrentAbilityToBuild()}
+                  >
+                    Save Current Ability To Build
+                  </button>
+                  <button
+                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                    disabled={selectedHasErrors}
                     onClick={() => downloadTextFile(selectedAbility.fileName.trim() || "ability.json", stringifyAbilityDraft(selectedAbility))}
                   >
                     Download Current Ability JSON
@@ -388,7 +499,8 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">File Name</div>
-                    <input className="input mt-1" value={selectedAbility.fileName} onChange={(event) => updateSelectedAbility((current) => ({ ...current, fileName: event.target.value }))} />
+                    <input className="input mt-1 cursor-default text-white/70" value={selectedAbility.fileName} readOnly />
+                    <div className="mt-2 text-xs text-white/45">Auto-generated as id + name in lower case.</div>
                   </div>
                   <div>
                     <div className="label">Name</div>
@@ -531,8 +643,13 @@ export default function AbilityManagerApp() {
                               />
                               <div className="min-w-0">
                                 <div className="text-sm text-white">{effect.name}</div>
-                                <div className="text-xs text-white/45">
-                                  {effect.numericId} · {effect.effectId || "no properties.id"}
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/45">
+                                  <span>
+                                    {effect.numericId} · {effect.effectId || "no properties.id"}
+                                  </span>
+                                  {effect.linkedAbilityCount === 0 ? (
+                                    <span className="rounded bg-amber-400/15 px-2 py-0.5 text-amber-100">Not linked</span>
+                                  ) : null}
                                 </div>
                               </div>
                             </label>
