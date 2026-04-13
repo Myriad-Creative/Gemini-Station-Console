@@ -51,6 +51,12 @@ type AbilityValueOption = {
   description: string;
 };
 
+type AbilityFlagOption = {
+  value: number;
+  label: string;
+  description: string;
+};
+
 const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "0", label: "None", description: "No threat is generated when this ability resolves." },
   { value: "1", label: "Damage", description: "Threat is based on damage dealt, then scaled by the threat multiplier." },
@@ -59,29 +65,27 @@ const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "4", label: "Custom", description: "Threat comes from custom script logic such as get_custom_threat()." },
 ];
 
-const VALID_TARGET_OPTIONS: AbilityValueOption[] = [
-  { value: "1", label: "Enemy", description: "Enemy-target flag. In current game logic, Neutral reputation also passes this check." },
-  { value: "2", label: "Neutral", description: "Neutral targets only." },
-  { value: "3", label: "Enemy + Neutral", description: "Enemy and Neutral target flags." },
-  { value: "4", label: "Ally", description: "Allied targets only." },
-  { value: "5", label: "Enemy + Ally", description: "Enemy and Ally target flags. Neutral also passes through the Enemy check." },
-  { value: "6", label: "Neutral + Ally", description: "Neutral or allied targets." },
-  { value: "7", label: "Enemy + Neutral + Ally", description: "Any non-self target." },
-  { value: "8", label: "Self", description: "The user can only target itself." },
-  { value: "9", label: "Enemy + Self", description: "Enemy targets or self. Neutral also passes through the Enemy check." },
-  { value: "10", label: "Neutral + Self", description: "Neutral targets or self." },
-  { value: "11", label: "Enemy + Neutral + Self", description: "Enemy, Neutral, or self." },
-  { value: "12", label: "Ally + Self", description: "Allied targets or self." },
-  { value: "13", label: "Enemy + Ally + Self", description: "Enemy, Ally, or self. Neutral also passes through the Enemy check." },
-  { value: "14", label: "Neutral + Ally + Self", description: "Neutral, Ally, or self." },
-  { value: "15", label: "Any", description: "Enemy, Neutral, Ally, or self." },
+const VALID_TARGET_FLAGS: AbilityFlagOption[] = [
+  { value: 1, label: "Enemy", description: "Enemy targets. In current game logic, Neutral reputation also passes this check." },
+  { value: 2, label: "Neutral", description: "Neutral targets only." },
+  { value: 4, label: "Ally", description: "Allied targets only." },
+  { value: 8, label: "Self", description: "The user can target itself." },
 ];
+
+const VALID_TARGET_KNOWN_MASK = VALID_TARGET_FLAGS.reduce((mask, option) => mask | option.value, 0);
 
 const FACING_REQUIREMENT_OPTIONS: AbilityValueOption[] = [
   { value: "0", label: "Any", description: "No facing restriction." },
   { value: "1", label: "Front", description: "Target must be within 45 degrees of the forward arc." },
   { value: "2", label: "Rear", description: "Target must be behind the ship, roughly 135 to 225 degrees." },
   { value: "3", label: "Side", description: "Target must be in a side arc, roughly 45 to 135 or 225 to 315 degrees." },
+];
+
+const RANGE_TYPE_OPTIONS: AbilityValueOption[] = [
+  { value: "0", label: "Point Blank", description: "0 to 500 range." },
+  { value: "1", label: "Mid", description: "501 to 1000 range." },
+  { value: "2", label: "Normal", description: "1001 to 2000 range." },
+  { value: "3", label: "Long", description: "2001 to 3000 range." },
 ];
 
 function resolveAbilityValueOption(value: string, options: AbilityValueOption[]) {
@@ -202,12 +206,21 @@ export default function AbilityManagerApp() {
   const selectedThreatTypeValue = selectedAbility?.threatType.trim() ?? "";
   const selectedValidTargetsValue = selectedAbility?.validTargets.trim() ?? "";
   const selectedFacingRequirementValue = selectedAbility?.facingRequirement.trim() ?? "";
+  const selectedMinRangeTypeValue = selectedAbility?.minRangeType.trim() ?? "";
+  const selectedMaxRangeTypeValue = selectedAbility?.maxRangeType.trim() ?? "";
+  const selectedValidTargetsMask = selectedValidTargetsValue ? Number(selectedValidTargetsValue) : 0;
+  const validTargetUnknownBits = Number.isInteger(selectedValidTargetsMask) ? selectedValidTargetsMask & ~VALID_TARGET_KNOWN_MASK : null;
+  const selectedValidTargetFlags = Number.isInteger(selectedValidTargetsMask)
+    ? VALID_TARGET_FLAGS.filter((option) => (selectedValidTargetsMask & option.value) !== 0)
+    : [];
   const threatTypeOptions = withCurrentAbilityValueOption(selectedThreatTypeValue, THREAT_TYPE_OPTIONS, "Threat Type");
-  const validTargetOptions = withCurrentAbilityValueOption(selectedValidTargetsValue, VALID_TARGET_OPTIONS, "Valid Targets");
   const facingRequirementOptions = withCurrentAbilityValueOption(selectedFacingRequirementValue, FACING_REQUIREMENT_OPTIONS, "Facing Requirement");
+  const minRangeTypeOptions = withCurrentAbilityValueOption(selectedMinRangeTypeValue, RANGE_TYPE_OPTIONS, "Min Range Type");
+  const maxRangeTypeOptions = withCurrentAbilityValueOption(selectedMaxRangeTypeValue, RANGE_TYPE_OPTIONS, "Max Range Type");
   const selectedThreatTypeOption = resolveAbilityValueOption(selectedThreatTypeValue, threatTypeOptions);
-  const selectedValidTargetsOption = resolveAbilityValueOption(selectedValidTargetsValue, validTargetOptions);
   const selectedFacingRequirementOption = resolveAbilityValueOption(selectedFacingRequirementValue, facingRequirementOptions);
+  const selectedMinRangeTypeOption = resolveAbilityValueOption(selectedMinRangeTypeValue, minRangeTypeOptions);
+  const selectedMaxRangeTypeOption = resolveAbilityValueOption(selectedMaxRangeTypeValue, maxRangeTypeOptions);
 
   useEffect(() => {
     const abilities = database?.abilities ?? [];
@@ -269,6 +282,21 @@ export default function AbilityManagerApp() {
   function updateSelectedAbility(updater: (current: AbilityDraft) => AbilityDraft) {
     if (!database || !selectedAbility) return;
     setDatabase(updateAbilityAt(database, selectedAbility.key, (current) => syncDerivedAbilityFields(updater(current))));
+  }
+
+  function setSelectedValidTargetFlag(flagValue: number, checked: boolean) {
+    updateSelectedAbility((current) => {
+      const currentValue = current.validTargets.trim();
+      const currentMask = currentValue ? Number(currentValue) : 0;
+      const knownMask = Number.isInteger(currentMask) ? currentMask & VALID_TARGET_KNOWN_MASK : 0;
+      const unknownMask = Number.isInteger(currentMask) ? currentMask & ~VALID_TARGET_KNOWN_MASK : 0;
+      const nextKnownMask = checked ? knownMask | flagValue : knownMask & ~flagValue;
+      const nextMask = unknownMask | nextKnownMask;
+      return {
+        ...current,
+        validTargets: nextMask ? String(nextMask) : "",
+      };
+    });
   }
 
   function addBlankAbility() {
@@ -680,21 +708,24 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Valid Targets</div>
-                    <select
-                      className="select mt-1 w-full"
-                      value={selectedValidTargetsValue}
-                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, validTargets: event.target.value }))}
-                    >
-                      <option value="">Not set</option>
-                      {validTargetOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-2 text-xs text-white/45">
-                      {selectedValidTargetsOption?.description ?? "Choose which target groups this ability can hit."}
+                    <div className="mt-1 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
+                      {VALID_TARGET_FLAGS.map((option) => {
+                        const checked = Number.isInteger(selectedValidTargetsMask) && (selectedValidTargetsMask & option.value) !== 0;
+                        return (
+                          <label key={option.value} className="flex items-start gap-3 rounded-lg border border-white/5 px-3 py-2 text-sm text-white/80">
+                            <input type="checkbox" className="mt-0.5" checked={checked} onChange={(event) => setSelectedValidTargetFlag(option.value, event.target.checked)} />
+                            <div className="min-w-0">
+                              <div className="font-medium text-white">{option.label}</div>
+                              <div className="mt-1 text-xs text-white/45">{option.description}</div>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedValidTargetFlags.length ? `Selected: ${selectedValidTargetFlags.map((option) => option.label).join(", ")}` : "No valid target flags selected."}
+                    </div>
+                    {validTargetUnknownBits ? <div className="mt-1 text-xs text-amber-200/80">This ability has additional unknown target flags that will be preserved unless you replace them.</div> : null}
                   </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
                     <input
@@ -724,11 +755,39 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Min Range Type</div>
-                    <input className="input mt-1" value={selectedAbility.minRangeType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, minRangeType: event.target.value }))} />
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedMinRangeTypeValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, minRangeType: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {minRangeTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedMinRangeTypeOption?.description ?? "Choose the starting range band for this ability."}
+                    </div>
                   </div>
                   <div>
                     <div className="label">Max Range Type</div>
-                    <input className="input mt-1" value={selectedAbility.maxRangeType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, maxRangeType: event.target.value }))} />
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedMaxRangeTypeValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, maxRangeType: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {maxRangeTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedMaxRangeTypeOption?.description ?? "Choose the furthest range band for this ability."}
+                    </div>
                   </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75 md:col-span-2">
                     <input
