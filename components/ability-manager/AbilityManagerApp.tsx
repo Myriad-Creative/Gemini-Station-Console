@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
-import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
+import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerModOption, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
 import {
   buildAbilityBundleFiles,
   computeAbilityLinkedEffects,
+  computeAbilityLinkedMods,
   cloneAbilityDraft,
   createBlankAbility,
   deleteAbilityAt,
   inferAbilityDeliveryType,
   insertAbilityAfter,
+  normalizeAbilityReference,
   statusEffectOptionsFromDatabase,
   syncDerivedAbilityFields,
   stringifyAbilityDraft,
@@ -123,6 +125,24 @@ export default function AbilityManagerApp() {
     () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
     [selectedAbility, statusEffectOptions],
   );
+  const modLinksByAbilityId = useMemo(() => {
+    const next = new Map<string, AbilityManagerModOption[]>();
+    if (!database?.modCatalogAvailable) return next;
+
+    for (const mod of database.mods) {
+      for (const abilityId of mod.abilityIds) {
+        const current = next.get(abilityId) ?? [];
+        current.push(mod);
+        next.set(abilityId, current);
+      }
+    }
+
+    return next;
+  }, [database?.modCatalogAvailable, database?.mods]);
+  const selectedLinkedMods = useMemo(() => {
+    if (!selectedAbility || !database?.modCatalogAvailable) return [];
+    return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
+  }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
 
   const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
   const previewIcon = buildIconSrc(
@@ -397,6 +417,7 @@ export default function AbilityManagerApp() {
                   const issues = abilityIssuesByKey.get(draft.key) ?? [];
                   const hasErrors = issues.some((issue) => issue.level === "error");
                   const linkedCount = computeAbilityLinkedEffects(draft, statusEffectOptions).length;
+                  const linkedModCount = database?.modCatalogAvailable ? (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length : null;
                   const deliveryType = inferAbilityDeliveryType(draft);
                   return (
                     <button
@@ -421,6 +442,11 @@ export default function AbilityManagerApp() {
                           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
                             <span className="rounded bg-white/5 px-2 py-1 capitalize">{deliveryType}</span>
                             {linkedCount ? <span className="rounded bg-white/5 px-2 py-1">{linkedCount} link{linkedCount === 1 ? "" : "s"}</span> : null}
+                            {linkedModCount === null ? null : linkedModCount > 0 ? (
+                              <span className="rounded bg-white/5 px-2 py-1">{linkedModCount} mod{linkedModCount === 1 ? "" : "s"}</span>
+                            ) : (
+                              <span className="rounded bg-amber-400/15 px-2 py-1 text-amber-100">No mod</span>
+                            )}
                             {hasErrors ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Errors</span> : null}
                           </div>
                         </div>
@@ -683,6 +709,37 @@ export default function AbilityManagerApp() {
                         <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="label">Mods Using This Ability</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    {!database?.modCatalogAvailable ? (
+                      <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
+                    ) : selectedLinkedMods.length ? (
+                      <div className="space-y-2">
+                        {selectedLinkedMods.map((mod) => (
+                          <div key={mod.id} className="rounded-lg border border-white/5 px-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm text-white">{mod.name}</div>
+                                <div className="mt-1 text-xs text-white/45">{mod.id}</div>
+                              </div>
+                              <div className="shrink-0 text-right text-xs text-white/45">
+                                <div>{mod.slot || "Unknown slot"}</div>
+                                <div>
+                                  Lvl {mod.levelRequirement} · Rarity {mod.rarity}
+                                </div>
+                              </div>
+                            </div>
+                            {mod.description ? <div className="mt-2 text-sm leading-5 text-white/60">{mod.description}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white/45">No mods currently include this ability.</div>
+                    )}
                   </div>
                 </div>
 

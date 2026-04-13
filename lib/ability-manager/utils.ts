@@ -4,6 +4,7 @@ import type {
   AbilityDraft,
   AbilityEffectLink,
   AbilityManagerDatabase,
+  AbilityManagerModOption,
   AbilityManagerStatusEffectOption,
   AbilityManagerSummary,
   AbilityManagerValidationIssue,
@@ -106,6 +107,13 @@ function parseNumberField(value: string, label: string, issues: AbilityManagerVa
 function parseNumericId(value: string) {
   const numberValue = Number(value.trim());
   return Number.isFinite(numberValue) ? Math.trunc(numberValue) : null;
+}
+
+export function normalizeAbilityReference(value: number | string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numericValue = parseNumericId(trimmed);
+  return numericValue === null ? trimmed : String(numericValue);
 }
 
 function nextNumericId(existingIds: string[], minimum = 1) {
@@ -260,6 +268,12 @@ export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase
     })
     .filter((entry): entry is AbilityManagerStatusEffectOption => entry !== null)
     .sort((left, right) => left.numericId - right.numericId);
+}
+
+export function computeAbilityLinkedMods(draft: Pick<AbilityDraft, "id">, mods: AbilityManagerModOption[]) {
+  const normalizedId = normalizeAbilityReference(draft.id);
+  if (!normalizedId) return [] as AbilityManagerModOption[];
+  return mods.filter((mod) => mod.abilityIds.includes(normalizedId));
 }
 
 export function createBlankAbility(existingIds: string[] = [], existingFileNames: string[] = []) {

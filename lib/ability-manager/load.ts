@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { parseLooseJson } from "@lib/json";
+import { normalizeAbilityReference } from "@lib/ability-manager/utils";
 import { STATUS_EFFECT_MODIFIER_KEYS } from "@lib/ability-manager/types";
 import type {
   AbilityDraft,
@@ -8,9 +9,11 @@ import type {
   AbilityLinkSource,
   AbilityManagerDatabase,
   AbilityManagerDiagnostic,
+  AbilityManagerModOption,
   StatusEffectModifierMap,
   StatusEffectDraft,
 } from "@lib/ability-manager/types";
+import { parseMods } from "@parser/mods";
 
 type JsonObject = Record<string, unknown>;
 
@@ -467,6 +470,18 @@ function loadAbilities(gameRoot: string, statusEffects: StatusEffectDraft[], dia
   return abilities;
 }
 
+function loadMods(gameRoot: string) {
+  return parseMods(gameRoot).map<AbilityManagerModOption>((mod) => ({
+    id: mod.id.trim(),
+    name: mod.name.trim() || mod.id.trim() || "Unnamed Mod",
+    slot: mod.slot.trim(),
+    rarity: mod.rarity,
+    levelRequirement: mod.levelRequirement,
+    description: mod.description?.trim() ?? "",
+    abilityIds: [...new Set((mod.abilities ?? []).map((entry) => normalizeAbilityReference(entry)).filter(Boolean))],
+  }));
+}
+
 function enrichStatusEffectsWithAbilityLinks(abilities: AbilityDraft[], statusEffects: StatusEffectDraft[]) {
   const byStatusId = new Map<string, { abilityIds: string[]; abilityNames: string[] }>();
   for (const ability of abilities) {
@@ -494,7 +509,9 @@ export function loadAbilityManagerDatabase(gameRoot: string): AbilityManagerData
   const diagnostics: AbilityManagerDiagnostic[] = [];
   const statusEffects = loadStatusEffects(gameRoot, diagnostics);
   const abilities = loadAbilities(gameRoot, statusEffects, diagnostics);
+  const mods = loadMods(gameRoot);
   const enrichedStatusEffects = enrichStatusEffectsWithAbilityLinks(abilities, statusEffects);
+  const modCatalogAvailable = fs.existsSync(path.join(gameRoot, "data", "database", "mods", "Mods.json"));
 
   const statusIds = new Set(enrichedStatusEffects.map((effect) => effect.numericId.trim()).filter(Boolean));
   const abilityIds = new Set<string>();
@@ -546,6 +563,8 @@ export function loadAbilityManagerDatabase(gameRoot: string): AbilityManagerData
         linkedAbilityNames: relatedAbilities.map((ability) => ability.name || ability.id),
       };
     }),
+    mods,
+    modCatalogAvailable,
     diagnostics,
   };
 }

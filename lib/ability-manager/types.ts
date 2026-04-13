@@ -35,6 +35,16 @@ export type AbilityManagerStatusEffectOption = {
   linkedAbilityCount: number;
 };
 
+export type AbilityManagerModOption = {
+  id: string;
+  name: string;
+  slot: string;
+  rarity: number;
+  levelRequirement: number;
+  description: string;
+  abilityIds: string[];
+};
+
 export type AbilityEffectLink = {
   numericId: number;
   sources: AbilityLinkSource[];
@@ -123,6 +133,8 @@ export type AbilityManagerDatabase = {
   loadedAt: string;
   abilities: AbilityDraft[];
   statusEffects: StatusEffectDraft[];
+  mods: AbilityManagerModOption[];
+  modCatalogAvailable: boolean;
   diagnostics: AbilityManagerDiagnostic[];
 };
 
