@@ -53,6 +53,8 @@ export default function AbilityManagerApp() {
   const [search, setSearch] = useState("");
   const [deliveryFilter, setDeliveryFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
+  const [validationFilter, setValidationFilter] = useState("");
+  const [modFilter, setModFilter] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +83,20 @@ export default function AbilityManagerApp() {
   }, [abilityIssues]);
   const summary = useMemo(() => summarizeAbilityManager(database, abilityIssues, []), [database, abilityIssues]);
 
+  const modLinksByAbilityId = useMemo(() => {
+    const next = new Map<string, AbilityManagerModOption[]>();
+    if (!database?.modCatalogAvailable) return next;
+
+    for (const mod of database.mods) {
+      for (const abilityId of mod.abilityIds) {
+        const current = next.get(abilityId) ?? [];
+        current.push(mod);
+        next.set(abilityId, current);
+      }
+    }
+
+    return next;
+  }, [database?.modCatalogAvailable, database?.mods]);
   const filteredAbilities = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (database?.abilities ?? [])
@@ -93,8 +109,39 @@ export default function AbilityManagerApp() {
         if (!linkedFilter) return true;
         const linkedCount = computeAbilityLinkedEffects(draft, statusEffectOptions).length;
         return linkedFilter === "linked" ? linkedCount > 0 : linkedCount === 0;
+      })
+      .filter((draft) => {
+        if (!validationFilter) return true;
+        const issues = abilityIssuesByKey.get(draft.key) ?? [];
+        const hasErrors = issues.some((issue) => issue.level === "error");
+        const hasWarnings = issues.some((issue) => issue.level === "warning");
+        if (validationFilter === "errors") return hasErrors;
+        if (validationFilter === "warnings") return hasWarnings;
+        return true;
+      })
+      .filter((draft) => {
+        if (!modFilter || !database?.modCatalogAvailable) return true;
+        const linkedModCount = (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length;
+        return modFilter === "linked" ? linkedModCount > 0 : linkedModCount === 0;
       });
-  }, [database, deliveryFilter, linkedFilter, search, statusEffectOptions]);
+  }, [abilityIssuesByKey, database, deliveryFilter, linkedFilter, modFilter, modLinksByAbilityId, search, statusEffectOptions, validationFilter]);
+
+  const selectedAbility = useMemo(() => {
+    const abilities = database?.abilities ?? [];
+    return abilities.find((draft) => draft.key === selectedAbilityKey) ?? filteredAbilities[0] ?? abilities[0] ?? null;
+  }, [database, filteredAbilities, selectedAbilityKey]);
+
+  const selectedIssues = selectedAbility ? abilityIssuesByKey.get(selectedAbility.key) ?? [] : [];
+  const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
+  const workspaceHasErrors = abilityIssues.some((issue) => issue.level === "error");
+  const selectedLinkedEffects = useMemo(
+    () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
+    [selectedAbility, statusEffectOptions],
+  );
+  const selectedLinkedMods = useMemo(() => {
+    if (!selectedAbility || !database?.modCatalogAvailable) return [];
+    return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
+  }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
 
   useEffect(() => {
     const abilities = database?.abilities ?? [];
@@ -112,37 +159,6 @@ export default function AbilityManagerApp() {
       setSelectedAbilityKey(filteredAbilities[0]?.key ?? abilities[0]?.key ?? null);
     }
   }, [database, filteredAbilities, selectedAbilityKey]);
-
-  const selectedAbility = useMemo(() => {
-    const abilities = database?.abilities ?? [];
-    return abilities.find((draft) => draft.key === selectedAbilityKey) ?? filteredAbilities[0] ?? abilities[0] ?? null;
-  }, [database, filteredAbilities, selectedAbilityKey]);
-
-  const selectedIssues = selectedAbility ? abilityIssuesByKey.get(selectedAbility.key) ?? [] : [];
-  const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
-  const workspaceHasErrors = abilityIssues.some((issue) => issue.level === "error");
-  const selectedLinkedEffects = useMemo(
-    () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
-    [selectedAbility, statusEffectOptions],
-  );
-  const modLinksByAbilityId = useMemo(() => {
-    const next = new Map<string, AbilityManagerModOption[]>();
-    if (!database?.modCatalogAvailable) return next;
-
-    for (const mod of database.mods) {
-      for (const abilityId of mod.abilityIds) {
-        const current = next.get(abilityId) ?? [];
-        current.push(mod);
-        next.set(abilityId, current);
-      }
-    }
-
-    return next;
-  }, [database?.modCatalogAvailable, database?.mods]);
-  const selectedLinkedMods = useMemo(() => {
-    if (!selectedAbility || !database?.modCatalogAvailable) return [];
-    return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
-  }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
 
   const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
   const previewIcon = buildIconSrc(
@@ -407,6 +423,25 @@ export default function AbilityManagerApp() {
                   <option value="linked">Has linked effects</option>
                   <option value="unlinked">No linked effects</option>
                 </select>
+              </div>
+
+              <div>
+                <div className="label">Validation</div>
+                <select className="select mt-1 w-full" value={validationFilter} onChange={(event) => setValidationFilter(event.target.value)}>
+                  <option value="">All validation states</option>
+                  <option value="errors">Has errors</option>
+                  <option value="warnings">Has warnings</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="label">Mod Links</div>
+                <select className="select mt-1 w-full" value={modFilter} onChange={(event) => setModFilter(event.target.value)} disabled={!database?.modCatalogAvailable}>
+                  <option value="">All abilities</option>
+                  <option value="linked">Has linked mods</option>
+                  <option value="unlinked">No mods connected</option>
+                </select>
+                {!database?.modCatalogAvailable ? <div className="mt-2 text-xs text-white/45">Mods.json is not available in the active local game root.</div> : null}
               </div>
             </div>
 
