@@ -254,6 +254,7 @@ export function statusEffectOptionsFromDatabase(database: AbilityManagerDatabase
         numericId,
         effectId: effect.effectId,
         name: effect.name || effect.effectId || `Status ${numericId}`,
+        description: effect.description,
         linkedAbilityCount: linkedAbilityCountByStatusId.get(numericId) ?? 0,
       };
     })

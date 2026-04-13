@@ -627,7 +627,10 @@ export default function AbilityManagerApp() {
                         {statusEffectOptions.map((effect) => {
                           const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
                           return (
-                            <label key={effect.numericId} className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/5 px-3 py-2 hover:bg-white/[0.03]">
+                            <label
+                              key={effect.numericId}
+                              className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
+                            >
                               <input
                                 type="checkbox"
                                 className="mt-1"
@@ -641,16 +644,19 @@ export default function AbilityManagerApp() {
                                   }))
                                 }
                               />
-                              <div className="min-w-0">
-                                <div className="text-sm text-white">{effect.name}</div>
-                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/45">
-                                  <span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                    <div className="truncate text-sm font-medium text-white">{effect.name}</div>
+                                    {effect.linkedAbilityCount === 0 ? (
+                                      <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
+                                    ) : null}
+                                  </div>
+                                  <div className="shrink-0 text-right text-xs text-white/45">
                                     {effect.numericId} · {effect.effectId || "no properties.id"}
-                                  </span>
-                                  {effect.linkedAbilityCount === 0 ? (
-                                    <span className="rounded bg-amber-400/15 px-2 py-0.5 text-amber-100">Not linked</span>
-                                  ) : null}
+                                  </div>
                                 </div>
+                                {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
                               </div>
                             </label>
                           );
