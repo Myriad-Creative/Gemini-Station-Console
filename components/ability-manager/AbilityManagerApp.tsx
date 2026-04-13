@@ -116,6 +116,7 @@ export default function AbilityManagerApp() {
   const [linkedFilter, setLinkedFilter] = useState("");
   const [validationFilter, setValidationFilter] = useState("");
   const [modFilter, setModFilter] = useState("");
+  const [statusEffectSearch, setStatusEffectSearch] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
@@ -199,6 +200,11 @@ export default function AbilityManagerApp() {
     () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
     [selectedAbility, statusEffectOptions],
   );
+  const filteredStatusEffectOptions = useMemo(() => {
+    const query = statusEffectSearch.trim().toLowerCase();
+    if (!query) return statusEffectOptions;
+    return statusEffectOptions.filter((effect) => effect.name.toLowerCase().includes(query));
+  }, [statusEffectOptions, statusEffectSearch]);
   const selectedLinkedMods = useMemo(() => {
     if (!selectedAbility || !database?.modCatalogAvailable) return [];
     return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
@@ -295,6 +301,20 @@ export default function AbilityManagerApp() {
       return {
         ...current,
         validTargets: nextMask ? String(nextMask) : "",
+      };
+    });
+  }
+
+  function setSelectedStatusEffect(numericId: number, checked: boolean) {
+    updateSelectedAbility((current) => {
+      const effectId = String(numericId);
+      return {
+        ...current,
+        appliesEffectIds: checked
+          ? (current.appliesEffectIds.includes(effectId) ? current.appliesEffectIds : [...current.appliesEffectIds, effectId]).sort(
+              (left, right) => Number(left) - Number(right),
+            )
+          : current.appliesEffectIds.filter((entry) => entry !== effectId),
       };
     });
   }
@@ -736,24 +756,6 @@ export default function AbilityManagerApp() {
                     Requires Target
                   </label>
                   <div>
-                    <div className="label">Facing Requirement</div>
-                    <select
-                      className="select mt-1 w-full"
-                      value={selectedFacingRequirementValue}
-                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))}
-                    >
-                      <option value="">Not set</option>
-                      {facingRequirementOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-2 text-xs text-white/45">
-                      {selectedFacingRequirementOption?.description ?? "Choose whether the target has to be in front, rear, or side arc."}
-                    </div>
-                  </div>
-                  <div>
                     <div className="label">Min Range Type</div>
                     <select
                       className="select mt-1 w-full"
@@ -787,6 +789,24 @@ export default function AbilityManagerApp() {
                     </select>
                     <div className="mt-2 text-xs text-white/45">
                       {selectedMaxRangeTypeOption?.description ?? "Choose the furthest range band for this ability."}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="label">Facing Requirement</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedFacingRequirementValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {facingRequirementOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedFacingRequirementOption?.description ?? "Choose whether the target has to be in front, rear, or side arc."}
                     </div>
                   </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75 md:col-span-2">
@@ -851,44 +871,44 @@ export default function AbilityManagerApp() {
                   <div className="space-y-3">
                     <div className="label">JSON-linked Status Effects</div>
                     <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                        {statusEffectOptions.map((effect) => {
-                          const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
-                          return (
-                            <label
-                              key={effect.numericId}
-                              className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-1"
-                                checked={checked}
-                                onChange={(event) =>
-                                  updateSelectedAbility((current) => ({
-                                    ...current,
-                                    appliesEffectIds: event.target.checked
-                                      ? [...current.appliesEffectIds, String(effect.numericId)].sort((left, right) => Number(left) - Number(right))
-                                      : current.appliesEffectIds.filter((entry) => entry !== String(effect.numericId)),
-                                  }))
-                                }
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0 flex flex-wrap items-center gap-2">
-                                    <div className="truncate text-sm font-medium text-white">{effect.name}</div>
-                                    {effect.linkedAbilityCount === 0 ? (
-                                      <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
-                                    ) : null}
+                      <input
+                        className="input"
+                        value={statusEffectSearch}
+                        placeholder="Search status effects by name..."
+                        onChange={(event) => setStatusEffectSearch(event.target.value)}
+                      />
+                      <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                        {filteredStatusEffectOptions.length ? (
+                          filteredStatusEffectOptions.map((effect) => {
+                            const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
+                            return (
+                              <label
+                                key={effect.numericId}
+                                className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
+                              >
+                                <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedStatusEffect(effect.numericId, event.target.checked)} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                      <div className="truncate text-sm font-medium text-white">{effect.name}</div>
+                                      {effect.linkedAbilityCount === 0 ? (
+                                        <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="shrink-0 text-right text-xs text-white/45">
+                                      {effect.numericId} · {effect.effectId || "no properties.id"}
+                                    </div>
                                   </div>
-                                  <div className="shrink-0 text-right text-xs text-white/45">
-                                    {effect.numericId} · {effect.effectId || "no properties.id"}
-                                  </div>
+                                  {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
                                 </div>
-                                {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
-                              </div>
-                            </label>
-                          );
-                        })}
+                              </label>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                            No status effects match the current search.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -900,9 +920,22 @@ export default function AbilityManagerApp() {
                         <div className="space-y-2">
                           {selectedLinkedEffects.map((link) => (
                             <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
-                              <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
-                              <div className="mt-1 text-xs text-white/45">
-                                {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
+                                  <div className="mt-1 text-xs text-white/45">
+                                    {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
+                                  </div>
+                                </div>
+                                {link.sources.includes("json") ? (
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded border border-red-400/25 px-2.5 py-1 text-xs text-red-100 hover:bg-red-400/10"
+                                    onClick={() => setSelectedStatusEffect(link.numericId, false)}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           ))}
