@@ -390,9 +390,8 @@ function loadAbilities(gameRoot: string, statusEffects: StatusEffectDraft[], dia
       const raw = parseJsonObjectFile(absolutePath);
       const properties = asObject(raw.properties);
       const scriptPathResolved = resolveScriptPath(gameRoot, raw.script);
-      const jsonEffectIds = parseNumericIdList(properties.applies_effect_ids).map((numericId) => ({ numericId, source: "json" as const }));
       const scriptEffectIds = inferEffectLinksFromScript(scriptPathResolved);
-      const linkedEffects = buildEffectLinkEntries([...jsonEffectIds, ...scriptEffectIds], statusEffectMap);
+      const linkedEffects = buildEffectLinkEntries(scriptEffectIds, statusEffectMap);
       const extraProperties = stripKnownKeys(properties, [
         "delivery_type",
         "threat_type",

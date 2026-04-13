@@ -207,7 +207,7 @@ export function computeAbilityLinkedEffects(draft: AbilityDraft, statusEffectOpt
     for (const source of link.sources) {
       if (source !== "json") current.add(source);
     }
-    grouped.set(link.numericId, current);
+    if (current.size > 0) grouped.set(link.numericId, current);
   }
 
   for (const effectId of draft.appliesEffectIds) {
@@ -274,6 +274,15 @@ export function computeAbilityLinkedMods(draft: Pick<AbilityDraft, "id">, mods: 
   const normalizedId = normalizeAbilityReference(draft.id);
   if (!normalizedId) return [] as AbilityManagerModOption[];
   return mods.filter((mod) => mod.abilityIds.includes(normalizedId));
+}
+
+function sanitizeAbilityLinkedEffects(linkedEffects: AbilityEffectLink[]) {
+  return linkedEffects
+    .map((link) => ({
+      ...link,
+      sources: [...new Set(link.sources.filter((source) => source !== "json"))],
+    }))
+    .filter((link) => link.sources.length > 0);
 }
 
 export function createBlankAbility(existingIds: string[] = [], existingFileNames: string[] = []) {
@@ -410,6 +419,7 @@ export function syncDerivedAbilityFields(draft: AbilityDraft): AbilityDraft {
   return {
     ...draft,
     fileName: deriveAbilityFileName(draft.id, draft.name, deriveAbilityFileNameFallback(draft.fileName)),
+    linkedEffects: sanitizeAbilityLinkedEffects(draft.linkedEffects),
   };
 }
 
