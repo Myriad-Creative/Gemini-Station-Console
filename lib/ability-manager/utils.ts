@@ -268,7 +268,7 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     sourceIndex: -1,
     id,
     fileName: nextFileName(existingFileNames, deriveAbilityFileName(id, "")),
-    script: "res://scripts/abilities/Ability.gd",
+    script: "",
     deliveryType: "other",
     name: "",
     description: "",
