@@ -45,6 +45,63 @@ type StatusState = {
   dismissAfterMs?: number | null;
 };
 
+type AbilityValueOption = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
+  { value: "0", label: "None", description: "No threat is generated when this ability resolves." },
+  { value: "1", label: "Damage", description: "Threat is based on damage dealt, then scaled by the threat multiplier." },
+  { value: "2", label: "Heal", description: "Threat is based on healing done, then scaled by the threat multiplier." },
+  { value: "3", label: "Buff", description: "Buff threat is applied to enemies already engaged with the buffed target." },
+  { value: "4", label: "Custom", description: "Threat comes from custom script logic such as get_custom_threat()." },
+];
+
+const VALID_TARGET_OPTIONS: AbilityValueOption[] = [
+  { value: "1", label: "Enemy", description: "Enemy-target flag. In current game logic, Neutral reputation also passes this check." },
+  { value: "2", label: "Neutral", description: "Neutral targets only." },
+  { value: "3", label: "Enemy + Neutral", description: "Enemy and Neutral target flags." },
+  { value: "4", label: "Ally", description: "Allied targets only." },
+  { value: "5", label: "Enemy + Ally", description: "Enemy and Ally target flags. Neutral also passes through the Enemy check." },
+  { value: "6", label: "Neutral + Ally", description: "Neutral or allied targets." },
+  { value: "7", label: "Enemy + Neutral + Ally", description: "Any non-self target." },
+  { value: "8", label: "Self", description: "The user can only target itself." },
+  { value: "9", label: "Enemy + Self", description: "Enemy targets or self. Neutral also passes through the Enemy check." },
+  { value: "10", label: "Neutral + Self", description: "Neutral targets or self." },
+  { value: "11", label: "Enemy + Neutral + Self", description: "Enemy, Neutral, or self." },
+  { value: "12", label: "Ally + Self", description: "Allied targets or self." },
+  { value: "13", label: "Enemy + Ally + Self", description: "Enemy, Ally, or self. Neutral also passes through the Enemy check." },
+  { value: "14", label: "Neutral + Ally + Self", description: "Neutral, Ally, or self." },
+  { value: "15", label: "Any", description: "Enemy, Neutral, Ally, or self." },
+];
+
+const FACING_REQUIREMENT_OPTIONS: AbilityValueOption[] = [
+  { value: "0", label: "Any", description: "No facing restriction." },
+  { value: "1", label: "Front", description: "Target must be within 45 degrees of the forward arc." },
+  { value: "2", label: "Rear", description: "Target must be behind the ship, roughly 135 to 225 degrees." },
+  { value: "3", label: "Side", description: "Target must be in a side arc, roughly 45 to 135 or 225 to 315 degrees." },
+];
+
+function resolveAbilityValueOption(value: string, options: AbilityValueOption[]) {
+  const normalizedValue = value.trim();
+  return options.find((option) => option.value === normalizedValue) ?? null;
+}
+
+function withCurrentAbilityValueOption(value: string, options: AbilityValueOption[], fieldLabel: string) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue || options.some((option) => option.value === normalizedValue)) return options;
+  return [
+    ...options,
+    {
+      value: normalizedValue,
+      label: "Unrecognized value",
+      description: `${fieldLabel} is currently set to ${normalizedValue}, which is not one of the known definitions.`,
+    },
+  ];
+}
+
 export default function AbilityManagerApp() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
@@ -142,6 +199,15 @@ export default function AbilityManagerApp() {
     if (!selectedAbility || !database?.modCatalogAvailable) return [];
     return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
   }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
+  const selectedThreatTypeValue = selectedAbility?.threatType.trim() ?? "";
+  const selectedValidTargetsValue = selectedAbility?.validTargets.trim() ?? "";
+  const selectedFacingRequirementValue = selectedAbility?.facingRequirement.trim() ?? "";
+  const threatTypeOptions = withCurrentAbilityValueOption(selectedThreatTypeValue, THREAT_TYPE_OPTIONS, "Threat Type");
+  const validTargetOptions = withCurrentAbilityValueOption(selectedValidTargetsValue, VALID_TARGET_OPTIONS, "Valid Targets");
+  const facingRequirementOptions = withCurrentAbilityValueOption(selectedFacingRequirementValue, FACING_REQUIREMENT_OPTIONS, "Facing Requirement");
+  const selectedThreatTypeOption = resolveAbilityValueOption(selectedThreatTypeValue, threatTypeOptions);
+  const selectedValidTargetsOption = resolveAbilityValueOption(selectedValidTargetsValue, validTargetOptions);
+  const selectedFacingRequirementOption = resolveAbilityValueOption(selectedFacingRequirementValue, facingRequirementOptions);
 
   useEffect(() => {
     const abilities = database?.abilities ?? [];
@@ -592,7 +658,21 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Threat Type</div>
-                    <input className="input mt-1" value={selectedAbility.threatType} onChange={(event) => updateSelectedAbility((current) => ({ ...current, threatType: event.target.value }))} />
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedThreatTypeValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, threatType: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {threatTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedThreatTypeOption?.description ?? "Choose how this ability should generate threat."}
+                    </div>
                   </div>
                   <div>
                     <div className="label">Threat Multiplier</div>
@@ -600,7 +680,21 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Valid Targets</div>
-                    <input className="input mt-1" value={selectedAbility.validTargets} onChange={(event) => updateSelectedAbility((current) => ({ ...current, validTargets: event.target.value }))} />
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedValidTargetsValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, validTargets: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {validTargetOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedValidTargetsOption?.description ?? "Choose which target groups this ability can hit."}
+                    </div>
                   </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
                     <input
@@ -612,7 +706,21 @@ export default function AbilityManagerApp() {
                   </label>
                   <div>
                     <div className="label">Facing Requirement</div>
-                    <input className="input mt-1" value={selectedAbility.facingRequirement} onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))} />
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedFacingRequirementValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, facingRequirement: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {facingRequirementOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedFacingRequirementOption?.description ?? "Choose whether the target has to be in front, rear, or side arc."}
+                    </div>
                   </div>
                   <div>
                     <div className="label">Min Range Type</div>
@@ -809,7 +917,7 @@ export default function AbilityManagerApp() {
                       <div className="mt-2 font-mono text-xs text-white/55">{selectedAbility.id || "missing-id"}</div>
                       <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
                         <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
-                        {selectedAbility.threatType.trim() ? <span className="rounded bg-white/5 px-2 py-1">Threat Type {selectedAbility.threatType}</span> : null}
+                        {selectedThreatTypeOption ? <span className="rounded bg-white/5 px-2 py-1">Threat {selectedThreatTypeOption.label}</span> : null}
                         {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {selectedAbility.cooldown}</span> : null}
                         {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
                       </div>
