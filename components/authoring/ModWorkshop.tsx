@@ -293,6 +293,13 @@ export default function ModWorkshop({
         if (issueFilter === "all") return true;
         const flags = issueFlagsByIndex.get(index);
         return issueFilter === "error" ? !!flags?.error : !!flags?.warning;
+      })
+      .sort((left, right) => {
+        const leftLabel = (left.mod.name || left.mod.id || "").trim().toLowerCase();
+        const rightLabel = (right.mod.name || right.mod.id || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.mod.id.trim().localeCompare(right.mod.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
   }, [deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
 

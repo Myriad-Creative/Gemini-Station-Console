@@ -176,6 +176,13 @@ export default function StatusEffectManagerApp() {
         if (issueFilter === "errors") return Boolean(flags?.error);
         if (issueFilter === "warnings") return Boolean(flags?.warning);
         return true;
+      })
+      .sort((left, right) => {
+        const leftLabel = (left.name || left.effectId || left.numericId || "").trim().toLowerCase();
+        const rightLabel = (right.name || right.effectId || right.numericId || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.numericId.trim().localeCompare(right.numericId.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
   }, [buffFilter, database, issueFilter, issueFlagsByKey, linkedFilter, search]);
 

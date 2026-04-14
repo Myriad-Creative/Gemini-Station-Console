@@ -276,6 +276,16 @@ export function computeAbilityLinkedMods(draft: Pick<AbilityDraft, "id">, mods: 
   return mods.filter((mod) => mod.abilityIds.includes(normalizedId));
 }
 
+export function isAbilityExcludedFromModLinkChecks(draft: Pick<AbilityDraft, "id" | "name" | "fileName">) {
+  const normalizedId = normalizeAbilityReference(draft.id);
+  if (normalizedId === "1") return true;
+
+  const normalizedName = draft.name.trim().toLowerCase();
+  if (normalizedName === "auto cannon") return true;
+
+  return draft.fileName.trim().toLowerCase().includes("auto_cannon");
+}
+
 function sanitizeAbilityLinkedEffects(linkedEffects: AbilityEffectLink[]) {
   return linkedEffects
     .map((link) => ({
@@ -769,18 +779,15 @@ export function summarizeAbilityManager(
     linkedAbilityCount: database.abilities.filter((draft) => draft.linkedEffects.length > 0).length,
     orphanAbilityCount: database.modCatalogAvailable
       ? database.abilities.filter((draft) => {
+          if (isAbilityExcludedFromModLinkChecks(draft)) return false;
           const normalizedId = normalizeAbilityReference(draft.id);
           return !normalizedId || !modLinkedAbilityIds.has(normalizedId);
         }).length
       : 0,
     orphanStatusEffectCount: database.statusEffects.filter((draft) => draft.linkedAbilityIds.length === 0).length,
     warningCount:
-      abilityIssues.filter((issue) => issue.level === "warning").length +
-      statusEffectIssues.filter((issue) => issue.level === "warning").length +
-      database.diagnostics.filter((issue) => issue.level === "warning").length,
+      abilityIssues.filter((issue) => issue.level === "warning").length + statusEffectIssues.filter((issue) => issue.level === "warning").length,
     errorCount:
-      abilityIssues.filter((issue) => issue.level === "error").length +
-      statusEffectIssues.filter((issue) => issue.level === "error").length +
-      database.diagnostics.filter((issue) => issue.level === "error").length,
+      abilityIssues.filter((issue) => issue.level === "error").length + statusEffectIssues.filter((issue) => issue.level === "error").length,
   };
 }

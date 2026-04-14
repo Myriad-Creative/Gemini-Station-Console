@@ -284,10 +284,18 @@ export default function MerchantLabApp() {
 
   const filteredProfiles = useMemo(() => {
     const query = profileSearch.trim().toLowerCase();
-    return (workspace?.profiles ?? []).filter((profile) => {
-      if (!query) return true;
-      return [profile.id, profile.name, profile.description].join(" ").toLowerCase().includes(query);
-    });
+    return (workspace?.profiles ?? [])
+      .filter((profile) => {
+        if (!query) return true;
+        return [profile.id, profile.name, profile.description].join(" ").toLowerCase().includes(query);
+      })
+      .sort((left, right) => {
+        const leftLabel = (left.name || left.id || "").trim().toLowerCase();
+        const rightLabel = (right.name || right.id || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+      });
   }, [profileSearch, workspace]);
 
   useEffect(() => {

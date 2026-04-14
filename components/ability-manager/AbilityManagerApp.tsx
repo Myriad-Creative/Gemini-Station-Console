@@ -13,6 +13,7 @@ import {
   deleteAbilityAt,
   inferAbilityDeliveryType,
   insertAbilityAfter,
+  isAbilityExcludedFromModLinkChecks,
   normalizeAbilityReference,
   statusEffectOptionsFromDatabase,
   syncDerivedAbilityFields,
@@ -196,8 +197,16 @@ export default function AbilityManagerApp() {
       })
       .filter((draft) => {
         if (!modFilter || !database?.modCatalogAvailable) return true;
+        if (isAbilityExcludedFromModLinkChecks(draft)) return false;
         const linkedModCount = (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length;
         return modFilter === "linked" ? linkedModCount > 0 : linkedModCount === 0;
+      })
+      .sort((left, right) => {
+        const leftLabel = (left.name || left.id || "").trim().toLowerCase();
+        const rightLabel = (right.name || right.id || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
   }, [abilityIssuesByKey, database, deliveryFilter, linkedFilter, modFilter, modLinksByAbilityId, search, statusEffectOptions, validationFilter]);
 
@@ -220,8 +229,10 @@ export default function AbilityManagerApp() {
   }, [statusEffectOptions, statusEffectSearch]);
   const selectedLinkedMods = useMemo(() => {
     if (!selectedAbility || !database?.modCatalogAvailable) return [];
+    if (isAbilityExcludedFromModLinkChecks(selectedAbility)) return [];
     return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
   }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
+  const selectedAbilityExcludedFromModChecks = selectedAbility ? isAbilityExcludedFromModLinkChecks(selectedAbility) : false;
   const selectedThreatTypeValue = selectedAbility?.threatType.trim() ?? "";
   const selectedValidTargetsValue = selectedAbility?.validTargets.trim() ?? "";
   const selectedFacingRequirementValue = selectedAbility?.facingRequirement.trim() ?? "";
@@ -671,7 +682,10 @@ export default function AbilityManagerApp() {
                   const issues = abilityIssuesByKey.get(draft.key) ?? [];
                   const hasErrors = issues.some((issue) => issue.level === "error");
                   const linkedCount = computeAbilityLinkedEffects(draft, statusEffectOptions).length;
-                  const linkedModCount = database?.modCatalogAvailable ? (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length : null;
+                  const linkedModCount =
+                    database?.modCatalogAvailable && !isAbilityExcludedFromModLinkChecks(draft)
+                      ? (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length
+                      : null;
                   const deliveryType = inferAbilityDeliveryType(draft);
                   return (
                     <button
@@ -1057,6 +1071,8 @@ export default function AbilityManagerApp() {
                   <div className="rounded-xl border border-white/10 bg-black/20 p-3">
                     {!database?.modCatalogAvailable ? (
                       <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
+                    ) : selectedAbilityExcludedFromModChecks ? (
+                      <div className="text-sm text-white/45">Auto Cannon is excluded from orphan mod checks because it is the default ship ability.</div>
                     ) : selectedLinkedMods.length ? (
                       <div className="space-y-2">
                         {selectedLinkedMods.map((mod) => (

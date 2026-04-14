@@ -121,7 +121,14 @@ export default function ItemManagerApp() {
         return [item.id, item.name, item.description, item.type].join(" ").toLowerCase().includes(query);
       })
       .filter((item) => (rarityFilter ? item.rarity.trim() === rarityFilter : true))
-      .filter((item) => (typeFilter ? item.type.trim() === typeFilter : true));
+      .filter((item) => (typeFilter ? item.type.trim() === typeFilter : true))
+      .sort((left, right) => {
+        const leftLabel = (left.name || left.id || "").trim().toLowerCase();
+        const rightLabel = (right.name || right.id || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+      });
   }, [rarityFilter, search, typeFilter, workspace]);
 
   useEffect(() => {

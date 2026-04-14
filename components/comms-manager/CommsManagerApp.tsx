@@ -174,10 +174,18 @@ export default function CommsManagerApp() {
 
   const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (workspace?.contacts ?? []).filter((contact) => {
-      if (!query) return true;
-      return [contact.id, contact.name, contact.greeting, contact.notes, ...contact.dialog].join(" ").toLowerCase().includes(query);
-    });
+    return (workspace?.contacts ?? [])
+      .filter((contact) => {
+        if (!query) return true;
+        return [contact.id, contact.name, contact.greeting, contact.notes, ...contact.dialog].join(" ").toLowerCase().includes(query);
+      })
+      .sort((left, right) => {
+        const leftLabel = (left.name || left.id || "").trim().toLowerCase();
+        const rightLabel = (right.name || right.id || "").trim().toLowerCase();
+        const byLabel = leftLabel.localeCompare(rightLabel);
+        if (byLabel !== 0) return byLabel;
+        return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+      });
   }, [search, workspace]);
 
   useEffect(() => {
