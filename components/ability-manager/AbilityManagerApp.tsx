@@ -143,7 +143,20 @@ export default function AbilityManagerApp() {
     }
     return next;
   }, [abilityIssues]);
+  const abilityIssueFlagsByKey = useMemo(() => {
+    const next = new Map<string, { error: boolean; warning: boolean }>();
+    for (const [draftKey, issues] of abilityIssuesByKey.entries()) {
+      next.set(draftKey, {
+        error: issues.some((issue) => issue.level === "error"),
+        warning: issues.some((issue) => issue.level === "warning"),
+      });
+    }
+    return next;
+  }, [abilityIssuesByKey]);
   const summary = useMemo(() => summarizeAbilityManager(database, abilityIssues, []), [database, abilityIssues]);
+  const errorDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.error).length, [abilityIssueFlagsByKey]);
+  const warningDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.warning).length, [abilityIssueFlagsByKey]);
+  const hasActiveFilters = Boolean(search.trim() || deliveryFilter || linkedFilter || validationFilter || modFilter);
 
   const modLinksByAbilityId = useMemo(() => {
     const next = new Map<string, AbilityManagerModOption[]>();
@@ -329,6 +342,14 @@ export default function AbilityManagerApp() {
     setDatabase(nextDatabase);
     setSelectedAbilityKey(nextDraft.key);
     setStatus({ tone: "success", message: "Added a new blank ability draft.", dismissAfterMs: 3000 });
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setDeliveryFilter("");
+    setLinkedFilter("");
+    setValidationFilter("");
+    setModFilter("");
   }
 
   function cloneSelectedAbility() {
@@ -570,6 +591,38 @@ export default function AbilityManagerApp() {
             </div>
 
             <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <button
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    validationFilter === "errors"
+                      ? "border-red-300/80 bg-red-500/20 text-red-50"
+                      : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+                  }`}
+                  onClick={() => setValidationFilter("errors")}
+                >
+                  <div className="label text-red-100/80">Errors</div>
+                  <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
+                </button>
+                <button
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    validationFilter === "warnings"
+                      ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
+                      : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+                  }`}
+                  onClick={() => setValidationFilter("warnings")}
+                >
+                  <div className="label text-yellow-100/80">Warnings</div>
+                  <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
+                </button>
+                <button
+                  className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                  disabled={!hasActiveFilters}
+                  onClick={resetFilters}
+                >
+                  Reset Filter
+                </button>
+              </div>
+
               <div>
                 <div className="label">Search</div>
                 <input
@@ -597,15 +650,6 @@ export default function AbilityManagerApp() {
                   <option value="">All abilities</option>
                   <option value="linked">Has linked effects</option>
                   <option value="unlinked">No linked effects</option>
-                </select>
-              </div>
-
-              <div>
-                <div className="label">Validation</div>
-                <select className="select mt-1 w-full" value={validationFilter} onChange={(event) => setValidationFilter(event.target.value)}>
-                  <option value="">All validation states</option>
-                  <option value="errors">Has errors</option>
-                  <option value="warnings">Has warnings</option>
                 </select>
               </div>
 

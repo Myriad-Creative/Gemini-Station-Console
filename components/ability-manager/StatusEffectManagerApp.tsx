@@ -115,6 +115,7 @@ export default function StatusEffectManagerApp() {
   const [search, setSearch] = useState("");
   const [buffFilter, setBuffFilter] = useState("");
   const [linkedFilter, setLinkedFilter] = useState("");
+  const [issueFilter, setIssueFilter] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
@@ -140,7 +141,20 @@ export default function StatusEffectManagerApp() {
     }
     return next;
   }, [statusEffectIssues]);
+  const issueFlagsByKey = useMemo(() => {
+    const next = new Map<string, { error: boolean; warning: boolean }>();
+    for (const [draftKey, issues] of issuesByKey.entries()) {
+      next.set(draftKey, {
+        error: issues.some((issue) => issue.level === "error"),
+        warning: issues.some((issue) => issue.level === "warning"),
+      });
+    }
+    return next;
+  }, [issuesByKey]);
   const summary = useMemo(() => summarizeAbilityManager(database, [], statusEffectIssues), [database, statusEffectIssues]);
+  const errorDraftCount = useMemo(() => Array.from(issueFlagsByKey.values()).filter((entry) => entry.error).length, [issueFlagsByKey]);
+  const warningDraftCount = useMemo(() => Array.from(issueFlagsByKey.values()).filter((entry) => entry.warning).length, [issueFlagsByKey]);
+  const hasActiveFilters = Boolean(search.trim() || buffFilter || linkedFilter || issueFilter);
 
   const filteredStatusEffects = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -156,8 +170,14 @@ export default function StatusEffectManagerApp() {
       .filter((draft) => {
         if (!linkedFilter) return true;
         return linkedFilter === "linked" ? draft.linkedAbilityIds.length > 0 : draft.linkedAbilityIds.length === 0;
+      })
+      .filter((draft) => {
+        const flags = issueFlagsByKey.get(draft.key);
+        if (issueFilter === "errors") return Boolean(flags?.error);
+        if (issueFilter === "warnings") return Boolean(flags?.warning);
+        return true;
       });
-  }, [buffFilter, database, linkedFilter, search]);
+  }, [buffFilter, database, issueFilter, issueFlagsByKey, linkedFilter, search]);
 
   useEffect(() => {
     const statusEffects = database?.statusEffects ?? [];
@@ -260,6 +280,13 @@ export default function StatusEffectManagerApp() {
     setDatabase(nextDatabase);
     setSelectedStatusEffectKey(nextDraft.key);
     setStatus({ tone: "success", message: "Added a new blank status effect draft.", dismissAfterMs: 3000 });
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setBuffFilter("");
+    setLinkedFilter("");
+    setIssueFilter("");
   }
 
   function cloneSelectedStatusEffect() {
@@ -498,6 +525,38 @@ export default function StatusEffectManagerApp() {
             </div>
 
             <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <button
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    issueFilter === "errors"
+                      ? "border-red-300/80 bg-red-500/20 text-red-50"
+                      : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+                  }`}
+                  onClick={() => setIssueFilter("errors")}
+                >
+                  <div className="label text-red-100/80">Errors</div>
+                  <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
+                </button>
+                <button
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    issueFilter === "warnings"
+                      ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
+                      : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+                  }`}
+                  onClick={() => setIssueFilter("warnings")}
+                >
+                  <div className="label text-yellow-100/80">Warnings</div>
+                  <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
+                </button>
+                <button
+                  className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                  disabled={!hasActiveFilters}
+                  onClick={resetFilters}
+                >
+                  Reset Filter
+                </button>
+              </div>
+
               <div>
                 <div className="label">Search</div>
                 <input
