@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerModOption, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
 import {
@@ -39,6 +39,62 @@ function sourceLabel(sources: string[]) {
       return "Fallback";
     })
     .join(" + ");
+}
+
+function selectInputContentsOnFocus(event: FocusEvent<HTMLInputElement>) {
+  const target = event.currentTarget;
+  window.requestAnimationFrame(() => target.select());
+}
+
+function splitDurationFields(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {
+      minutes: "",
+      seconds: "",
+    };
+  }
+
+  const numericValue = Number(trimmed);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return {
+      minutes: "",
+      seconds: "",
+    };
+  }
+
+  const wholeSeconds = Math.max(0, Math.round(numericValue));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const seconds = wholeSeconds % 60;
+
+  return {
+    minutes: String(minutes),
+    seconds: String(seconds),
+  };
+}
+
+function buildDurationValue(minutesValue: string, secondsValue: string) {
+  const trimmedMinutes = minutesValue.trim();
+  const trimmedSeconds = secondsValue.trim();
+  if (!trimmedMinutes && !trimmedSeconds) return "";
+
+  const minutes = trimmedMinutes ? Number(trimmedMinutes) : 0;
+  const seconds = trimmedSeconds ? Number(trimmedSeconds) : 0;
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return "";
+
+  const safeMinutes = Math.max(0, Math.round(minutes));
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  return String(safeMinutes * 60 + safeSeconds);
+}
+
+function formatDurationSummary(value: string) {
+  const { minutes, seconds } = splitDurationFields(value);
+  const numericMinutes = minutes ? Number(minutes) : 0;
+  const numericSeconds = seconds ? Number(seconds) : 0;
+  if (!numericMinutes && !numericSeconds) return "";
+  if (numericMinutes && numericSeconds) return `${numericMinutes}m ${numericSeconds}s`;
+  if (numericMinutes) return `${numericMinutes}m`;
+  return `${numericSeconds}s`;
 }
 
 type StatusState = {
@@ -243,6 +299,7 @@ export default function AbilityManagerApp() {
   const selectedIssues = selectedAbility ? abilityIssuesByKey.get(selectedAbility.key) ?? [] : [];
   const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const workspaceHasErrors = abilityIssues.some((issue) => issue.level === "error");
+  const selectedCooldownFields = useMemo(() => splitDurationFields(selectedAbility?.cooldown ?? ""), [selectedAbility?.cooldown]);
   const selectedLinkedEffects = useMemo(
     () => (selectedAbility ? computeAbilityLinkedEffects(selectedAbility, statusEffectOptions) : []),
     [selectedAbility, statusEffectOptions],
@@ -406,6 +463,16 @@ export default function AbilityManagerApp() {
           : current.appliesEffectIds.filter((entry) => entry !== effectId),
       };
     });
+  }
+
+  function updateCooldownField(part: "minutes" | "seconds", value: string) {
+    const current = splitDurationFields(selectedAbility?.cooldown ?? "");
+    const nextMinutes = part === "minutes" ? value : current.minutes;
+    const nextSeconds = part === "seconds" ? value : current.seconds;
+    updateSelectedAbility((draft) => ({
+      ...draft,
+      cooldown: buildDurationValue(nextMinutes, nextSeconds),
+    }));
   }
 
   function addBlankAbility() {
@@ -926,7 +993,22 @@ export default function AbilityManagerApp() {
                   </div>
                   <div className="md:col-span-2">
                     <div className="label">Script</div>
-                    <input className="input mt-1" value={selectedAbility.script} onChange={(event) => updateSelectedAbility((current) => ({ ...current, script: event.target.value }))} />
+                    <div className="relative mt-1">
+                      <input
+                        className="input pr-12"
+                        value={selectedAbility.script}
+                        onFocus={selectInputContentsOnFocus}
+                        onChange={(event) => updateSelectedAbility((current) => ({ ...current, script: event.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded border border-white/10 px-2 py-1 text-xs text-white/60 hover:bg-white/10 hover:text-white"
+                        onClick={() => updateSelectedAbility((current) => ({ ...current, script: "" }))}
+                        aria-label="Clear script"
+                      >
+                        X
+                      </button>
+                    </div>
                     {selectedAbility.scriptPathResolved ? <div className="mt-2 text-xs text-white/45 break-all">{selectedAbility.scriptPathResolved}</div> : null}
                   </div>
                   <div>
@@ -1044,7 +1126,34 @@ export default function AbilityManagerApp() {
                   </label>
                   <div>
                     <div className="label">Cooldown</div>
-                    <input className="input mt-1" value={selectedAbility.cooldown} onChange={(event) => updateSelectedAbility((current) => ({ ...current, cooldown: event.target.value }))} />
+                    <div className="mt-1 grid grid-cols-2 gap-3">
+                      <div>
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={selectedCooldownFields.minutes}
+                          onFocus={selectInputContentsOnFocus}
+                          onChange={(event) => updateCooldownField("minutes", event.target.value)}
+                        />
+                        <div className="mt-2 text-xs text-white/45">Minutes</div>
+                      </div>
+                      <div>
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={selectedCooldownFields.seconds}
+                          onFocus={selectInputContentsOnFocus}
+                          onChange={(event) => updateCooldownField("seconds", event.target.value)}
+                        />
+                        <div className="mt-2 text-xs text-white/45">Seconds</div>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <div className="label">Charge Time</div>
@@ -1311,7 +1420,7 @@ export default function AbilityManagerApp() {
                       <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
                         <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
                         {selectedThreatTypeOption ? <span className="rounded bg-white/5 px-2 py-1">Threat {selectedThreatTypeOption.label}</span> : null}
-                        {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {selectedAbility.cooldown}</span> : null}
+                        {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {formatDurationSummary(selectedAbility.cooldown) || selectedAbility.cooldown}</span> : null}
                         {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
                         {selectedMinimumModLevel !== null ? <span className="rounded bg-white/5 px-2 py-1">Min Mod Lvl {selectedMinimumModLevel}</span> : null}
                       </div>
