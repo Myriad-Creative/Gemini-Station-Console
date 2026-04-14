@@ -318,6 +318,7 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     cooldown: "",
     chargeTime: "",
     energyCost: "",
+    minimumModLevel: "",
     applyEffectsToCaster: false,
     effectVfxScene: "",
     attackRange: "",
@@ -459,11 +460,27 @@ export function deleteStatusEffectAt(database: AbilityManagerDatabase, draftKey:
   };
 }
 
-export function validateAbilityDrafts(abilities: AbilityDraft[], statusEffectOptions: AbilityManagerStatusEffectOption[]) {
+export function validateAbilityDrafts(
+  abilities: AbilityDraft[],
+  statusEffectOptions: AbilityManagerStatusEffectOption[],
+  mods: AbilityManagerModOption[] = [],
+  modCatalogAvailable = false,
+) {
   const issues: AbilityManagerValidationIssue[] = [];
   const idMap = new Map<string, string[]>();
   const fileMap = new Map<string, string[]>();
   const statusIds = new Set(statusEffectOptions.map((entry) => entry.numericId));
+  const modLinksByAbilityId = new Map<string, AbilityManagerModOption[]>();
+
+  if (modCatalogAvailable) {
+    for (const mod of mods) {
+      for (const abilityId of mod.abilityIds) {
+        const current = modLinksByAbilityId.get(abilityId) ?? [];
+        current.push(mod);
+        modLinksByAbilityId.set(abilityId, current);
+      }
+    }
+  }
 
   for (const draft of abilities) {
     const id = draft.id.trim();
@@ -509,9 +526,32 @@ export function validateAbilityDrafts(abilities: AbilityDraft[], statusEffectOpt
     parseNumberField(draft.cooldown, "Cooldown", issues, draft.key, "cooldown");
     parseNumberField(draft.chargeTime, "Charge Time", issues, draft.key, "chargeTime");
     parseNumberField(draft.energyCost, "Energy Cost", issues, draft.key, "energyCost");
+    const minimumModLevel = parseNumberField(draft.minimumModLevel, "Minimum Mod Level", issues, draft.key, "minimumModLevel");
     parseNumberField(draft.attackRange, "Attack Range", issues, draft.key, "attackRange");
     parseNumberField(draft.powerPercent, "Power Percent", issues, draft.key, "powerPercent");
     parseNumberField(draft.baseDamage, "Base Damage", issues, draft.key, "baseDamage");
+
+    if (minimumModLevel !== undefined) {
+      if (!Number.isInteger(minimumModLevel) || minimumModLevel < 1 || minimumModLevel > 100) {
+        issues.push({
+          level: "error",
+          draftKey: draft.key,
+          field: "minimumModLevel",
+          message: "Minimum Mod Level must be a whole number between 1 and 100.",
+        });
+      } else if (modCatalogAvailable && !isAbilityExcludedFromModLinkChecks(draft)) {
+        const linkedMods = modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? [];
+        for (const mod of linkedMods) {
+          if (mod.levelRequirement >= minimumModLevel) continue;
+          issues.push({
+            level: "warning",
+            draftKey: draft.key,
+            field: "minimumModLevel",
+            message: `${mod.name} requires level ${mod.levelRequirement}, which is below this ability's Minimum Mod Level of ${minimumModLevel}.`,
+          });
+        }
+      }
+    }
 
     try {
       parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON");
@@ -645,6 +685,7 @@ function exportAbilityObject(draft: AbilityDraft) {
     cooldown: draft.cooldown.trim() ? Number(draft.cooldown.trim()) : undefined,
     charge_time: draft.chargeTime.trim() ? Number(draft.chargeTime.trim()) : undefined,
     energy_cost: draft.energyCost.trim() ? Number(draft.energyCost.trim()) : undefined,
+    minimumModLevel: draft.minimumModLevel.trim() ? Number(draft.minimumModLevel.trim()) : undefined,
     valid_targets: draft.validTargets.trim() ? Number(draft.validTargets.trim()) : undefined,
     requires_target: draft.requiresTarget,
     facing_requirement: draft.facingRequirement.trim() ? Number(draft.facingRequirement.trim()) : undefined,

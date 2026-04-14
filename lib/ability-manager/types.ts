@@ -74,6 +74,7 @@ export type AbilityDraft = {
   cooldown: string;
   chargeTime: string;
   energyCost: string;
+  minimumModLevel: string;
   applyEffectsToCaster: boolean;
   effectVfxScene: string;
   attackRange: string;

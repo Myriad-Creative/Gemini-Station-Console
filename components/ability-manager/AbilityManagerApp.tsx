@@ -91,6 +91,8 @@ const RANGE_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "3", label: "Long", description: "2001 to 3000 range." },
 ];
 
+const MINIMUM_MOD_LEVEL_OPTIONS = Array.from({ length: 100 }, (_, index) => String(index + 1));
+
 function resolveAbilityValueOption(value: string, options: AbilityValueOption[]) {
   const normalizedValue = value.trim();
   return options.find((option) => option.value === normalizedValue) ?? null;
@@ -136,7 +138,10 @@ export default function AbilityManagerApp() {
   }, [loadedDatabase]);
 
   const statusEffectOptions = useMemo(() => statusEffectOptionsFromDatabase(database), [database]);
-  const abilityIssues = useMemo(() => validateAbilityDrafts(database?.abilities ?? [], statusEffectOptions), [database, statusEffectOptions]);
+  const abilityIssues = useMemo(
+    () => validateAbilityDrafts(database?.abilities ?? [], statusEffectOptions, database?.mods ?? [], database?.modCatalogAvailable ?? false),
+    [database, statusEffectOptions],
+  );
   const abilityIssuesByKey = useMemo(() => {
     const next = new Map<string, AbilityManagerValidationIssue[]>();
     for (const issue of abilityIssues) {
@@ -248,6 +253,16 @@ export default function AbilityManagerApp() {
   const selectedFacingRequirementValue = selectedAbility?.facingRequirement.trim() ?? "";
   const selectedMinRangeTypeValue = selectedAbility?.minRangeType.trim() ?? "";
   const selectedMaxRangeTypeValue = selectedAbility?.maxRangeType.trim() ?? "";
+  const selectedMinimumModLevelValue = selectedAbility?.minimumModLevel.trim() ?? "";
+  const selectedMinimumModLevelNumber = selectedMinimumModLevelValue ? Number(selectedMinimumModLevelValue) : null;
+  const selectedMinimumModLevel =
+    selectedMinimumModLevelNumber !== null &&
+    Number.isInteger(selectedMinimumModLevelNumber) &&
+    selectedMinimumModLevelNumber >= 1 &&
+    selectedMinimumModLevelNumber <= 100
+      ? selectedMinimumModLevelNumber
+      : null;
+  const selectedUnderleveledModCount = selectedMinimumModLevel === null ? 0 : selectedLinkedMods.filter((mod) => mod.levelRequirement < selectedMinimumModLevel).length;
   const selectedValidTargetsMask = selectedValidTargetsValue ? Number(selectedValidTargetsValue) : 0;
   const validTargetUnknownBits = Number.isInteger(selectedValidTargetsMask) ? selectedValidTargetsMask & ~VALID_TARGET_KNOWN_MASK : null;
   const selectedValidTargetFlags = Number.isInteger(selectedValidTargetsMask)
@@ -977,6 +992,22 @@ export default function AbilityManagerApp() {
                     <div className="label">Energy Cost</div>
                     <input className="input mt-1" value={selectedAbility.energyCost} onChange={(event) => updateSelectedAbility((current) => ({ ...current, energyCost: event.target.value }))} />
                   </div>
+                  <div>
+                    <div className="label">Minimum Mod Level</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedMinimumModLevelValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, minimumModLevel: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {MINIMUM_MOD_LEVEL_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">Warn if any linked mod requires a lower level than this ability allows.</div>
+                  </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
                     <input
                       type="checkbox"
@@ -1104,14 +1135,28 @@ export default function AbilityManagerApp() {
                       <div className="text-sm text-white/45">Auto Cannon is excluded from orphan mod checks because it is the default ship ability.</div>
                     ) : selectedLinkedMods.length ? (
                       <div className="space-y-2">
+                        {selectedUnderleveledModCount > 0 ? (
+                          <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+                            {selectedUnderleveledModCount} linked mod{selectedUnderleveledModCount === 1 ? "" : "s"} fall below the current Minimum Mod Level of{" "}
+                            {selectedMinimumModLevel}.
+                          </div>
+                        ) : null}
                         {selectedLinkedMods.map((mod) => (
-                          <div key={mod.id} className="rounded-lg border border-white/5 px-3 py-2">
+                          <div
+                            key={mod.id}
+                            className={`rounded-lg border px-3 py-2 ${
+                              selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel ? "border-yellow-300/25 bg-yellow-300/10" : "border-white/5"
+                            }`}
+                          >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="truncate text-sm text-white">{mod.name}</div>
                                 <div className="mt-1 text-xs text-white/45">{mod.id}</div>
                               </div>
                               <div className="shrink-0 text-right text-xs text-white/45">
+                                {selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel ? (
+                                  <div className="mb-1 rounded bg-yellow-300/15 px-2 py-0.5 font-medium text-yellow-100">Below minimum</div>
+                                ) : null}
                                 <div>{mod.slot || "Unknown slot"}</div>
                                 <div>
                                   Lvl {mod.levelRequirement} · Rarity {mod.rarity}
@@ -1162,6 +1207,7 @@ export default function AbilityManagerApp() {
                         {selectedThreatTypeOption ? <span className="rounded bg-white/5 px-2 py-1">Threat {selectedThreatTypeOption.label}</span> : null}
                         {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {selectedAbility.cooldown}</span> : null}
                         {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
+                        {selectedMinimumModLevel !== null ? <span className="rounded bg-white/5 px-2 py-1">Min Mod Lvl {selectedMinimumModLevel}</span> : null}
                       </div>
                       {selectedAbility.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedAbility.description}</div> : null}
                       {selectedLinkedEffects.length ? (

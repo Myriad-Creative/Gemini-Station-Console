@@ -17,7 +17,12 @@ function normalizeAbsolutePath(value: string | null | undefined) {
 async function saveAllAbilities(gameRoot: string, rawDrafts: unknown[]) {
   const loadedDatabase = loadAbilityManagerDatabase(gameRoot);
   const drafts = rawDrafts.map((entry) => syncDerivedAbilityFields(entry as AbilityDraft));
-  const errors = validateAbilityDrafts(drafts, statusEffectOptionsFromDatabase(loadedDatabase)).filter((issue) => issue.level === "error");
+  const errors = validateAbilityDrafts(
+    drafts,
+    statusEffectOptionsFromDatabase(loadedDatabase),
+    loadedDatabase.mods,
+    loadedDatabase.modCatalogAvailable,
+  ).filter((issue) => issue.level === "error");
   if (errors.length) {
     return NextResponse.json(
       {
@@ -85,7 +90,12 @@ export async function POST(req: NextRequest) {
     const gameRoot = localGameSource.gameRootPath;
     const loadedDatabase = loadAbilityManagerDatabase(gameRoot);
     const draft = syncDerivedAbilityFields(rawDraft as AbilityDraft);
-    const errors = validateAbilityDrafts([draft], statusEffectOptionsFromDatabase(loadedDatabase)).filter((issue) => issue.level === "error");
+    const errors = validateAbilityDrafts(
+      [draft],
+      statusEffectOptionsFromDatabase(loadedDatabase),
+      loadedDatabase.mods,
+      loadedDatabase.modCatalogAvailable,
+    ).filter((issue) => issue.level === "error");
     if (errors.length) {
       return NextResponse.json(
         {
