@@ -23,11 +23,14 @@ type Summary = {
     missions: number;
     mobs: number;
     abilities: number;
+    orphanAbilities: number;
+    orphanStatusEffects: number;
     merchantProfiles: number;
     comms: number;
     holes: number;
     outliers: number;
   };
+  abilityModCatalogAvailable: boolean;
   missionsByBand: { band: string; count: number }[];
   modsCoverageBands: { slot: string; band: string; count: number }[];
   bandLabels: string[];
@@ -125,11 +128,14 @@ export default function DashboardPage() {
             missions: 0,
             mobs: 0,
             abilities: 0,
+            orphanAbilities: 0,
+            orphanStatusEffects: 0,
             merchantProfiles: 0,
             comms: 0,
             holes: 0,
             outliers: 0,
           },
+          abilityModCatalogAvailable: false,
           missionsByBand: [],
           modsCoverageBands: [],
           bandLabels: [],
@@ -158,6 +164,11 @@ export default function DashboardPage() {
       label: "Abilities",
       description: "Manage runtime abilities and linked status effects.",
       value: data.counts.abilities,
+      notice: data.abilityModCatalogAvailable
+        ? `${data.counts.orphanAbilities} orphan abilit${data.counts.orphanAbilities === 1 ? "y" : "ies"} · ${data.counts.orphanStatusEffects} orphan status effect${
+            data.counts.orphanStatusEffects === 1 ? "" : "s"
+          }`
+        : `${data.counts.orphanStatusEffects} orphan status effect${data.counts.orphanStatusEffects === 1 ? "" : "s"} · mod link data unavailable`,
     },
     {
       href: "/items",

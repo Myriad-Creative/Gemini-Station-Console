@@ -14,6 +14,57 @@ function normalizeAbsolutePath(value: string | null | undefined) {
   return path.resolve(value);
 }
 
+async function saveAllAbilities(gameRoot: string, rawDrafts: unknown[]) {
+  const loadedDatabase = loadAbilityManagerDatabase(gameRoot);
+  const drafts = rawDrafts.map((entry) => syncDerivedAbilityFields(entry as AbilityDraft));
+  const errors = validateAbilityDrafts(drafts, statusEffectOptionsFromDatabase(loadedDatabase)).filter((issue) => issue.level === "error");
+  if (errors.length) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: errors.map((issue) => issue.message).join(" "),
+      },
+      { status: 400 },
+    );
+  }
+
+  const abilitiesJsonRoot = path.join(gameRoot, "data", "database", "abilities", "json");
+  const savedPathsByKey: Record<string, string> = {};
+  const nextIndexDrafts = drafts.map((draft) => {
+    const targetPathResolved = path.resolve(path.join(abilitiesJsonRoot, draft.fileName.trim()));
+    savedPathsByKey[draft.key] = targetPathResolved;
+    return {
+      ...draft,
+      sourcePath: targetPathResolved,
+    };
+  });
+  const nextTargetPaths = new Set(Object.values(savedPathsByKey));
+  const removedPaths = loadedDatabase.abilities
+    .map((ability) => normalizeAbsolutePath(ability.sourcePath))
+    .filter((sourcePath): sourcePath is string => typeof sourcePath === "string")
+    .filter((sourcePath) => !nextTargetPaths.has(sourcePath));
+
+  await fsp.mkdir(abilitiesJsonRoot, { recursive: true });
+  await Promise.all(
+    drafts.map((draft) => {
+      const targetPathResolved = savedPathsByKey[draft.key];
+      return fsp.writeFile(targetPathResolved, stringifyAbilityDraft(draft), "utf-8");
+    }),
+  );
+  await Promise.all(removedPaths.map((filePath) => fsp.rm(filePath, { force: true })));
+
+  const indexPath = path.join(abilitiesJsonRoot, "_AbilityIndex.json");
+  await fsp.writeFile(indexPath, stringifyAbilityIndexJson(nextIndexDrafts), "utf-8");
+
+  return NextResponse.json({
+    ok: true,
+    savedCount: drafts.length,
+    removedCount: removedPaths.length,
+    indexPath,
+    savedPathsByKey,
+  });
+}
+
 export async function POST(req: NextRequest) {
   const localGameSource = getLocalGameSourceState();
   if (!localGameSource.active || !localGameSource.gameRootPath || !localGameSource.available.data) {
@@ -22,6 +73,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
+    if (Array.isArray(body?.drafts)) {
+      return await saveAllAbilities(localGameSource.gameRootPath, body.drafts);
+    }
+
     const rawDraft = body?.draft;
     if (!rawDraft || typeof rawDraft !== "object") {
       return NextResponse.json({ ok: false, error: "An ability draft is required." }, { status: 400 });

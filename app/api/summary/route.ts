@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { loadAbilityManagerDatabase } from "@lib/ability-manager/load";
+import { summarizeAbilityManager } from "@lib/ability-manager/utils";
 import { getConfig } from "@lib/config";
 import { getSummary, getStore, warmupLoadIfNeeded } from "@lib/datastore";
 import { parseLooseJson } from "@lib/json";
@@ -50,6 +52,9 @@ export async function GET(req: NextRequest) {
     const merchantProfiles = merchantProfilesResult.count;
     const comms = commsResult.count;
     const itemsMissingDescriptions = store.items.filter((item) => !String(item.description ?? "").trim()).length;
+    let orphanAbilities = 0;
+    let orphanStatusEffects = 0;
+    let abilityModCatalogAvailable = false;
 
     const missionRows = missionWorkspace.summary ? missionWorkspace.missions : [];
     const missionsByBand = missionWorkspace.summary
@@ -60,6 +65,18 @@ export async function GET(req: NextRequest) {
       : summary.missionsByBand;
 
     const warnings: string[] = [];
+    if (localGameSource.active && localGameSource.gameRootPath && localGameSource.available.data) {
+      try {
+        const abilityDatabase = loadAbilityManagerDatabase(localGameSource.gameRootPath);
+        const abilitySummary = summarizeAbilityManager(abilityDatabase, [], []);
+        orphanAbilities = abilitySummary.orphanAbilityCount;
+        orphanStatusEffects = abilitySummary.orphanStatusEffectCount;
+        abilityModCatalogAvailable = abilityDatabase.modCatalogAvailable;
+      } catch (error) {
+        warnings.push(`Could not load ability orphan summaries: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     if (!localGameSource.active) {
       if (localGameSource.gameRootPath) warnings.push(...localGameSource.errors);
       else warnings.push("No local game root is configured.");
@@ -79,6 +96,8 @@ export async function GET(req: NextRequest) {
       missions: missionRows.length,
       mobs: store.mobs.length,
       abilities: store.abilities.length,
+      orphanAbilities,
+      orphanStatusEffects,
       merchantProfiles,
       comms,
       holes: summary.holes.length,
@@ -93,6 +112,7 @@ export async function GET(req: NextRequest) {
         gameRootPath: localGameSource.gameRootPath,
         lastValidated: localGameSource.lastValidated,
       },
+      abilityModCatalogAvailable,
       counts,
       ...summary,
       missionsByBand,
@@ -107,7 +127,8 @@ export async function GET(req: NextRequest) {
         gameRootPath: null,
         lastValidated: null,
       },
-      counts: { mods: 0, items: 0, itemsMissingDescriptions: 0, missions: 0, mobs: 0, abilities: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
+      abilityModCatalogAvailable: false,
+      counts: { mods: 0, items: 0, itemsMissingDescriptions: 0, missions: 0, mobs: 0, abilities: 0, orphanAbilities: 0, orphanStatusEffects: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });
   }

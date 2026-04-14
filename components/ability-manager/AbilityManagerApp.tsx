@@ -419,6 +419,59 @@ export default function AbilityManagerApp() {
     }
   }
 
+  async function handleSaveAllAbilitiesToBuild() {
+    if (!database || workspaceHasErrors) return;
+
+    try {
+      const response = await fetch("/api/abilities/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          drafts: database.abilities,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save all abilities into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      const savedPathsByKey = payload?.savedPathsByKey && typeof payload.savedPathsByKey === "object" ? (payload.savedPathsByKey as Record<string, string>) : {};
+      setDatabase({
+        ...database,
+        abilities: database.abilities.map((draft) =>
+          syncDerivedAbilityFields({
+            ...draft,
+            sourcePath: typeof savedPathsByKey[draft.key] === "string" ? savedPathsByKey[draft.key] : draft.sourcePath,
+          }),
+        ),
+      });
+
+      const removedCount = Number(payload?.removedCount) || 0;
+      setStatus({
+        tone: "success",
+        message: `Saved all ${database.abilities.length} abilities into the game build and updated _AbilityIndex.json${
+          removedCount ? `, removing ${removedCount} old file${removedCount === 1 ? "" : "s"}` : ""
+        }.`,
+        dismissAfterMs: 10000,
+      });
+      statusTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
+  }
+
   async function handleDownloadBundle() {
     if (!database || workspaceHasErrors) return;
     await downloadZipBundle("abilities_bundle.zip", buildAbilityBundleFiles(database.abilities));
@@ -462,6 +515,9 @@ export default function AbilityManagerApp() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllAbilitiesToBuild()}>
+            Save All Abilities To Build
+          </button>
           <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
             Download abilities bundle.zip
           </button>
@@ -485,11 +541,16 @@ export default function AbilityManagerApp() {
         />
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <SummaryCard label="Abilities" value={summary.totalAbilities} />
         <SummaryCard label="Projectile" value={summary.projectileCount} />
         <SummaryCard label="Beam" value={summary.beamCount} />
         <SummaryCard label="Linked Effects" value={summary.linkedAbilityCount} />
+        <SummaryCard
+          label="Orphan Abilities"
+          value={database.modCatalogAvailable ? summary.orphanAbilityCount : "N/A"}
+          accent={database.modCatalogAvailable ? (summary.orphanAbilityCount ? "text-amber-200" : undefined) : "text-white/55"}
+        />
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 

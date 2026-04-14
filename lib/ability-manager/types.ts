@@ -144,6 +144,8 @@ export type AbilityManagerSummary = {
   projectileCount: number;
   beamCount: number;
   linkedAbilityCount: number;
+  orphanAbilityCount: number;
+  orphanStatusEffectCount: number;
   warningCount: number;
   errorCount: number;
 };

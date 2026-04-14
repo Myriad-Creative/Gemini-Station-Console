@@ -47,11 +47,17 @@ export default function AbilitiesDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
         <SummaryCard label="Abilities" value={summary.totalAbilities} />
         <SummaryCard label="Status Effects" value={summary.totalStatusEffects} />
         <SummaryCard label="Projectile" value={summary.projectileCount} />
         <SummaryCard label="Beam" value={summary.beamCount} />
+        <SummaryCard
+          label="Orphan Abilities"
+          value={database.modCatalogAvailable ? summary.orphanAbilityCount : "N/A"}
+          accent={database.modCatalogAvailable ? (summary.orphanAbilityCount ? "text-amber-200" : undefined) : "text-white/55"}
+        />
+        <SummaryCard label="Orphan Effects" value={summary.orphanStatusEffectCount} accent={summary.orphanStatusEffectCount ? "text-amber-200" : undefined} />
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 
@@ -99,4 +105,3 @@ export default function AbilitiesDashboard() {
     </div>
   );
 }
-

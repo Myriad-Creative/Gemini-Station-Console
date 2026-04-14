@@ -350,6 +350,59 @@ export default function StatusEffectManagerApp() {
     }
   }
 
+  async function handleSaveAllStatusEffectsToBuild() {
+    if (!database || workspaceHasErrors) return;
+
+    try {
+      const response = await fetch("/api/abilities/status-effects/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          drafts: database.statusEffects,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save all status effects into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      const savedPathsByKey = payload?.savedPathsByKey && typeof payload.savedPathsByKey === "object" ? (payload.savedPathsByKey as Record<string, string>) : {};
+      setDatabase({
+        ...database,
+        statusEffects: database.statusEffects.map((draft) =>
+          syncDerivedStatusEffectFields({
+            ...draft,
+            sourcePath: typeof savedPathsByKey[draft.key] === "string" ? savedPathsByKey[draft.key] : draft.sourcePath,
+          }),
+        ),
+      });
+
+      const removedCount = Number(payload?.removedCount) || 0;
+      setStatus({
+        tone: "success",
+        message: `Saved all ${database.statusEffects.length} status effects into the game build and updated _StatusEffectIndex.json${
+          removedCount ? `, removing ${removedCount} old file${removedCount === 1 ? "" : "s"}` : ""
+        }.`,
+        dismissAfterMs: 10000,
+      });
+      statusTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
+  }
+
   async function handleDownloadBundle() {
     if (!database || workspaceHasErrors) return;
     await downloadZipBundle("status_effects_bundle.zip", buildStatusEffectBundleFiles(database.statusEffects));
@@ -393,6 +446,9 @@ export default function StatusEffectManagerApp() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllStatusEffectsToBuild()}>
+            Save All Status Effects To Build
+          </button>
           <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
             Download status_effects bundle.zip
           </button>
@@ -417,9 +473,10 @@ export default function StatusEffectManagerApp() {
         />
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <SummaryCard label="Status Effects" value={summary.totalStatusEffects} />
         <SummaryCard label="Linked Abilities" value={database.statusEffects.filter((draft) => draft.linkedAbilityIds.length > 0).length} />
+        <SummaryCard label="Orphan Effects" value={summary.orphanStatusEffectCount} accent={summary.orphanStatusEffectCount ? "text-amber-200" : undefined} />
         <SummaryCard label="Buffs" value={database.statusEffects.filter((draft) => draft.isBuff).length} />
         <SummaryCard label="Debuffs" value={database.statusEffects.filter((draft) => !draft.isBuff).length} />
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />

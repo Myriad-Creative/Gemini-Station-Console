@@ -752,10 +752,14 @@ export function summarizeAbilityManager(
       projectileCount: 0,
       beamCount: 0,
       linkedAbilityCount: 0,
+      orphanAbilityCount: 0,
+      orphanStatusEffectCount: 0,
       warningCount: 0,
       errorCount: 0,
     };
   }
+
+  const modLinkedAbilityIds = new Set(database.mods.flatMap((mod) => mod.abilityIds));
 
   return {
     totalAbilities: database.abilities.length,
@@ -763,6 +767,13 @@ export function summarizeAbilityManager(
     projectileCount: database.abilities.filter((draft) => inferAbilityDeliveryType(draft) === "projectile").length,
     beamCount: database.abilities.filter((draft) => inferAbilityDeliveryType(draft) === "beam").length,
     linkedAbilityCount: database.abilities.filter((draft) => draft.linkedEffects.length > 0).length,
+    orphanAbilityCount: database.modCatalogAvailable
+      ? database.abilities.filter((draft) => {
+          const normalizedId = normalizeAbilityReference(draft.id);
+          return !normalizedId || !modLinkedAbilityIds.has(normalizedId);
+        }).length
+      : 0,
+    orphanStatusEffectCount: database.statusEffects.filter((draft) => draft.linkedAbilityIds.length === 0).length,
     warningCount:
       abilityIssues.filter((issue) => issue.level === "warning").length +
       statusEffectIssues.filter((issue) => issue.level === "warning").length +
