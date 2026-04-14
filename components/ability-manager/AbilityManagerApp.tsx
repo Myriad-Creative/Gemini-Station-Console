@@ -1054,13 +1054,19 @@ export default function AbilityManagerApp() {
                     </div>
                     {validTargetUnknownBits ? <div className="mt-1 text-xs text-amber-200/80">This ability has additional unknown target flags that will be preserved unless you replace them.</div> : null}
                   </div>
-                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
+                  <label className="flex items-start gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm text-white/75">
                     <input
                       type="checkbox"
+                      className="mt-0.5"
                       checked={selectedAbility.requiresTarget}
                       onChange={(event) => updateSelectedAbility((current) => ({ ...current, requiresTarget: event.target.checked }))}
                     />
-                    Requires Target
+                    <div className="min-w-0">
+                      <div className="font-medium text-white">Requires Target</div>
+                      <div className="mt-1 text-xs leading-5 text-white/45">
+                        Check if a specific target is required to use this ability. Uncheck if the ability is targetless or self-casting.
+                      </div>
+                    </div>
                   </label>
                   <div>
                     <div className="label">Min Range Type</div>
@@ -1161,7 +1167,15 @@ export default function AbilityManagerApp() {
                   </div>
                   <div>
                     <div className="label">Energy Cost</div>
-                    <input className="input mt-1" value={selectedAbility.energyCost} onChange={(event) => updateSelectedAbility((current) => ({ ...current, energyCost: event.target.value }))} />
+                    <input
+                      className="input mt-1"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={selectedAbility.energyCost}
+                      onFocus={selectInputContentsOnFocus}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, energyCost: event.target.value }))}
+                    />
                   </div>
                   <div>
                     <div className="label">Minimum Mod Level</div>

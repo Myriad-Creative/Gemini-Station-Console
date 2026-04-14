@@ -78,6 +78,17 @@ function deriveAbilityFileNameFallback(fileName: string) {
   return baseName.slice(underscoreIndex + 1) || "new_ability";
 }
 
+function normalizeIconPath(value: string, assetFolder: "abilities" | "status_effects") {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("res://")) return trimmed;
+
+  const cleaned = trimmed.replace(/^\/+/, "");
+  if (cleaned.startsWith("assets/")) return `res://${cleaned}`;
+  if (cleaned.startsWith(`${assetFolder}/`)) return `res://assets/${cleaned}`;
+  return `res://assets/${assetFolder}/${cleaned}`;
+}
+
 function parseJsonBlock(text: string, label: string) {
   const trimmed = text.trim();
   if (!trimmed) return {};
@@ -327,16 +338,16 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     description: "",
     icon: "",
     threatType: "",
-    threatMultiplier: "",
+    threatMultiplier: "1",
     validTargets: "",
     requiresTarget: false,
-    facingRequirement: "",
-    minRangeType: "",
-    maxRangeType: "",
-    isGcdLocked: false,
+    facingRequirement: "0",
+    minRangeType: "0",
+    maxRangeType: "3",
+    isGcdLocked: true,
     cooldown: "",
     chargeTime: "",
-    energyCost: "",
+    energyCost: "5",
     minimumModLevel: "",
     applyEffectsToCaster: false,
     effectVfxScene: "",
@@ -449,6 +460,7 @@ export function syncDerivedAbilityFields(draft: AbilityDraft): AbilityDraft {
   return {
     ...draft,
     fileName: deriveAbilityFileName(draft.id, draft.name, deriveAbilityFileNameFallback(draft.fileName)),
+    icon: normalizeIconPath(draft.icon, "abilities"),
     linkedEffects: sanitizeAbilityLinkedEffects(draft.linkedEffects),
   };
 }
@@ -458,6 +470,7 @@ export function syncDerivedStatusEffectFields(draft: StatusEffectDraft): StatusE
     ...draft,
     fileName: deriveStatusEffectFileName(draft.numericId, draft.name),
     effectId: deriveStatusEffectId(draft.name),
+    icon: normalizeIconPath(draft.icon, "status_effects"),
   };
 }
 
