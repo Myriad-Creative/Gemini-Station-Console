@@ -9,6 +9,7 @@ import {
   cloneStatusEffectDraft,
   createBlankStatusEffect,
   deleteStatusEffectAt,
+  isStatusEffectExcludedFromAbilityLinkChecks,
   insertStatusEffectAfter,
   syncDerivedStatusEffectFields,
   stringifyStatusEffectDraft,
@@ -179,7 +180,9 @@ export default function StatusEffectManagerApp() {
       })
       .filter((draft) => {
         if (!linkedFilter) return true;
-        return linkedFilter === "linked" ? draft.linkedAbilityIds.length > 0 : draft.linkedAbilityIds.length === 0;
+        if (linkedFilter === "linked") return draft.linkedAbilityIds.length > 0;
+        if (isStatusEffectExcludedFromAbilityLinkChecks(draft)) return false;
+        return draft.linkedAbilityIds.length === 0;
       })
       .filter((draft) => {
         const flags = issueFlagsByKey.get(draft.key);

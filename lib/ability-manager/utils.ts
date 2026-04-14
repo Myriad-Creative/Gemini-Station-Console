@@ -286,6 +286,25 @@ export function isAbilityExcludedFromModLinkChecks(draft: Pick<AbilityDraft, "id
   return draft.fileName.trim().toLowerCase().includes("auto_cannon");
 }
 
+export function isStatusEffectExcludedFromAbilityLinkChecks(
+  effect: Pick<StatusEffectDraft, "numericId" | "effectId" | "name" | "fileName"> | Pick<AbilityManagerStatusEffectOption, "numericId" | "effectId" | "name">,
+) {
+  const numericId = parseNumericId(String(effect.numericId ?? "").trim());
+  if (numericId === 103) return true;
+
+  const normalizedEffectId = String(effect.effectId ?? "").trim().toLowerCase();
+  if (normalizedEffectId === "sunkissed") return true;
+
+  const normalizedName = String(effect.name ?? "").trim().toLowerCase();
+  if (normalizedName === "sunkissed") return true;
+
+  if ("fileName" in effect) {
+    return String(effect.fileName ?? "").trim().toLowerCase().includes("sunkissed");
+  }
+
+  return false;
+}
+
 function sanitizeAbilityLinkedEffects(linkedEffects: AbilityEffectLink[]) {
   return linkedEffects
     .map((link) => ({
@@ -825,7 +844,7 @@ export function summarizeAbilityManager(
           return !normalizedId || !modLinkedAbilityIds.has(normalizedId);
         }).length
       : 0,
-    orphanStatusEffectCount: database.statusEffects.filter((draft) => draft.linkedAbilityIds.length === 0).length,
+    orphanStatusEffectCount: database.statusEffects.filter((draft) => !isStatusEffectExcludedFromAbilityLinkChecks(draft) && draft.linkedAbilityIds.length === 0).length,
     warningCount:
       abilityIssues.filter((issue) => issue.level === "warning").length + statusEffectIssues.filter((issue) => issue.level === "warning").length,
     errorCount:

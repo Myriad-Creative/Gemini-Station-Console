@@ -14,6 +14,7 @@ import {
   inferAbilityDeliveryType,
   insertAbilityAfter,
   isAbilityExcludedFromModLinkChecks,
+  isStatusEffectExcludedFromAbilityLinkChecks,
   normalizeAbilityReference,
   statusEffectOptionsFromDatabase,
   syncDerivedAbilityFields,
@@ -59,6 +60,15 @@ type AbilityFlagOption = {
 };
 
 type AbilitySummaryFilter = "all" | "projectile" | "beam" | "linked" | "orphans";
+
+type OrphanStatusEffectOption = {
+  numericId: number;
+  effectId: string;
+  name: string;
+  description: string;
+  icon: string;
+  isBuff: boolean;
+};
 
 const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "0", label: "None", description: "No threat is generated when this ability resolves." },
@@ -242,6 +252,36 @@ export default function AbilityManagerApp() {
     if (!query) return statusEffectOptions;
     return statusEffectOptions.filter((effect) => effect.name.toLowerCase().includes(query));
   }, [statusEffectOptions, statusEffectSearch]);
+  const orphanStatusEffects = useMemo<OrphanStatusEffectOption[]>(() => {
+    if (!database) return [];
+    const detailsByNumericId = new Map(
+      database.statusEffects
+        .map((effect) => {
+          const numericId = Number(effect.numericId);
+          return Number.isFinite(numericId) ? [numericId, effect] as const : null;
+        })
+        .filter((entry): entry is readonly [number, (typeof database.statusEffects)[number]] => entry !== null),
+    );
+
+    return statusEffectOptions
+      .filter((effect) => effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect))
+      .map((effect) => {
+        const details = detailsByNumericId.get(effect.numericId);
+        return {
+          numericId: effect.numericId,
+          effectId: effect.effectId,
+          name: effect.name,
+          description: effect.description,
+          icon: details?.icon ?? "",
+          isBuff: details?.isBuff ?? true,
+        };
+      })
+      .sort((left, right) => {
+        const byName = left.name.trim().toLowerCase().localeCompare(right.name.trim().toLowerCase());
+        if (byName !== 0) return byName;
+        return left.numericId - right.numericId;
+      });
+  }, [database, statusEffectOptions]);
   const selectedLinkedMods = useMemo(() => {
     if (!selectedAbility || !database?.modCatalogAvailable) return [];
     if (isAbilityExcludedFromModLinkChecks(selectedAbility)) return [];
@@ -378,6 +418,28 @@ export default function AbilityManagerApp() {
     setDatabase(nextDatabase);
     setSelectedAbilityKey(nextDraft.key);
     setStatus({ tone: "success", message: "Added a new blank ability draft.", dismissAfterMs: 3000 });
+  }
+
+  function createAbilityFromStatusEffect(effect: OrphanStatusEffectOption) {
+    if (!database) return;
+
+    const nextDraft = syncDerivedAbilityFields({
+      ...createBlankAbility(
+        database.abilities.map((draft) => draft.id),
+        database.abilities.map((draft) => draft.fileName),
+      ),
+      name: effect.name,
+      description: effect.description,
+      icon: effect.icon,
+      appliesEffectIds: [String(effect.numericId)],
+      threatType: effect.isBuff ? "3" : "",
+    });
+
+    const nextDatabase = insertAbilityAfter(database, selectedAbility?.key ?? null, nextDraft);
+    setDatabase(nextDatabase);
+    setSelectedAbilityKey(nextDraft.key);
+    setStatus({ tone: "success", message: `Created a new ability draft for "${effect.name}".`, dismissAfterMs: 4000 });
+    statusTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function resetFilters() {
@@ -1070,7 +1132,7 @@ export default function AbilityManagerApp() {
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0 flex flex-wrap items-center gap-2">
                                       <div className="truncate text-sm font-medium text-white">{effect.name}</div>
-                                      {effect.linkedAbilityCount === 0 ? (
+                                      {effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect) ? (
                                         <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
                                       ) : null}
                                     </div>
@@ -1169,6 +1231,50 @@ export default function AbilityManagerApp() {
                       </div>
                     ) : (
                       <div className="text-sm text-white/45">No mods currently include this ability.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="label">Orphan Status Effects</div>
+                    <div className="text-xs text-white/45">{orphanStatusEffects.length} ready to convert</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    {orphanStatusEffects.length ? (
+                      <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+                        {orphanStatusEffects.map((effect) => (
+                          <div key={effect.numericId} className="rounded-lg border border-white/5 px-3 py-3">
+                            <div className="flex items-start gap-3">
+                              <img
+                                src={buildIconSrc(effect.icon, String(effect.numericId), effect.name || "Status Effect", sharedDataVersion)}
+                                alt=""
+                                className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium text-white">{effect.name}</div>
+                                    <div className="mt-1 text-xs text-white/45">
+                                      {effect.numericId} · {effect.effectId || "no properties.id"}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs font-medium text-white/85 hover:bg-white/10"
+                                    onClick={() => createAbilityFromStatusEffect(effect)}
+                                  >
+                                    Create Ability
+                                  </button>
+                                </div>
+                                {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white/45">No orphan status effects currently need new abilities.</div>
                     )}
                   </div>
                 </div>
