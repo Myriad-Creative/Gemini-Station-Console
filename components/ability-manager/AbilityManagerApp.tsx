@@ -58,6 +58,8 @@ type AbilityFlagOption = {
   description: string;
 };
 
+type AbilitySummaryFilter = "all" | "projectile" | "beam" | "linked" | "orphans";
+
 const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "0", label: "None", description: "No threat is generated when this ability resolves." },
   { value: "1", label: "Damage", description: "Threat is based on damage dealt, then scaled by the threat multiplier." },
@@ -158,6 +160,14 @@ export default function AbilityManagerApp() {
   const errorDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.error).length, [abilityIssueFlagsByKey]);
   const warningDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.warning).length, [abilityIssueFlagsByKey]);
   const hasActiveFilters = Boolean(search.trim() || deliveryFilter || linkedFilter || validationFilter || modFilter);
+  const activeSummaryFilter = useMemo<AbilitySummaryFilter | null>(() => {
+    if (!deliveryFilter && !linkedFilter && !modFilter) return "all";
+    if (deliveryFilter === "projectile" && !linkedFilter && !modFilter) return "projectile";
+    if (deliveryFilter === "beam" && !linkedFilter && !modFilter) return "beam";
+    if (!deliveryFilter && linkedFilter === "linked" && !modFilter) return "linked";
+    if (!deliveryFilter && !linkedFilter && modFilter === "unlinked") return "orphans";
+    return null;
+  }, [deliveryFilter, linkedFilter, modFilter]);
 
   const modLinksByAbilityId = useMemo(() => {
     const next = new Map<string, AbilityManagerModOption[]>();
@@ -361,6 +371,22 @@ export default function AbilityManagerApp() {
     setLinkedFilter("");
     setValidationFilter("");
     setModFilter("");
+  }
+
+  function applySummaryFilter(filter: AbilitySummaryFilter) {
+    setSearch("");
+    setValidationFilter("");
+
+    if (filter === "all") {
+      setDeliveryFilter("");
+      setLinkedFilter("");
+      setModFilter("");
+      return;
+    }
+
+    setDeliveryFilter(filter === "projectile" ? "projectile" : filter === "beam" ? "beam" : "");
+    setLinkedFilter(filter === "linked" ? "linked" : "");
+    setModFilter(filter === "orphans" ? "unlinked" : "");
   }
 
   function cloneSelectedAbility() {
@@ -574,14 +600,17 @@ export default function AbilityManagerApp() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <SummaryCard label="Abilities" value={summary.totalAbilities} />
-        <SummaryCard label="Projectile" value={summary.projectileCount} />
-        <SummaryCard label="Beam" value={summary.beamCount} />
-        <SummaryCard label="Linked Effects" value={summary.linkedAbilityCount} />
+        <SummaryCard label="Abilities" value={summary.totalAbilities} active={activeSummaryFilter === "all"} onClick={() => applySummaryFilter("all")} />
+        <SummaryCard label="Projectile" value={summary.projectileCount} active={activeSummaryFilter === "projectile"} onClick={() => applySummaryFilter("projectile")} />
+        <SummaryCard label="Beam" value={summary.beamCount} active={activeSummaryFilter === "beam"} onClick={() => applySummaryFilter("beam")} />
+        <SummaryCard label="Linked Effects" value={summary.linkedAbilityCount} active={activeSummaryFilter === "linked"} onClick={() => applySummaryFilter("linked")} />
         <SummaryCard
           label="Orphan Abilities"
           value={database.modCatalogAvailable ? summary.orphanAbilityCount : "N/A"}
           accent={database.modCatalogAvailable ? (summary.orphanAbilityCount ? "text-amber-200" : undefined) : "text-white/55"}
+          active={database.modCatalogAvailable && activeSummaryFilter === "orphans"}
+          disabled={!database.modCatalogAvailable}
+          onClick={database.modCatalogAvailable ? () => applySummaryFilter("orphans") : undefined}
         />
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>

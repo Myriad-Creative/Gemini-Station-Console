@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import JSZip from "jszip";
 import { buildIconSrc as buildVersionedIconSrc } from "@lib/icon-src";
@@ -65,13 +66,49 @@ export async function copyToClipboard(value: string) {
   }
 }
 
-export function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
-  return (
-    <div className="card">
+type SummaryCardProps = {
+  label: string;
+  value: string | number;
+  accent?: string;
+  active?: boolean;
+  href?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+};
+
+export function SummaryCard({ label, value, accent, active = false, href, onClick, disabled = false }: SummaryCardProps) {
+  const className = `card w-full text-left transition ${
+    onClick || href
+      ? active
+        ? "border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(125,211,252,0.12)]"
+        : "hover:border-cyan-300/30 hover:bg-white/[0.04]"
+      : ""
+  } ${disabled ? "cursor-default opacity-55" : onClick || href ? "cursor-pointer" : ""}`;
+
+  const contents = (
+    <>
       <div className="label">{label}</div>
       <div className={`mt-2 text-3xl font-semibold ${accent ?? "text-white"}`}>{value}</div>
-    </div>
+    </>
   );
+
+  if (href && !disabled) {
+    return (
+      <Link href={href} className={className}>
+        {contents}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active} className={className}>
+        {contents}
+      </button>
+    );
+  }
+
+  return <div className={className}>{contents}</div>;
 }
 
 export function Section({

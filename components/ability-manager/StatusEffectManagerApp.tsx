@@ -93,6 +93,8 @@ type StatusState = {
   dismissAfterMs?: number | null;
 };
 
+type StatusEffectSummaryFilter = "all" | "linked" | "orphans" | "buffs" | "debuffs";
+
 function selectInputContentsOnFocus(event: FocusEvent<HTMLInputElement>) {
   const target = event.currentTarget;
   window.requestAnimationFrame(() => target.select());
@@ -155,6 +157,14 @@ export default function StatusEffectManagerApp() {
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByKey.values()).filter((entry) => entry.error).length, [issueFlagsByKey]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByKey.values()).filter((entry) => entry.warning).length, [issueFlagsByKey]);
   const hasActiveFilters = Boolean(search.trim() || buffFilter || linkedFilter || issueFilter);
+  const activeSummaryFilter = useMemo<StatusEffectSummaryFilter | null>(() => {
+    if (!buffFilter && !linkedFilter) return "all";
+    if (!buffFilter && linkedFilter === "linked") return "linked";
+    if (!buffFilter && linkedFilter === "unlinked") return "orphans";
+    if (buffFilter === "buff" && !linkedFilter) return "buffs";
+    if (buffFilter === "debuff" && !linkedFilter) return "debuffs";
+    return null;
+  }, [buffFilter, linkedFilter]);
 
   const filteredStatusEffects = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -294,6 +304,20 @@ export default function StatusEffectManagerApp() {
     setBuffFilter("");
     setLinkedFilter("");
     setIssueFilter("");
+  }
+
+  function applySummaryFilter(filter: StatusEffectSummaryFilter) {
+    setSearch("");
+    setIssueFilter("");
+
+    if (filter === "all") {
+      setBuffFilter("");
+      setLinkedFilter("");
+      return;
+    }
+
+    setBuffFilter(filter === "buffs" ? "buff" : filter === "debuffs" ? "debuff" : "");
+    setLinkedFilter(filter === "linked" ? "linked" : filter === "orphans" ? "unlinked" : "");
   }
 
   function cloneSelectedStatusEffect() {
@@ -508,11 +532,22 @@ export default function StatusEffectManagerApp() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <SummaryCard label="Status Effects" value={summary.totalStatusEffects} />
-        <SummaryCard label="Linked Abilities" value={database.statusEffects.filter((draft) => draft.linkedAbilityIds.length > 0).length} />
-        <SummaryCard label="Orphan Effects" value={summary.orphanStatusEffectCount} accent={summary.orphanStatusEffectCount ? "text-amber-200" : undefined} />
-        <SummaryCard label="Buffs" value={database.statusEffects.filter((draft) => draft.isBuff).length} />
-        <SummaryCard label="Debuffs" value={database.statusEffects.filter((draft) => !draft.isBuff).length} />
+        <SummaryCard label="Status Effects" value={summary.totalStatusEffects} active={activeSummaryFilter === "all"} onClick={() => applySummaryFilter("all")} />
+        <SummaryCard
+          label="Linked Abilities"
+          value={database.statusEffects.filter((draft) => draft.linkedAbilityIds.length > 0).length}
+          active={activeSummaryFilter === "linked"}
+          onClick={() => applySummaryFilter("linked")}
+        />
+        <SummaryCard
+          label="Orphan Effects"
+          value={summary.orphanStatusEffectCount}
+          accent={summary.orphanStatusEffectCount ? "text-amber-200" : undefined}
+          active={activeSummaryFilter === "orphans"}
+          onClick={() => applySummaryFilter("orphans")}
+        />
+        <SummaryCard label="Buffs" value={database.statusEffects.filter((draft) => draft.isBuff).length} active={activeSummaryFilter === "buffs"} onClick={() => applySummaryFilter("buffs")} />
+        <SummaryCard label="Debuffs" value={database.statusEffects.filter((draft) => !draft.isBuff).length} active={activeSummaryFilter === "debuffs"} onClick={() => applySummaryFilter("debuffs")} />
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 
