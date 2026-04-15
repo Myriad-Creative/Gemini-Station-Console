@@ -257,6 +257,19 @@ function normalizeModIconPath(value: string) {
   return `res://assets/mods/${cleaned}`;
 }
 
+function exportModIconValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const cleaned = trimmed
+    .replace(/^res:\/\//i, "")
+    .replace(/^\/+/, "")
+    .split(/[?#]/, 1)[0] ?? "";
+  const segments = cleaned.split("/").filter(Boolean);
+  const fileName = segments[segments.length - 1]?.trim();
+  return fileName || undefined;
+}
+
 function stripKeys(value: JsonObject, keys: string[]) {
   const hidden = new Set(keys);
   const out: JsonObject = {};
@@ -1145,7 +1158,7 @@ export function exportModDraft(mod: ModDraft) {
     abilities: syncedMod.abilities
       .map((entry) => parseScalarString(entry.id))
       .filter((entry): entry is string | number => entry !== undefined),
-    icon: syncedMod.icon.trim() || undefined,
+    icon: exportModIconValue(syncedMod.icon),
     description: syncedMod.description.trim() || undefined,
   });
 }
