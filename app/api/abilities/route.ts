@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadAbilityManagerDatabase } from "@lib/ability-manager/load";
+import { normalizeAbilityReference } from "@lib/ability-manager/utils";
 import { getStore, warmupLoadIfNeeded } from "@lib/datastore";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 
@@ -10,6 +11,12 @@ export async function GET() {
   const localGameSource = getLocalGameSourceState();
   if (localGameSource.active && localGameSource.gameRootPath && localGameSource.available.data) {
     const database = loadAbilityManagerDatabase(localGameSource.gameRootPath);
+    const linkedModCountByAbilityId = new Map<string, number>();
+    for (const mod of database.mods) {
+      for (const abilityId of mod.abilityIds) {
+        linkedModCountByAbilityId.set(abilityId, (linkedModCountByAbilityId.get(abilityId) ?? 0) + 1);
+      }
+    }
     const data = database.abilities
       .map((ability) => ({
         id: ability.id,
@@ -18,6 +25,7 @@ export async function GET() {
         icon: ability.icon,
         deliveryType: ability.deliveryType,
         linkedEffectCount: ability.linkedEffects.length,
+        linkedModCount: linkedModCountByAbilityId.get(normalizeAbilityReference(ability.id)) ?? 0,
         minimumModLevel: ability.minimumModLevel.trim() ? Number(ability.minimumModLevel) : null,
         primaryModSlot: ability.primaryModSlot.trim() || null,
         secondaryModSlot: ability.secondaryModSlot.trim() || null,
@@ -33,6 +41,14 @@ export async function GET() {
 
   await warmupLoadIfNeeded();
   const store = getStore();
+  const linkedModCountByAbilityId = new Map<string, number>();
+  for (const mod of store.mods) {
+    for (const abilityId of mod.abilities ?? []) {
+      const normalizedId = normalizeAbilityReference(abilityId);
+      if (!normalizedId) continue;
+      linkedModCountByAbilityId.set(normalizedId, (linkedModCountByAbilityId.get(normalizedId) ?? 0) + 1);
+    }
+  }
   const data = store.abilities
     .slice()
     .map((ability) => ({
@@ -42,6 +58,7 @@ export async function GET() {
       icon: undefined,
       deliveryType: undefined,
       linkedEffectCount: 0,
+      linkedModCount: linkedModCountByAbilityId.get(normalizeAbilityReference(ability.id)) ?? 0,
       minimumModLevel: null,
       primaryModSlot: null,
       secondaryModSlot: null,

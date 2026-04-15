@@ -506,21 +506,9 @@ export default function StatusEffectManagerApp() {
             bundle.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllStatusEffectsToBuild()}>
-            Save All Status Effects To Build
-          </button>
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
-            Download status_effects bundle.zip
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-            disabled={!database}
-            onClick={() => void handleCopyIndexJson()}
-          >
-            Copy Updated _StatusEffectIndex.json
-          </button>
-        </div>
+        <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllStatusEffectsToBuild()}>
+          Save All Status Effects To Build
+        </button>
       </div>
 
       {/* status banner */}

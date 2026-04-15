@@ -1,8 +1,8 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import ModWorkshop from "@components/authoring/ModWorkshop";
-import { normalizeImportedMod, ModDraft } from "@lib/authoring";
+import { normalizeImportedMod, ModDraft, validateModDrafts } from "@lib/authoring";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type ExistingModRow = {
@@ -29,7 +29,9 @@ export default function ModManagerPage() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [mods, setMods] = useState<ModDraft[]>([]);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
+  const [actionStatus, setActionStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const workspaceHasErrors = useMemo(() => validateModDrafts(mods).some((message) => message.level === "error"), [mods]);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,14 +69,58 @@ export default function ModManagerPage() {
     };
   }, [sharedDataVersion]);
 
+  async function handleSaveAllModsToBuild() {
+    if (workspaceHasErrors) {
+      setActionStatus({ tone: "error", message: "Fix mod validation errors before saving Mods.json into the configured game build." });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/mods/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          drafts: mods,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setActionStatus({ tone: "error", message: payload?.error || "Could not save Mods.json into the configured game build." });
+        return;
+      }
+
+      setActionStatus({ tone: "success", message: `Saved all ${mods.length} mods into the live Mods.json file.` });
+    } catch (error) {
+      setActionStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title mb-1">Mod Manager</h1>
-        <p className="max-w-3xl text-sm text-white/70">
-          Manage the full current mod list from the active local game root, auto-generate new mods into that list, then export runtime-ready JSON when the workspace is ready.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-4xl">
+          <h1 className="page-title mb-1">Mod Manager</h1>
+          <p className="text-sm text-white/70">
+            Manage the full current mod list from the active local game root, auto-generate new mods into that list, then export runtime-ready JSON when the workspace is ready.
+          </p>
+        </div>
+        <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={isLoading || workspaceHasErrors} onClick={() => void handleSaveAllModsToBuild()}>
+          Save All Mods To Build
+        </button>
       </div>
+
+      {actionStatus ? (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            actionStatus.tone === "success" ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100" : "border-red-400/25 bg-red-400/10 text-red-100"
+          }`}
+        >
+          {actionStatus.message}
+        </div>
+      ) : null}
 
       <div className="card space-y-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">

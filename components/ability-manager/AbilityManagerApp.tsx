@@ -733,21 +733,9 @@ export default function AbilityManagerApp() {
             relationships.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllAbilitiesToBuild()}>
-            Save All Abilities To Build
-          </button>
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
-            Download abilities bundle.zip
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-            disabled={!database}
-            onClick={() => void handleCopyIndexJson()}
-          >
-            Copy Updated _AbilityIndex.json
-          </button>
-        </div>
+        <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllAbilitiesToBuild()}>
+          Save All Abilities To Build
+        </button>
       </div>
 
       <div ref={statusTopRef} />
