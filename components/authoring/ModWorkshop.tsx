@@ -618,6 +618,35 @@ export default function ModWorkshop({
     setStatus(didCopy ? "Copied the full Mods.json payload to the clipboard." : "Clipboard copy failed in this browser context.");
   }
 
+  async function handleSaveAllModsToBuild() {
+    if (anyValidationErrors) {
+      setStatus("Fix mod validation errors before saving Mods.json into the configured game build.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/mods/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          drafts: mods,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus(payload?.error || "Could not save Mods.json into the configured game build.");
+        return;
+      }
+
+      setStatus(`Saved all ${mods.length} mods into the live Mods.json file.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function copySelectedJson() {
     if (!selectedSyncedMod) return;
     if (selectedHasErrors) {
@@ -665,6 +694,13 @@ export default function ModWorkshop({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+              disabled={anyValidationErrors}
+              onClick={() => void handleSaveAllModsToBuild()}
+            >
+              Save All Mods To Build
+            </button>
             <button
               className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
               disabled={anyValidationErrors}
@@ -1275,6 +1311,13 @@ export default function ModWorkshop({
                     <div className="text-xs text-white/50">Selected mod #{clampedSelectedIndex + 1}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                      disabled={anyValidationErrors}
+                      onClick={() => void handleSaveAllModsToBuild()}
+                    >
+                      Save All Mods To Build
+                    </button>
                     <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={duplicateSelectedMod}>
                       Duplicate
                     </button>
