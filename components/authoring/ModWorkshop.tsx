@@ -879,8 +879,15 @@ export default function ModWorkshop({
                         <div className="truncate font-medium" style={{ color: rarityColor }}>
                           {mod.name || "Untitled mod"}
                         </div>
-                        <div className="mt-1 truncate text-xs text-white/60">
-                          {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-white/60">
+                          <div className="truncate">
+                            {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                          </div>
+                          {!hasAttachedAbility(mod) ? (
+                            <span className="shrink-0 rounded border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-red-100">
+                              No Ability
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
