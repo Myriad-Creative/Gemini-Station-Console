@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useEffect, useMemo, useState } from "react";
+import { DismissibleStatusBanner, EMPTY_TIMED_STATUS, useDismissibleStatusCountdown, type TimedStatusState } from "@components/ability-manager/common";
 import ModWorkshop from "@components/authoring/ModWorkshop";
 import { normalizeImportedMod, ModDraft, validateModDrafts } from "@lib/authoring";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -29,9 +30,11 @@ export default function ModManagerPage() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [mods, setMods] = useState<ModDraft[]>([]);
   const [workspaceMessage, setWorkspaceMessage] = useState("");
-  const [actionStatus, setActionStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [actionStatus, setActionStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
   const [isLoading, setIsLoading] = useState(true);
   const workspaceHasErrors = useMemo(() => validateModDrafts(mods).some((message) => message.level === "error"), [mods]);
+  const clearActionStatus = () => setActionStatus(EMPTY_TIMED_STATUS);
+  const actionStatusCountdown = useDismissibleStatusCountdown(actionStatus, clearActionStatus);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +74,7 @@ export default function ModManagerPage() {
 
   async function handleSaveAllModsToBuild() {
     if (workspaceHasErrors) {
-      setActionStatus({ tone: "error", message: "Fix mod validation errors before saving Mods.json into the configured game build." });
+      setActionStatus({ tone: "error", message: "Fix mod validation errors before saving Mods.json into the configured game build.", dismissAfterMs: null });
       return;
     }
 
@@ -88,13 +91,21 @@ export default function ModManagerPage() {
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) {
-        setActionStatus({ tone: "error", message: payload?.error || "Could not save Mods.json into the configured game build." });
+        setActionStatus({
+          tone: "error",
+          message: payload?.error || "Could not save Mods.json into the configured game build.",
+          dismissAfterMs: null,
+        });
         return;
       }
 
-      setActionStatus({ tone: "success", message: `Saved all ${mods.length} mods into the live Mods.json file.` });
+      setActionStatus({
+        tone: "success",
+        message: `Saved all ${mods.length} mods into the live Mods.json file.`,
+        dismissAfterMs: 10000,
+      });
     } catch (error) {
-      setActionStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+      setActionStatus({ tone: "error", message: error instanceof Error ? error.message : String(error), dismissAfterMs: null });
     }
   }
 
@@ -112,14 +123,13 @@ export default function ModManagerPage() {
         </button>
       </div>
 
-      {actionStatus ? (
-        <div
-          className={`rounded-xl border px-4 py-3 text-sm ${
-            actionStatus.tone === "success" ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100" : "border-red-400/25 bg-red-400/10 text-red-100"
-          }`}
-        >
-          {actionStatus.message}
-        </div>
+      {actionStatus.tone !== "neutral" && actionStatus.message ? (
+        <DismissibleStatusBanner
+          tone={actionStatus.tone}
+          message={actionStatus.message}
+          onDismiss={clearActionStatus}
+          countdownSeconds={actionStatusCountdown}
+        />
       ) : null}
 
       <div className="card space-y-4">

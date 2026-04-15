@@ -176,6 +176,100 @@ function hasAttachedAbility(mod: Pick<ModDraft, "abilities">) {
   return mod.abilities.some((ability) => ability.id.trim());
 }
 
+function buildAbilityLinkedModCountMap(mods: ModDraft[]) {
+  const counts = new Map<string, number>();
+  for (const mod of mods) {
+    const uniqueAbilityIds = new Set(mod.abilities.map((ability) => normalizeAbilityId(ability.id)).filter(Boolean));
+    for (const abilityId of uniqueAbilityIds) {
+      counts.set(abilityId, (counts.get(abilityId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function attachAbilityToMod(mod: ModDraft, abilityId: string) {
+  const firstBlankIndex = mod.abilities.findIndex((ability) => !ability.id.trim());
+  const nextAbilities =
+    firstBlankIndex === -1
+      ? [...mod.abilities, createModAbilityDraft(abilityId, "")]
+      : mod.abilities.map((ability, index) => (index === firstBlankIndex ? { ...ability, id: abilityId } : ability));
+
+  return syncDerivedModFields({
+    ...mod,
+    abilities: nextAbilities,
+  });
+}
+
+function autoPairMissingModAbilities(mods: ModDraft[], abilityOptions: AbilityOption[]) {
+  const linkedCounts = buildAbilityLinkedModCountMap(mods);
+  const slottedAbilities = abilityOptions
+    .map((ability) => ({
+      ...ability,
+      normalizedId: normalizeAbilityId(ability.id),
+    }))
+    .filter((ability) => ability.normalizedId && (normalizeAbilitySlotLabel(ability.primaryModSlot) || normalizeAbilitySlotLabel(ability.secondaryModSlot)));
+
+  let pairedCount = 0;
+  let skippedCount = 0;
+  let unmatchedSlotCount = 0;
+  let levelBlockedCount = 0;
+
+  const nextMods = mods.map((mod) => {
+    if (hasAttachedAbility(mod)) return mod;
+
+    const slotMatches = slottedAbilities.filter((ability) => getAbilitySlotMatchType(ability, mod.slot));
+    if (!slotMatches.length) {
+      skippedCount += 1;
+      unmatchedSlotCount += 1;
+      return mod;
+    }
+
+    const modLevel = parseNumber(mod.levelRequirement);
+    const eligibleAbilities = slotMatches.filter((ability) => {
+      if (ability.minimumModLevel === null || ability.minimumModLevel === undefined) return true;
+      if (modLevel === undefined) return false;
+      return modLevel >= ability.minimumModLevel;
+    });
+
+    if (!eligibleAbilities.length) {
+      skippedCount += 1;
+      levelBlockedCount += 1;
+      return mod;
+    }
+
+    const selectedAbility = [...eligibleAbilities].sort((left, right) => {
+      const leftMatch = getAbilitySlotMatchType(left, mod.slot);
+      const rightMatch = getAbilitySlotMatchType(right, mod.slot);
+      const leftRank = leftMatch === "primary" ? 2 : 1;
+      const rightRank = rightMatch === "primary" ? 2 : 1;
+      if (leftRank !== rightRank) return rightRank - leftRank;
+
+      const leftCount = linkedCounts.get(left.normalizedId) ?? 0;
+      const rightCount = linkedCounts.get(right.normalizedId) ?? 0;
+      if (leftCount !== rightCount) return leftCount - rightCount;
+
+      const leftLabel = (left.name || left.normalizedId).trim().toLowerCase();
+      const rightLabel = (right.name || right.normalizedId).trim().toLowerCase();
+      const byLabel = leftLabel.localeCompare(rightLabel);
+      if (byLabel !== 0) return byLabel;
+
+      return left.normalizedId.localeCompare(right.normalizedId, undefined, { numeric: true, sensitivity: "base" });
+    })[0];
+
+    linkedCounts.set(selectedAbility.normalizedId, (linkedCounts.get(selectedAbility.normalizedId) ?? 0) + 1);
+    pairedCount += 1;
+    return attachAbilityToMod(mod, selectedAbility.normalizedId);
+  });
+
+  return {
+    mods: nextMods,
+    pairedCount,
+    skippedCount,
+    unmatchedSlotCount,
+    levelBlockedCount,
+  };
+}
+
 function filterModIconOptionsBySlot(options: ModIconOption[], slot: string) {
   const slotKey = normalizeModSlotForIconFilter(slot);
   if (!slotKey) return options;
@@ -350,6 +444,15 @@ export default function ModWorkshop({
     () => (selectedSyncedMod ? JSON.stringify(exportModDraft(selectedSyncedMod), null, 2) : ""),
     [selectedSyncedMod],
   );
+  const abilityLinkedModCounts = useMemo(() => buildAbilityLinkedModCountMap(mods), [mods]);
+  const effectiveAbilityOptions = useMemo(
+    () =>
+      availableAbilities.map((ability) => ({
+        ...ability,
+        linkedModCount: abilityLinkedModCounts.get(normalizeAbilityId(ability.id)) ?? 0,
+      })),
+    [abilityLinkedModCounts, availableAbilities],
+  );
 
   const bulkTitles = useMemo(() => listFromLines(bulkCreate.titles), [bulkCreate.titles]);
   const bulkBudget = useMemo(() => calculateBulkCreateBudget(bulkCreate), [bulkCreate]);
@@ -359,13 +462,13 @@ export default function ModWorkshop({
   );
   const filteredAbilityOptions = useMemo(() => {
     const searchValue = autoGenerate.abilitySearch.trim().toLowerCase();
-    if (!searchValue) return availableAbilities;
-    return availableAbilities.filter((ability) => {
+    if (!searchValue) return effectiveAbilityOptions;
+    return effectiveAbilityOptions.filter((ability) => {
       const name = (ability.name || "").toLowerCase();
       const id = String(ability.id).toLowerCase();
       return name.includes(searchValue) || id.includes(searchValue);
     });
-  }, [autoGenerate.abilitySearch, availableAbilities]);
+  }, [autoGenerate.abilitySearch, effectiveAbilityOptions]);
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
   const issueFlagsByIndex = useMemo(() => {
@@ -432,6 +535,13 @@ export default function ModWorkshop({
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
   const modsWithoutAbilityCount = useMemo(() => mods.filter((mod) => !hasAttachedAbility(mod)).length, [mods]);
+  const slotTaggedAbilityCount = useMemo(
+    () =>
+      effectiveAbilityOptions.filter(
+        (ability) => normalizeAbilitySlotLabel(ability.primaryModSlot) || normalizeAbilitySlotLabel(ability.secondaryModSlot),
+      ).length,
+    [effectiveAbilityOptions],
+  );
   const modsBySlotCounts = useMemo(
     () =>
       MOD_SLOT_OPTIONS.reduce(
@@ -669,7 +779,7 @@ export default function ModWorkshop({
         existingIds,
         previousId,
         mods,
-        availableAbilities,
+        effectiveAbilityOptions,
       );
 
       const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
@@ -685,6 +795,45 @@ export default function ModWorkshop({
       setEditorMode("auto");
       setStatus(error instanceof Error ? error.message : "Auto-generation failed.");
     }
+  }
+
+  function autoPairMissingAbilities() {
+    if (!modsWithoutAbilityCount) {
+      setStatus("Every mod in the current manager list already has an ability.");
+      return;
+    }
+
+    if (!slotTaggedAbilityCount) {
+      setStatus("No abilities with primary or secondary mod slot assignments are currently available for auto-pairing.");
+      return;
+    }
+
+    const result = autoPairMissingModAbilities(mods, effectiveAbilityOptions);
+    if (!result.pairedCount) {
+      if (result.levelBlockedCount && !result.unmatchedSlotCount) {
+        setStatus("No missing-ability mods could be paired because every slot-matched ability was above the mod's minimum level.");
+        return;
+      }
+
+      if (result.unmatchedSlotCount && !result.levelBlockedCount) {
+        setStatus("No missing-ability mods could be paired because no abilities matched their slot assignments.");
+        return;
+      }
+
+      setStatus("No missing-ability mods could be paired with the current slot assignments and minimum level rules.");
+      return;
+    }
+
+    onChange(result.mods);
+    setStatus(
+      `Auto-paired ${result.pairedCount} mod(s) with abilities using slot matches and balanced assignment counts.${
+        result.skippedCount
+          ? ` Skipped ${result.skippedCount} mod(s)${result.unmatchedSlotCount ? ` with no slot match` : ""}${
+              result.unmatchedSlotCount && result.levelBlockedCount ? " and" : ""
+            }${result.levelBlockedCount ? ` blocked by minimum level` : ""}.`
+          : ""
+      }`,
+    );
   }
 
   function exportSelectedMod() {
@@ -794,6 +943,14 @@ export default function ModWorkshop({
               Export Mods.json
             </button>
           </div>
+
+          <button
+            className="rounded border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/15 disabled:cursor-default disabled:opacity-40"
+            disabled={!modsWithoutAbilityCount || !slotTaggedAbilityCount}
+            onClick={autoPairMissingAbilities}
+          >
+            Auto-Pair Missing Abilities
+          </button>
 
           <div className="grid grid-cols-3 gap-2 text-sm">
             <button
@@ -1157,7 +1314,7 @@ export default function ModWorkshop({
                           value={ability.id}
                           modSlot={bulkCreate.slot}
                           levelRequirement={bulkCreate.levelRequirement}
-                          abilityOptions={availableAbilities}
+                          abilityOptions={effectiveAbilityOptions}
                           version={sharedDataVersion}
                           onChange={(value) =>
                             updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }), {
@@ -1427,7 +1584,7 @@ export default function ModWorkshop({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold">Mod Editor</h2>
-                    <div className="text-xs text-white/50">Selected mod #{clampedSelectedIndex + 1}</div>
+                    <div className="text-xs text-white/50">Selected mod #{selectedSyncedMod.id || clampedSelectedIndex + 1}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={duplicateSelectedMod}>
@@ -1528,17 +1685,14 @@ export default function ModWorkshop({
                   />
                 </div>
 
-                <ModIconField
-                  label="Icon"
-                  value={selectedSyncedMod.icon}
-                  slot={selectedSyncedMod.slot}
-                  onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
-                  iconOptions={availableModIcons}
-                  loading={modIconsLoading}
-                  status={modIconStatus}
-                  version={sharedDataVersion}
-                  helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
-                />
+                <div>
+                  <div className="label mb-2">Description</div>
+                  <textarea
+                    className="input min-h-24"
+                    value={selectedSyncedMod.description}
+                    onChange={(event) => updateSelected((draft) => ({ ...draft, description: event.target.value }))}
+                  />
+                </div>
 
                 <div className="grid gap-3 md:grid-cols-4">
                   <CheckboxField
@@ -1560,15 +1714,6 @@ export default function ModWorkshop({
                     label="Boss Drop"
                     checked={selectedSyncedMod.isBossDrop}
                     onChange={(checked) => updateSelected((draft) => ({ ...draft, isBossDrop: checked }))}
-                  />
-                </div>
-
-                <div>
-                  <div className="label mb-2">Description</div>
-                  <textarea
-                    className="input min-h-24"
-                    value={selectedSyncedMod.description}
-                    onChange={(event) => updateSelected((draft) => ({ ...draft, description: event.target.value }))}
                   />
                 </div>
               </div>
@@ -1659,6 +1804,20 @@ export default function ModWorkshop({
               </div>
 
               <div className="card space-y-4">
+                <ModIconField
+                  label="Icon"
+                  value={selectedSyncedMod.icon}
+                  slot={selectedSyncedMod.slot}
+                  onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
+                  iconOptions={availableModIcons}
+                  loading={modIconsLoading}
+                  status={modIconStatus}
+                  version={sharedDataVersion}
+                  helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
+                />
+              </div>
+
+              <div className="card space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold">Abilities</h2>
@@ -1689,7 +1848,7 @@ export default function ModWorkshop({
                           value={ability.id}
                           modSlot={selectedSyncedMod.slot}
                           levelRequirement={selectedSyncedMod.levelRequirement}
-                          abilityOptions={availableAbilities}
+                          abilityOptions={effectiveAbilityOptions}
                           version={sharedDataVersion}
                           onChange={(value) => updateSelected((draft) => ({
                             ...draft,

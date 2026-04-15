@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DismissibleStatusBanner,
+  StatusBanner,
+  useDismissibleStatusCountdown,
+  type TimedStatusState,
+} from "@components/ability-manager/common";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -21,8 +27,6 @@ import {
   updateMobDraftAt,
   validateMobDrafts,
 } from "@lib/mob-lab/utils";
-
-type StatusTone = "neutral" | "success" | "error";
 
 function labelize(value: string) {
   if (!value) return "Unknown";
@@ -189,10 +193,18 @@ export default function MobLabApp() {
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [pasteJson, setPasteJson] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
+  const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Mob Lab reads mobs.json directly from the active local game root in Settings.",
+    dismissAfterMs: null,
   });
+  const clearStatus = () =>
+    setStatus({
+      tone: "neutral",
+      message: "Mob Lab reads mobs.json directly from the active local game root in Settings.",
+      dismissAfterMs: null,
+    });
+  const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
   const validation = useMemo(() => validateMobDrafts(workspace?.mobs ?? []), [workspace]);
   const validationByMobKey = useMemo(() => {
@@ -332,11 +344,13 @@ export default function MobLabApp() {
         message: result.warnings.length
           ? `Imported ${result.workspace.mobs.length} mobs.${sourceLabel ? ` Source: ${sourceLabel}.` : ""} ${result.warnings.join(" ")}`
           : `Imported ${result.workspace.mobs.length} mobs${sourceLabel ? ` from ${sourceLabel}` : ""}.`,
+        dismissAfterMs: 7000,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -374,6 +388,7 @@ export default function MobLabApp() {
     setStatus({
       tone: "success",
       message: "Started a blank Mob Lab workspace.",
+      dismissAfterMs: 4000,
     });
   }
 
@@ -390,6 +405,7 @@ export default function MobLabApp() {
     setStatus({
       tone: "success",
       message: `Created new mob draft "${nextMob.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -402,6 +418,7 @@ export default function MobLabApp() {
     setStatus({
       tone: "success",
       message: `Cloned "${selectedMob.id}" into "${nextMob.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -415,6 +432,7 @@ export default function MobLabApp() {
     setStatus({
       tone: "success",
       message: `Deleted "${selectedMob.id || selectedMob.display_name || "untitled"}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -427,6 +445,7 @@ export default function MobLabApp() {
         setStatus({
           tone: "success",
           message: "Downloaded updated mobs.json.",
+          dismissAfterMs: 7000,
         });
         return;
       }
@@ -435,12 +454,14 @@ export default function MobLabApp() {
         setStatus({
           tone: "success",
           message: "Copied updated mobs.json to the clipboard.",
+          dismissAfterMs: 7000,
         }),
       );
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -453,12 +474,14 @@ export default function MobLabApp() {
         setStatus({
           tone: "success",
           message: `Copied ${selectedMob.id || "current mob"} JSON to the clipboard.`,
+          dismissAfterMs: 5000,
         }),
       );
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -494,17 +517,11 @@ export default function MobLabApp() {
         </div>
       </div>
 
-      <div
-        className={`rounded-xl border px-4 py-3 text-sm ${
-          status.tone === "error"
-            ? "border-red-400/30 bg-red-400/10 text-red-100"
-            : status.tone === "success"
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-              : "border-white/10 bg-white/5 text-white/70"
-        }`}
-      >
-        {status.message}
-      </div>
+      {status.tone === "neutral" ? (
+        <StatusBanner tone={status.tone} message={status.message} />
+      ) : (
+        <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+      )}
 
       {workspace ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">

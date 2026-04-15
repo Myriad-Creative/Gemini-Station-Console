@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import JSZip from "jszip";
 import { buildIconSrc as buildVersionedIconSrc } from "@lib/icon-src";
 
 export type StatusTone = "neutral" | "success" | "error";
+export type TimedStatusState = {
+  tone: StatusTone;
+  message: string;
+  dismissAfterMs?: number | null;
+};
 
 export type DismissibleStatusBannerProps = {
   tone: StatusTone;
@@ -13,6 +18,12 @@ export type DismissibleStatusBannerProps = {
   onDismiss?: () => void;
   dismissLabel?: string;
   countdownSeconds?: number | null;
+};
+
+export const EMPTY_TIMED_STATUS: TimedStatusState = {
+  tone: "neutral",
+  message: "",
+  dismissAfterMs: null,
 };
 
 export function buildIconSrc(icon: string | undefined, id: string, name: string, version?: string) {
@@ -171,4 +182,46 @@ export function DismissibleStatusBanner({ tone, message, onDismiss, dismissLabel
       ) : null}
     </div>
   );
+}
+
+export function useDismissibleStatusCountdown(status: TimedStatusState, onDismiss: () => void) {
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
+  const dismissRef = useRef(onDismiss);
+
+  useEffect(() => {
+    dismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    if (status.tone === "neutral" || !status.message || !status.dismissAfterMs || status.dismissAfterMs <= 0) {
+      setCountdownSeconds(null);
+      return;
+    }
+
+    const dismissAfterMs = status.dismissAfterMs;
+    const startedAt = Date.now();
+    setCountdownSeconds(Math.max(1, Math.ceil(dismissAfterMs / 1000)));
+
+    const interval = window.setInterval(() => {
+      const remainingMs = dismissAfterMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) {
+        dismissRef.current();
+        setCountdownSeconds(null);
+        return;
+      }
+      setCountdownSeconds(Math.max(1, Math.ceil(remainingMs / 1000)));
+    }, 250);
+
+    const timeout = window.setTimeout(() => {
+      dismissRef.current();
+      setCountdownSeconds(null);
+    }, dismissAfterMs);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [status.dismissAfterMs, status.message, status.tone]);
+
+  return countdownSeconds;
 }

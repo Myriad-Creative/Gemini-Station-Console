@@ -3,6 +3,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  DismissibleStatusBanner,
+  EMPTY_TIMED_STATUS,
+  StatusBanner,
+  useDismissibleStatusCountdown,
+  type TimedStatusState,
+} from "@components/ability-manager/common";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { ItemDraft, ItemManagerWorkspace, ItemValidationIssue } from "@lib/item-manager/types";
@@ -26,8 +33,6 @@ import {
   updateItemDraftAt,
   validateItemDrafts,
 } from "@lib/item-manager/utils";
-
-type StatusTone = "neutral" | "success" | "error";
 
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
@@ -98,7 +103,9 @@ export default function ItemManagerApp() {
   const [search, setSearch] = useState("");
   const [rarityFilter, setRarityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({ tone: "neutral", message: "" });
+  const [status, setStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
+  const clearStatus = () => setStatus(EMPTY_TIMED_STATUS);
+  const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
   const validation = useMemo(() => validateItemDrafts(workspace?.items ?? []), [workspace]);
   const validationByItemKey = useMemo(() => {
@@ -172,7 +179,7 @@ export default function ItemManagerApp() {
         const result = importItemWorkspace(payload.text, payload.sourceLabel || "Local game source", "local");
         setWorkspace(result.workspace);
         setSelectedItemKey(result.workspace.items[0]?.key ?? null);
-        setStatus({ tone: "neutral", message: "" });
+        setStatus(EMPTY_TIMED_STATUS);
       } catch {
         if (cancelled) return;
         setWorkspace(null);
@@ -218,6 +225,7 @@ export default function ItemManagerApp() {
     setStatus({
       tone: "success",
       message: "Added a new blank item draft to the workspace.",
+      dismissAfterMs: 4000,
     });
   }
 
@@ -230,6 +238,7 @@ export default function ItemManagerApp() {
     setStatus({
       tone: "success",
       message: `Cloned ${selectedItem.name || selectedItem.id || "the selected item"} into a new draft.`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -241,6 +250,7 @@ export default function ItemManagerApp() {
     setStatus({
       tone: "success",
       message: `Deleted ${selectedItem.name || selectedItem.id || "the selected item"} from the workspace.`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -250,6 +260,7 @@ export default function ItemManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? "Copied the updated items.json to the clipboard." : "Copy failed. Your browser blocked clipboard access.",
+      dismissAfterMs: copied ? 7000 : null,
     });
   }
 
@@ -259,6 +270,17 @@ export default function ItemManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? "Copied the current item JSON to the clipboard." : "Copy failed. Your browser blocked clipboard access.",
+      dismissAfterMs: copied ? 5000 : null,
+    });
+  }
+
+  function handleDownloadUpdatedJson() {
+    if (!workspace) return;
+    downloadTextFile("items.json", fullJson);
+    setStatus({
+      tone: "success",
+      message: "Downloaded updated items.json.",
+      dismissAfterMs: 7000,
     });
   }
 
@@ -272,14 +294,12 @@ export default function ItemManagerApp() {
 
   return (
     <div className="space-y-6">
-      {status.tone !== "neutral" && status.message ? (
-        <div
-          className={`card text-sm ${
-            status.tone === "error" ? "text-red-200" : status.tone === "success" ? "text-emerald-100" : "text-white/70"
-          }`}
-        >
-          {status.message}
-        </div>
+      {status.message ? (
+        status.tone === "neutral" ? (
+          <StatusBanner tone={status.tone} message={status.message} />
+        ) : (
+          <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+        )
       ) : null}
 
       {!workspace ? (
@@ -595,7 +615,7 @@ export default function ItemManagerApp() {
                       <button className="btn" onClick={handleCopyUpdatedJson}>
                         Copy Updated JSON
                       </button>
-                      <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => downloadTextFile("items.json", fullJson)}>
+                      <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={handleDownloadUpdatedJson}>
                         Download items.json
                       </button>
                     </div>

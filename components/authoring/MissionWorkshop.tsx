@@ -2,6 +2,13 @@
 
 import type { InputHTMLAttributes } from "react";
 import { KeyboardEvent, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  DismissibleStatusBanner,
+  EMPTY_TIMED_STATUS,
+  StatusBanner,
+  useDismissibleStatusCountdown,
+  type TimedStatusState,
+} from "@components/ability-manager/common";
 import type { ValidationMessage } from "@lib/authoring";
 import { parseLooseJson } from "@lib/json";
 import type { NormalizedMission } from "@lib/mission-lab/types";
@@ -81,7 +88,7 @@ export default function MissionWorkshop({
   const [arcFilter, setArcFilter] = useState(FILTER_ALL);
   const [tagFilter, setTagFilter] = useState(FILTER_ALL);
   const [modeFilter, setModeFilter] = useState(FILTER_ALL);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
   const [items, setItems] = useState<Item[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
@@ -89,6 +96,8 @@ export default function MissionWorkshop({
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const [pendingBeatFocusKey, setPendingBeatFocusKey] = useState<string | null>(null);
+  const clearStatus = () => setStatus(EMPTY_TIMED_STATUS);
+  const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
   useEffect(() => {
     if (selectedIndex <= missions.length - 1) return;
@@ -327,7 +336,7 @@ export default function MissionWorkshop({
     const next = [...missions, createMissionDraft()];
     onChange(next);
     setSelectedIndex(next.length - 1);
-    setStatus("Created a new mission draft.");
+    setStatus({ tone: "success", message: "Created a new mission draft.", dismissAfterMs: 4000 });
   }
 
   function duplicateSelectedMission() {
@@ -336,26 +345,30 @@ export default function MissionWorkshop({
     next.splice(clampedSelectedIndex + 1, 0, duplicateMissionDraft(selectedMission));
     onChange(next);
     setSelectedIndex(clampedSelectedIndex + 1);
-    setStatus("Duplicated the selected mission draft.");
+    setStatus({ tone: "success", message: "Duplicated the selected mission draft.", dismissAfterMs: 4000 });
   }
 
   function removeSelectedMission() {
     const next = missions.filter((_, index) => index !== clampedSelectedIndex);
     onChange(next.length ? next : [createMissionDraft()]);
     setSelectedIndex(Math.max(0, clampedSelectedIndex - 1));
-    setStatus("Deleted the selected mission draft.");
+    setStatus({ tone: "success", message: "Deleted the selected mission draft.", dismissAfterMs: 4000 });
   }
 
   async function copySelectedJson() {
     if (!selectedMission) return;
     const copied = await copyText(exportedJson);
-    setStatus(copied ? "Copied the selected mission JSON to the clipboard." : "Clipboard copy failed in this browser context.");
+    setStatus({
+      tone: copied ? "success" : "error",
+      message: copied ? "Copied the selected mission JSON to the clipboard." : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: copied ? 5000 : null,
+    });
   }
 
   function saveSelectedJson() {
     if (!selectedMission) return;
     downloadJson(exportMissionDraft(selectedMission), missionFilename(selectedMission, clampedSelectedIndex));
-    setStatus("Saved the selected mission JSON file.");
+    setStatus({ tone: "success", message: "Saved the selected mission JSON file.", dismissAfterMs: 7000 });
   }
 
   function resetFilters() {
@@ -419,7 +432,13 @@ export default function MissionWorkshop({
             </div>
           </div>
 
-          {status ? <div className="text-sm text-accent">{status}</div> : null}
+          {status.message ? (
+            status.tone === "neutral" ? (
+              <StatusBanner tone={status.tone} message={status.message} />
+            ) : (
+              <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+            )
+          ) : null}
 
           <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
             {filteredMissions.length ? (

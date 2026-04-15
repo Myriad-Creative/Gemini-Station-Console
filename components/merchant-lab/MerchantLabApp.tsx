@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DismissibleStatusBanner,
+  StatusBanner,
+  useDismissibleStatusCountdown,
+  type TimedStatusState,
+} from "@components/ability-manager/common";
 import { RARITY_COLOR } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -26,8 +32,6 @@ import {
   updateMerchantProfileAt,
   validateMerchantProfiles,
 } from "@lib/merchant-lab/utils";
-
-type StatusTone = "neutral" | "success" | "error";
 
 type PreviewProduct = {
   kind: "item" | "mod";
@@ -204,10 +208,18 @@ export default function MerchantLabApp() {
   const [pasteJson, setPasteJson] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
+  const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Merchant Lab reads merchant_profiles.json directly from the active local game root in Settings.",
+    dismissAfterMs: null,
   });
+  const clearStatus = () =>
+    setStatus({
+      tone: "neutral",
+      message: "Merchant Lab reads merchant_profiles.json directly from the active local game root in Settings.",
+      dismissAfterMs: null,
+    });
+  const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,6 +240,7 @@ export default function MerchantLabApp() {
         setStatus({
           tone: "error",
           message: "Merchant Lab could not load the current items/mods catalog from the console APIs.",
+          dismissAfterMs: null,
         });
       }
     }
@@ -449,11 +462,13 @@ export default function MerchantLabApp() {
         message: result.warnings.length
           ? `Imported ${result.workspace.profiles.length} merchant profile(s). ${result.warnings.join(" ")}`
           : `Imported ${result.workspace.profiles.length} merchant profile(s).`,
+        dismissAfterMs: 7000,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -491,6 +506,7 @@ export default function MerchantLabApp() {
     setStatus({
       tone: "success",
       message: "Started a blank Merchant Lab workspace.",
+      dismissAfterMs: 4000,
     });
   }
 
@@ -507,6 +523,7 @@ export default function MerchantLabApp() {
     setStatus({
       tone: "success",
       message: `Created merchant profile "${nextProfile.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -519,6 +536,7 @@ export default function MerchantLabApp() {
     setStatus({
       tone: "success",
       message: `Cloned "${selectedProfile.id}" into "${nextProfile.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -532,6 +550,7 @@ export default function MerchantLabApp() {
     setStatus({
       tone: "success",
       message: `Deleted "${selectedProfile.id || "untitled"}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -544,6 +563,7 @@ export default function MerchantLabApp() {
         setStatus({
           tone: "success",
           message: "Downloaded updated merchant_profiles.json.",
+          dismissAfterMs: 7000,
         });
         return;
       }
@@ -552,11 +572,13 @@ export default function MerchantLabApp() {
       setStatus({
         tone: didCopy ? "success" : "error",
         message: didCopy ? "Copied updated merchant_profiles.json to the clipboard." : "Clipboard copy failed in this browser context.",
+        dismissAfterMs: didCopy ? 7000 : null,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -571,11 +593,13 @@ export default function MerchantLabApp() {
         message: didCopy
           ? `Copied ${selectedProfile.id || "current profile"} JSON to the clipboard with a leading comma.`
           : "Clipboard copy failed in this browser context.",
+        dismissAfterMs: didCopy ? 5000 : null,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -599,6 +623,7 @@ export default function MerchantLabApp() {
     setStatus({
       tone: "success",
       message: `Added ${kind === "items" ? "item" : "mod"} ${id} to ${selectedProfile.id}.`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -640,17 +665,11 @@ export default function MerchantLabApp() {
         </div>
       </div>
 
-      <div
-        className={`rounded-xl border px-4 py-3 text-sm ${
-          status.tone === "error"
-            ? "border-red-400/30 bg-red-400/10 text-red-100"
-            : status.tone === "success"
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-              : "border-white/10 bg-white/5 text-white/70"
-        }`}
-      >
-        {status.message}
-      </div>
+      {status.tone === "neutral" ? (
+        <StatusBanner tone={status.tone} message={status.message} />
+      ) : (
+        <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+      )}
 
       {workspace ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">

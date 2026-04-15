@@ -3,6 +3,12 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DismissibleStatusBanner,
+  StatusBanner,
+  useDismissibleStatusCountdown,
+  type TimedStatusState,
+} from "@components/ability-manager/common";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { CommsContactDraft, CommsContactValidationIssue, CommsLabWorkspace } from "@lib/comms-manager/types";
@@ -23,8 +29,6 @@ import {
   updateCommsContactAt,
   validateCommsContacts,
 } from "@lib/comms-manager/utils";
-
-type StatusTone = "neutral" | "success" | "error";
 
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
@@ -150,10 +154,18 @@ export default function CommsManagerApp() {
   const [selectedContactKey, setSelectedContactKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [pasteJson, setPasteJson] = useState("");
-  const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
+  const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Comms Manager reads Comms.json directly from the active local game root in Settings.",
+    dismissAfterMs: null,
   });
+  const clearStatus = () =>
+    setStatus({
+      tone: "neutral",
+      message: "Comms Manager reads Comms.json directly from the active local game root in Settings.",
+      dismissAfterMs: null,
+    });
+  const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
   const validation = useMemo(() => validateCommsContacts(workspace?.contacts ?? []), [workspace]);
   const validationByContactKey = useMemo(() => {
@@ -270,11 +282,13 @@ export default function CommsManagerApp() {
         message: result.warnings.length
           ? `Imported ${result.workspace.contacts.length} comms contact(s). ${result.warnings.join(" ")}`
           : `Imported ${result.workspace.contacts.length} comms contact(s).`,
+        dismissAfterMs: 7000,
       });
     } catch (error) {
       setStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
       });
     }
   }
@@ -312,6 +326,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: "success",
       message: "Started a blank Comms Manager workspace.",
+      dismissAfterMs: 4000,
     });
   }
 
@@ -328,6 +343,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: "success",
       message: `Created contact "${nextContact.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -340,6 +356,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: "success",
       message: `Cloned contact "${selectedContact.id}" into "${nextContact.id}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -351,6 +368,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: "success",
       message: `Deleted contact "${selectedContact.id || selectedContact.name || "untitled"}".`,
+      dismissAfterMs: 4000,
     });
   }
 
@@ -360,6 +378,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? "Copied the updated comms JSON to the clipboard." : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: copied ? 7000 : null,
     });
   }
 
@@ -369,6 +388,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: copied ? "success" : "error",
       message: copied ? `Copied contact "${selectedContact.id}" JSON to the clipboard.` : "Clipboard copy failed in this browser context.",
+      dismissAfterMs: copied ? 5000 : null,
     });
   }
 
@@ -378,6 +398,7 @@ export default function CommsManagerApp() {
     setStatus({
       tone: "success",
       message: "Downloaded updated comms.json.",
+      dismissAfterMs: 7000,
     });
   }
 
@@ -414,17 +435,11 @@ export default function CommsManagerApp() {
         </div>
       </div>
 
-      <div
-        className={`rounded-xl border px-4 py-3 text-sm ${
-          status.tone === "error"
-            ? "border-red-400/30 bg-red-400/10 text-red-100"
-            : status.tone === "success"
-              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-              : "border-white/10 bg-white/5 text-white/70"
-        }`}
-      >
-        {status.message}
-      </div>
+      {status.tone === "neutral" ? (
+        <StatusBanner tone={status.tone} message={status.message} />
+      ) : (
+        <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+      )}
 
       {workspace ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
