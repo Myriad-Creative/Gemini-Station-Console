@@ -74,6 +74,7 @@ export const MOD_REQUIRED_LEVEL_MAX = 100;
 export const MOD_MAX_STATS = 5;
 export const MOD_MAX_ABILITIES = 2;
 export const MOD_BASE_ABILITY_SLOT_COST = 0.5;
+export const MOD_INCLUDED_ABILITY_COUNT = 1;
 export const MOD_BASE_ABILITY_BUDGET_COST = MOD_BASE_ABILITY_SLOT_COST;
 export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
 export const MOD_RARITY_ITEM_LEVEL_BASE: Record<number, number> = {
@@ -212,7 +213,8 @@ export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number
   return roundBudget(scaleBetween(config.level1Max, config.level100Max, requiredLevel));
 }
 
-export function getModAbilityBaseSlotCost(id?: string) {
+export function getModAbilityBaseSlotCost(id?: string, abilityOrdinal = 0) {
+  if (abilityOrdinal < MOD_INCLUDED_ABILITY_COUNT) return 0;
   const normalizedId = id?.trim();
   if (!normalizedId) return MOD_BASE_ABILITY_SLOT_COST;
   return MOD_ABILITY_BUDGET_COST_OVERRIDES[normalizedId] ?? MOD_BASE_ABILITY_SLOT_COST;
@@ -238,15 +240,19 @@ export function calculateModBudgetSummary(input: {
   const slotProfileLabel = slotProfile ? formatProfile(slotProfile) : undefined;
   const slotProfileTotal = slotProfile ? sumProfile(slotProfile) : undefined;
 
+  let activeAbilityOrdinal = 0;
   const abilities = input.abilities.map<ModBudgetAbilityResult>((entry) => {
     const id = entry.id?.trim() ?? "";
-    const baseSlotCost = getModAbilityBaseSlotCost(id);
+    const isActiveAbility = Boolean(id);
+    const abilityOrdinal = isActiveAbility ? activeAbilityOrdinal : MOD_INCLUDED_ABILITY_COUNT;
+    const baseSlotCost = isActiveAbility ? getModAbilityBaseSlotCost(id, abilityOrdinal) : 0;
     const extraSlotCost =
       entry.budgetCost !== undefined && Number.isFinite(entry.budgetCost) ? entry.budgetCost : 0;
     const slotCost = roundBudget(baseSlotCost + extraSlotCost);
     const baseBudgetCost = baseStatMax !== undefined ? roundBudget(baseStatMax * baseSlotCost) : 0;
     const extraBudgetCost = baseStatMax !== undefined ? roundBudget(baseStatMax * extraSlotCost) : 0;
     const budgetCost = roundBudget(baseBudgetCost + extraBudgetCost);
+    if (isActiveAbility) activeAbilityOrdinal += 1;
 
     return {
       id,
@@ -332,7 +338,7 @@ export function calculateModBudgetSummary(input: {
           requiredLevel +
             (MOD_RARITY_ITEM_LEVEL_BASE[input.rarity] ?? 0) +
             totalStatBudget +
-            input.abilities.filter((ability) => ability.id?.trim()).length * baseStatMax,
+            Math.max(0, input.abilities.filter((ability) => ability.id?.trim()).length - MOD_INCLUDED_ABILITY_COUNT) * baseStatMax,
         )
       : undefined;
   const statBudgetCap = targetScore !== undefined ? roundBudget(Math.max(0, targetScore - totalAbilityBudget)) : undefined;

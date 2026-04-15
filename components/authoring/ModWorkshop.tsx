@@ -1021,11 +1021,11 @@ export default function ModWorkshop({
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium">Shared Abilities</div>
-                    <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created mod.</div>
-                    <div className="text-xs text-white/50">Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.</div>
-                  </div>
+                    <div>
+                      <div className="text-sm font-medium">Shared Abilities</div>
+                      <div className="text-xs text-white/50">Up to {MOD_MAX_ABILITIES} abilities. Slot cost applies to every created mod.</div>
+                      <div className="text-xs text-white/50">The first ability is included for free. Each additional ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.</div>
+                    </div>
                   <button
                     className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
                     disabled={bulkCreate.abilities.length >= MOD_MAX_ABILITIES}
@@ -1467,7 +1467,7 @@ export default function ModWorkshop({
                     <h2 className="text-lg font-semibold">Stats</h2>
                     <div className="text-xs text-white/50">
                       This rarity supports up to {selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS} stats.
-                      Fewer stats are valid. Abilities consume slot capacity and lower the live stat caps automatically.
+                      Fewer stats are valid. The first ability is free, and additional abilities consume slot capacity and lower the live stat caps automatically.
                     </div>
                   </div>
                   <button
@@ -1551,7 +1551,7 @@ export default function ModWorkshop({
                   <div>
                     <h2 className="text-lg font-semibold">Abilities</h2>
                     <div className="text-xs text-white/50">
-                      Up to {MOD_MAX_ABILITIES} abilities. Each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.
+                      Up to {MOD_MAX_ABILITIES} abilities. The first ability is included for free. Each additional ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.
                     </div>
                   </div>
                   <button
@@ -1617,7 +1617,7 @@ export default function ModWorkshop({
                 )}
 
                 <div className="text-xs text-white/50">
-                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array, but every ability now consumes at least {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity.
+                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array. The first ability is free, and each additional ability consumes at least {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity.
                 </div>
               </div>
 
@@ -1701,7 +1701,7 @@ function BudgetSummaryCard({
         <Metric compact={compact} label="Calculated Item Level" value={summary?.itemLevel ?? "—"} />
       </div>
       <div className={`mt-3 text-xs text-white/50 ${compact ? "leading-5" : ""}`}>
-        Full single-stat max is currently the required level. Slot profiles scale that max up or down, and each ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity before any extra slot cost.
+        Full single-stat max is currently the required level. Slot profiles scale that max up or down, the first ability is included for free, and each additional ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity before any extra slot cost.
       </div>
     </div>
   );
