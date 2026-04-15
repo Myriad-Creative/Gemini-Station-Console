@@ -37,8 +37,17 @@ import {
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type IssueFilter = "all" | "error" | "warning";
+type AbilityLinkFilter = "all" | "missing";
 type EditorMode = "editor" | "bulk" | "auto";
-type AbilityOption = { id: number | string; name?: string; description?: string };
+type AbilityOption = {
+  id: number | string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  deliveryType?: "energy" | "beam" | "projectile" | "other";
+  linkedEffectCount?: number;
+  minimumModLevel?: number | null;
+};
 type ModIconOption = {
   fileName: string;
   resPath: string;
@@ -119,11 +128,35 @@ const EMPTY_AUTO_GENERATE_STATE: AutoGenerateState = {
 };
 
 const DEFAULT_MOD_ICON = "res://assets/mods/DEFAULT.png";
+const DEFAULT_ABILITY_ICON = "icon_lootbox.png";
+const ABILITY_DELIVERY_FILTER_OPTIONS = [
+  { value: "all", label: "All types" },
+  { value: "energy", label: "Energy" },
+  { value: "beam", label: "Beam" },
+  { value: "projectile", label: "Projectile" },
+  { value: "other", label: "Other" },
+] as const;
+const ABILITY_LINK_FILTER_OPTIONS = [
+  { value: "all", label: "All abilities" },
+  { value: "linked", label: "Linked effects" },
+  { value: "orphan", label: "No linked effects" },
+] as const;
 
 function normalizeModSlotForIconFilter(slot: string) {
   const normalized = slot.trim().toLowerCase();
   if (!normalized) return null;
   return normalized === "weapon" ? "weapon" : normalized;
+}
+
+function normalizeAbilityId(value: number | string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numericValue = Number(trimmed);
+  return Number.isFinite(numericValue) ? String(Math.trunc(numericValue)) : trimmed;
+}
+
+function hasAttachedAbility(mod: Pick<ModDraft, "abilities">) {
+  return mod.abilities.some((ability) => ability.id.trim());
 }
 
 function filterModIconOptionsBySlot(options: ModIconOption[], slot: string) {
@@ -222,6 +255,7 @@ export default function ModWorkshop({
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
+  const [abilityLinkFilter, setAbilityLinkFilter] = useState<AbilityLinkFilter>("all");
   const [rarityFilter, setRarityFilter] = useState("");
   const [slotFilter, setSlotFilter] = useState("");
   const [levelMinFilter, setLevelMinFilter] = useState("");
@@ -359,6 +393,10 @@ export default function ModWorkshop({
         const flags = issueFlagsByIndex.get(index);
         return issueFilter === "error" ? !!flags?.error : !!flags?.warning;
       })
+      .filter(({ mod }) => {
+        if (abilityLinkFilter === "all") return true;
+        return abilityLinkFilter === "missing" ? !hasAttachedAbility(mod) : true;
+      })
       .sort((left, right) => {
         const leftLabel = (left.mod.name || left.mod.id || "").trim().toLowerCase();
         const rightLabel = (right.mod.name || right.mod.id || "").trim().toLowerCase();
@@ -366,7 +404,7 @@ export default function ModWorkshop({
         if (byLabel !== 0) return byLabel;
         return left.mod.id.trim().localeCompare(right.mod.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
-  }, [deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
+  }, [abilityLinkFilter, deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
 
   const selectedValidation = useMemo(() => validation.filter((message) => message.draftIndex === clampedSelectedIndex), [clampedSelectedIndex, validation]);
   const selectedHasErrors = useMemo(
@@ -376,11 +414,12 @@ export default function ModWorkshop({
   const anyValidationErrors = useMemo(() => validation.some((message) => message.level === "error"), [validation]);
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
+  const modsWithoutAbilityCount = useMemo(() => mods.filter((mod) => !hasAttachedAbility(mod)).length, [mods]);
   const selectedMaxStats = useMemo(
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
   );
-  const hasActiveFilters = Boolean(issueFilter !== "all" || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter);
+  const hasActiveFilters = Boolean(issueFilter !== "all" || abilityLinkFilter !== "all" || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter);
 
   useEffect(() => {
     if (!filteredMods.length) return;
@@ -390,6 +429,7 @@ export default function ModWorkshop({
 
   function resetFilters() {
     setIssueFilter("all");
+    setAbilityLinkFilter("all");
     setSearch("");
     setRarityFilter("");
     setSlotFilter("");
@@ -710,7 +750,7 @@ export default function ModWorkshop({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="grid grid-cols-3 gap-2 text-sm">
             <button
               className={`rounded border px-3 py-2 text-left transition ${
                 issueFilter === "error"
@@ -734,7 +774,18 @@ export default function ModWorkshop({
               <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
             </button>
             <button
-              className="col-span-2 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+              className={`rounded border px-3 py-2 text-left transition ${
+                abilityLinkFilter === "missing"
+                  ? "border-accent/80 bg-accent/20 text-white"
+                  : "border-accent/30 bg-accent/10 text-white/90 hover:bg-accent/15"
+              }`}
+              onClick={() => setAbilityLinkFilter("missing")}
+            >
+              <div className="label text-white/70">No Ability</div>
+              <div className="mt-1 text-lg font-semibold">{modsWithoutAbilityCount}</div>
+            </button>
+            <button
+              className="col-span-3 rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
               disabled={!hasActiveFilters}
               onClick={resetFilters}
             >
@@ -1048,44 +1099,49 @@ export default function ModWorkshop({
                 {bulkCreate.abilities.length ? (
                   <div className="space-y-3">
                     {bulkCreate.abilities.map((ability, abilityIndex) => (
-                      <div key={`bulk-ability-${abilityIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
-                        <Field
-                          label={abilityIndex === 0 ? "Ability ID" : " "}
+                      <div key={`bulk-ability-${abilityIndex}`} className="space-y-3">
+                        <AbilityPickerField
+                          label={abilityIndex === 0 ? "Ability" : " "}
                           value={ability.id}
+                          levelRequirement={bulkCreate.levelRequirement}
+                          abilityOptions={availableAbilities}
+                          version={sharedDataVersion}
                           onChange={(value) =>
                             updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }), {
                               syncAllStatValuesToMax: true,
                             })
                           }
                         />
-                        <Field
-                          label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
-                          value={ability.budgetCost}
-                          inputMode="numeric"
-                          step={0.01}
-                          onChange={(value) =>
-                            updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }), {
-                              syncAllStatValuesToMax: true,
-                            })
-                          }
-                        />
-                        <div className="flex items-end">
-                          <button
-                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
-                            onClick={() =>
-                              setBulkCreate((current) =>
-                                autoBalanceBulkCreateState(
-                                  {
-                                    ...current,
-                                    abilities: current.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                                  },
-                                  { syncAllStatValuesToMax: true },
-                                ),
-                              )
+                        <div className="grid gap-3 md:grid-cols-[180px,auto]">
+                          <Field
+                            label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
+                            value={ability.budgetCost}
+                            inputMode="numeric"
+                            step={0.01}
+                            onChange={(value) =>
+                              updateBulkAbility(abilityIndex, (current) => ({ ...current, budgetCost: value }), {
+                                syncAllStatValuesToMax: true,
+                              })
                             }
-                          >
-                            Remove
-                          </button>
+                          />
+                          <div className="flex items-end">
+                            <button
+                              className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                              onClick={() =>
+                                setBulkCreate((current) =>
+                                  autoBalanceBulkCreateState(
+                                    {
+                                      ...current,
+                                      abilities: current.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                                    },
+                                    { syncAllStatValuesToMax: true },
+                                  ),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1571,10 +1627,13 @@ export default function ModWorkshop({
                 {selectedSyncedMod.abilities.length ? (
                   <div className="space-y-3">
                     {selectedSyncedMod.abilities.map((ability, abilityIndex) => (
-                      <div key={`${ability.id || "ability"}-${abilityIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
-                        <Field
-                          label={abilityIndex === 0 ? "Ability ID" : " "}
+                      <div key={`${ability.id || "ability"}-${abilityIndex}`} className="space-y-3">
+                        <AbilityPickerField
+                          label={abilityIndex === 0 ? "Ability" : " "}
                           value={ability.id}
+                          levelRequirement={selectedSyncedMod.levelRequirement}
+                          abilityOptions={availableAbilities}
+                          version={sharedDataVersion}
                           onChange={(value) => updateSelected((draft) => ({
                             ...draft,
                             abilities: draft.abilities.map((currentAbility, currentIndex) =>
@@ -1582,30 +1641,32 @@ export default function ModWorkshop({
                             ),
                           }), { autoBalance: true, syncAllStatValuesToMax: true })}
                         />
-                        <Field
-                          label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
-                          value={ability.budgetCost}
-                          inputMode="numeric"
-                          step={0.01}
-                          onChange={(value) => updateSelected((draft) => ({
-                            ...draft,
-                            abilities: draft.abilities.map((currentAbility, currentIndex) =>
-                              currentIndex === abilityIndex ? { ...currentAbility, budgetCost: value } : currentAbility,
-                            ),
-                          }), { autoBalance: true, syncAllStatValuesToMax: true })}
-                        />
-                        <div className="flex items-end">
-                          <button
-                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
-                            onClick={() =>
-                              updateSelected((draft) => ({
-                                ...draft,
-                                abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                              }), { autoBalance: true, syncAllStatValuesToMax: true })
-                            }
-                          >
-                            Remove
-                          </button>
+                        <div className="grid gap-3 md:grid-cols-[180px,auto]">
+                          <Field
+                            label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
+                            value={ability.budgetCost}
+                            inputMode="numeric"
+                            step={0.01}
+                            onChange={(value) => updateSelected((draft) => ({
+                              ...draft,
+                              abilities: draft.abilities.map((currentAbility, currentIndex) =>
+                                currentIndex === abilityIndex ? { ...currentAbility, budgetCost: value } : currentAbility,
+                              ),
+                            }), { autoBalance: true, syncAllStatValuesToMax: true })}
+                          />
+                          <div className="flex items-end">
+                            <button
+                              className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                              onClick={() =>
+                                updateSelected((draft) => ({
+                                  ...draft,
+                                  abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                                }), { autoBalance: true, syncAllStatValuesToMax: true })
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2003,6 +2064,181 @@ function ModIconField({
         ) : (
           <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
             {slotLabel ? `No icons matched the ${slotLabel} slot in assets/mods.` : "No mod icons were found in assets/mods."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AbilityPickerField({
+  label,
+  value,
+  levelRequirement,
+  onChange,
+  abilityOptions,
+  version,
+}: {
+  label: string;
+  value: string;
+  levelRequirement?: string;
+  onChange: (value: string) => void;
+  abilityOptions: AbilityOption[];
+  version?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [deliveryFilter, setDeliveryFilter] = useState<(typeof ABILITY_DELIVERY_FILTER_OPTIONS)[number]["value"]>("all");
+  const [linkFilter, setLinkFilter] = useState<(typeof ABILITY_LINK_FILTER_OPTIONS)[number]["value"]>("all");
+
+  const normalizedValue = normalizeAbilityId(value);
+  const selectedAbility = abilityOptions.find((option) => normalizeAbilityId(option.id) === normalizedValue) ?? null;
+  const currentLevel = parseNumber(levelRequirement ?? "");
+  const filteredOptions = useMemo(() => {
+    const searchValue = search.trim().toLowerCase();
+    return abilityOptions
+      .filter((option) => {
+        if (!searchValue) return true;
+        const id = normalizeAbilityId(option.id).toLowerCase();
+        const name = (option.name || "").toLowerCase();
+        const description = (option.description || "").toLowerCase();
+        return id.includes(searchValue) || name.includes(searchValue) || description.includes(searchValue);
+      })
+      .filter((option) => {
+        if (deliveryFilter === "all") return true;
+        return (option.deliveryType ?? "other") === deliveryFilter;
+      })
+      .filter((option) => {
+        if (linkFilter === "all") return true;
+        const hasLinkedEffects = (option.linkedEffectCount ?? 0) > 0;
+        return linkFilter === "linked" ? hasLinkedEffects : !hasLinkedEffects;
+      });
+  }, [abilityOptions, deliveryFilter, linkFilter, search]);
+  const previewSrc = buildIconSrc(selectedAbility?.icon || DEFAULT_ABILITY_ICON, normalizedValue || "ability", selectedAbility?.name || "Ability", version);
+
+  return (
+    <div className="space-y-3">
+      <div className="label mb-2">{label.trim() ? label : "\u00a0"}</div>
+      <div className="grid gap-3 md:grid-cols-[88px,minmax(0,1fr)]">
+        <div className="flex h-[88px] w-[88px] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewSrc} alt={selectedAbility?.name || "Ability preview"} className="h-full w-full object-cover" />
+        </div>
+        <div className="space-y-2">
+          <input className="input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Choose an ability below or enter an ID" />
+          <div className="text-xs text-white/50">
+            {selectedAbility ? (
+              <>
+                <span className="font-medium text-white/80">{selectedAbility.name || normalizeAbilityId(selectedAbility.id)}</span>
+                {selectedAbility.description ? ` · ${selectedAbility.description}` : ""}
+              </>
+            ) : (
+              "Click an ability card below to attach it to this mod."
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
+              Type: {selectedAbility?.deliveryType ? selectedAbility.deliveryType[0].toUpperCase() + selectedAbility.deliveryType.slice(1) : "Unknown"}
+            </span>
+            <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
+              Linked Effects: {selectedAbility?.linkedEffectCount ?? 0}
+            </span>
+            {selectedAbility?.minimumModLevel ? (
+              <span
+                className={`rounded border px-2 py-1 ${
+                  currentLevel !== undefined && currentLevel < selectedAbility.minimumModLevel
+                    ? "border-yellow-400/40 bg-yellow-500/10 text-yellow-100"
+                    : "border-white/10 bg-black/20 text-white/70"
+                }`}
+              >
+                Min Mod Level: {selectedAbility.minimumModLevel}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,180px]">
+        <input
+          className="input"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search abilities by id, name, or description"
+        />
+        <select className="select w-full" value={deliveryFilter} onChange={(event) => setDeliveryFilter(event.target.value as (typeof ABILITY_DELIVERY_FILTER_OPTIONS)[number]["value"])}>
+          {ABILITY_DELIVERY_FILTER_OPTIONS.map((option) => (
+            <option key={`ability-delivery-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <select className="select w-full" value={linkFilter} onChange={(event) => setLinkFilter(event.target.value as (typeof ABILITY_LINK_FILTER_OPTIONS)[number]["value"])}>
+          {ABILITY_LINK_FILTER_OPTIONS.map((option) => (
+            <option key={`ability-link-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="max-h-72 overflow-auto pr-1">
+        {filteredOptions.length ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredOptions.map((option) => {
+              const selected = normalizeAbilityId(option.id) === normalizedValue;
+              const minLevelMismatch =
+                option.minimumModLevel !== null &&
+                option.minimumModLevel !== undefined &&
+                currentLevel !== undefined &&
+                currentLevel < option.minimumModLevel;
+              return (
+                <button
+                  key={`ability-option-${normalizeAbilityId(option.id)}`}
+                  type="button"
+                  className={`rounded border p-2 text-left transition ${
+                    selected ? "border-accent bg-white/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                  }`}
+                  onClick={() => onChange(normalizeAbilityId(option.id))}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={buildIconSrc(option.icon || DEFAULT_ABILITY_ICON, normalizeAbilityId(option.id), option.name || "Ability", version)}
+                        alt={option.name || normalizeAbilityId(option.id)}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">{option.name || normalizeAbilityId(option.id)}</div>
+                      <div className="truncate text-xs text-white/50">
+                        {normalizeAbilityId(option.id)} · {option.deliveryType ?? "other"}
+                      </div>
+                      {option.description ? <div className="mt-1 line-clamp-2 text-xs text-white/60">{option.description}</div> : null}
+                      <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+                        <span className="rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65">
+                          Effects: {option.linkedEffectCount ?? 0}
+                        </span>
+                        {option.minimumModLevel ? (
+                          <span
+                            className={`rounded border px-2 py-0.5 ${
+                              minLevelMismatch
+                                ? "border-yellow-400/40 bg-yellow-500/10 text-yellow-100"
+                                : "border-white/10 bg-black/20 text-white/65"
+                            }`}
+                          >
+                            Min {option.minimumModLevel}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+            No abilities matched the current filters.
           </div>
         )}
       </div>
