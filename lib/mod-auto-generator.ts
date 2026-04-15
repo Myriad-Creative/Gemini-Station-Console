@@ -33,6 +33,12 @@ export interface AutoGenerateModsRequest {
   seed?: number;
 }
 
+export interface AutoGenerateAbilityOption {
+  id: number | string;
+  primaryModSlot?: string | null;
+  secondaryModSlot?: string | null;
+}
+
 export interface AutoGenerateModsResult {
   mods: ModDraft[];
   warnings: string[];
@@ -443,11 +449,52 @@ function rollLevel(min: number, max: number, random: RandomSource) {
   return min + Math.floor(random.next() * (max - min + 1));
 }
 
-function maybePickAbility(abilityPool: Array<number | string>, rarity: number, random: RandomSource) {
+function normalizeAbilityId(value: number | string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numericValue = Number(trimmed);
+  return Number.isFinite(numericValue) ? String(Math.trunc(numericValue)) : trimmed;
+}
+
+function normalizeModSlotLabel(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getAbilitySlotMatchRank(ability: AutoGenerateAbilityOption | undefined, slotLabel: string) {
+  if (!ability) return 1;
+  const normalizedSlot = normalizeModSlotLabel(slotLabel);
+  const primarySlot = normalizeModSlotLabel(ability.primaryModSlot);
+  const secondarySlot = normalizeModSlotLabel(ability.secondaryModSlot);
+
+  if (primarySlot && primarySlot === normalizedSlot) return 3;
+  if (secondarySlot && secondarySlot === normalizedSlot) return 2;
+  if (!primarySlot && !secondarySlot) return 1;
+  return 0;
+}
+
+function maybePickAbility(
+  abilityPool: Array<number | string>,
+  rarity: number,
+  slotLabel: string,
+  abilityCatalog: AutoGenerateAbilityOption[],
+  random: RandomSource,
+) {
   if (!abilityPool.length) return [];
   const chance = ABILITY_ROLL_CHANCE_BY_RARITY[rarity] ?? 0;
   if (random.next() > chance) return [];
-  return [pickWeighted(abilityPool.map((ability) => ({ value: ability, weight: 1 })), random)];
+
+  const catalogById = new Map(abilityCatalog.map((ability) => [normalizeAbilityId(ability.id), ability] as const));
+  const rankedPool = abilityPool
+    .map((ability) => ({
+      value: ability,
+      weight: 1,
+      rank: getAbilitySlotMatchRank(catalogById.get(normalizeAbilityId(ability)), slotLabel),
+    }))
+    .filter((entry) => entry.rank > 0);
+
+  if (!rankedPool.length) return [];
+  const bestRank = Math.max(...rankedPool.map((entry) => entry.rank));
+  return [pickWeighted(rankedPool.filter((entry) => entry.rank === bestRank).map(({ value, weight }) => ({ value, weight })), random)];
 }
 
 function chooseRole(allowedRoles: GeneratorRoleId[], allowedSlots: GeneratorSlotId[], allowedStats: Set<GeneratorStatId>, random: RandomSource) {
@@ -628,6 +675,7 @@ function generateOneMod(
   previousId: string | undefined,
   namingScope: ReturnType<typeof createModNamingScope>,
   generationIndex: number,
+  abilityCatalog: AutoGenerateAbilityOption[],
   random: RandomSource,
 ) {
   const allowedStatSet = new Set(request.allowedStats);
@@ -651,7 +699,7 @@ function generateOneMod(
   }
 
   const level = rollLevel(request.levelMin, request.levelMax, random);
-  const selectedAbilities = maybePickAbility(request.abilityPool, request.rarity, random);
+  const selectedAbilities = maybePickAbility(request.abilityPool, request.rarity, SLOT_EXPORT_LABELS[slotId], abilityCatalog, random);
   const threatSign = selectedStats.find((entry) => entry.key === "threat_generation")?.sign;
   const generatedName = generateModDisplayName(
     {
@@ -701,7 +749,13 @@ function generateOneMod(
   return draft;
 }
 
-export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: string[] = [], previousId?: string, existingMods: ModDraft[] = []): AutoGenerateModsResult {
+export function generateAutoMods(
+  request: AutoGenerateModsRequest,
+  existingIds: string[] = [],
+  previousId?: string,
+  existingMods: ModDraft[] = [],
+  abilityCatalog: AutoGenerateAbilityOption[] = [],
+): AutoGenerateModsResult {
   const normalized = normalizeRequest(request);
   const random = createRandom(request.seed);
   const warnings: string[] = [];
@@ -730,7 +784,7 @@ export function generateAutoMods(request: AutoGenerateModsRequest, existingIds: 
   }
 
   for (let index = 0; index < normalized.count; index += 1) {
-    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, namingScope, index, random);
+    const nextDraft = generateOneMod(normalized, knownIds, currentPreviousId, namingScope, index, abilityCatalog, random);
     mods.push(nextDraft);
     knownIds.push(nextDraft.id.trim());
     currentPreviousId = nextDraft.id.trim() || currentPreviousId;

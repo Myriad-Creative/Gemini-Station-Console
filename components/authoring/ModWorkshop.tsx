@@ -1,6 +1,7 @@
 "use client";
 
 import { HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
+import { SummaryCard } from "@components/ability-manager/common";
 import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import {
@@ -39,6 +40,7 @@ import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 type IssueFilter = "all" | "error" | "warning";
 type AbilityLinkFilter = "all" | "missing";
 type EditorMode = "editor" | "bulk" | "auto";
+type ModSummaryFilter = "all" | (typeof MOD_SLOT_OPTIONS)[number] | "missing";
 type AbilityOption = {
   id: number | string;
   name?: string;
@@ -47,6 +49,8 @@ type AbilityOption = {
   deliveryType?: "energy" | "beam" | "projectile" | "other";
   linkedEffectCount?: number;
   minimumModLevel?: number | null;
+  primaryModSlot?: string | null;
+  secondaryModSlot?: string | null;
 };
 type ModIconOption = {
   fileName: string;
@@ -146,6 +150,18 @@ function normalizeModSlotForIconFilter(slot: string) {
   const normalized = slot.trim().toLowerCase();
   if (!normalized) return null;
   return normalized === "weapon" ? "weapon" : normalized;
+}
+
+function normalizeAbilitySlotLabel(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getAbilitySlotMatchType(option: Pick<AbilityOption, "primaryModSlot" | "secondaryModSlot">, modSlot: string | undefined) {
+  const normalizedSlot = normalizeAbilitySlotLabel(modSlot);
+  if (!normalizedSlot) return null;
+  if (normalizeAbilitySlotLabel(option.primaryModSlot) === normalizedSlot) return "primary";
+  if (normalizeAbilitySlotLabel(option.secondaryModSlot) === normalizedSlot) return "secondary";
+  return null;
 }
 
 function normalizeAbilityId(value: number | string) {
@@ -415,6 +431,25 @@ export default function ModWorkshop({
   const errorDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.error).length, [issueFlagsByIndex]);
   const warningDraftCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((entry) => entry.warning).length, [issueFlagsByIndex]);
   const modsWithoutAbilityCount = useMemo(() => mods.filter((mod) => !hasAttachedAbility(mod)).length, [mods]);
+  const modsBySlotCounts = useMemo(
+    () =>
+      MOD_SLOT_OPTIONS.reduce(
+        (counts, slot) => {
+          counts[slot] = mods.filter((mod) => mod.slot.trim() === slot).length;
+          return counts;
+        },
+        {} as Record<(typeof MOD_SLOT_OPTIONS)[number], number>,
+      ),
+    [mods],
+  );
+  const activeSummaryFilter = useMemo<ModSummaryFilter | null>(() => {
+    if (!slotFilter && abilityLinkFilter === "all") return "all";
+    if (!slotFilter && abilityLinkFilter === "missing") return "missing";
+    if (abilityLinkFilter === "all" && MOD_SLOT_OPTIONS.includes(slotFilter as (typeof MOD_SLOT_OPTIONS)[number])) {
+      return slotFilter as ModSummaryFilter;
+    }
+    return null;
+  }, [abilityLinkFilter, slotFilter]);
   const selectedMaxStats = useMemo(
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
@@ -435,6 +470,29 @@ export default function ModWorkshop({
     setSlotFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
+  }
+
+  function applySummaryFilter(filter: ModSummaryFilter) {
+    setSearch("");
+    setIssueFilter("all");
+    setRarityFilter("");
+    setLevelMinFilter("");
+    setLevelMaxFilter("");
+
+    if (filter === "all") {
+      setSlotFilter("");
+      setAbilityLinkFilter("all");
+      return;
+    }
+
+    if (filter === "missing") {
+      setSlotFilter("");
+      setAbilityLinkFilter("missing");
+      return;
+    }
+
+    setSlotFilter(filter);
+    setAbilityLinkFilter("all");
   }
 
   function setModAt(index: number, next: ModDraft) {
@@ -610,6 +668,7 @@ export default function ModWorkshop({
         existingIds,
         previousId,
         mods,
+        availableAbilities,
       );
 
       const insertAt = selectedSyncedMod ? clampedSelectedIndex + 1 : mods.length;
@@ -705,8 +764,29 @@ export default function ModWorkshop({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Mods" value={mods.length} active={activeSummaryFilter === "all"} onClick={() => applySummaryFilter("all")} />
+        {MOD_SLOT_OPTIONS.map((slot) => (
+          <SummaryCard
+            key={slot}
+            label={slot}
+            value={modsBySlotCounts[slot]}
+            active={activeSummaryFilter === slot}
+            onClick={() => applySummaryFilter(slot)}
+          />
+        ))}
+        <SummaryCard
+          label="No Ability"
+          value={modsWithoutAbilityCount}
+          accent={modsWithoutAbilityCount ? "text-red-200" : undefined}
+          active={activeSummaryFilter === "missing"}
+          onClick={() => applySummaryFilter("missing")}
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
+        <div className="space-y-6">
         <div className="card h-fit space-y-4">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Mod Library</h2>
@@ -1110,6 +1190,7 @@ export default function ModWorkshop({
                         <AbilityPickerField
                           label={abilityIndex === 0 ? "Ability" : " "}
                           value={ability.id}
+                          modSlot={bulkCreate.slot}
                           levelRequirement={bulkCreate.levelRequirement}
                           abilityOptions={availableAbilities}
                           version={sharedDataVersion}
@@ -1338,6 +1419,16 @@ export default function ModWorkshop({
                             <div className="truncate font-medium text-white">{ability.name || abilityId}</div>
                             <div className="text-xs text-white/50">ID: {abilityId}</div>
                             {ability.description ? <div className="mt-1 text-xs text-white/60">{ability.description}</div> : null}
+                            {ability.primaryModSlot || ability.secondaryModSlot ? (
+                              <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+                                {ability.primaryModSlot ? (
+                                  <span className="rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65">Primary {ability.primaryModSlot}</span>
+                                ) : null}
+                                {ability.secondaryModSlot ? (
+                                  <span className="rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65">Secondary {ability.secondaryModSlot}</span>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </label>
                       );
@@ -1638,6 +1729,7 @@ export default function ModWorkshop({
                         <AbilityPickerField
                           label={abilityIndex === 0 ? "Ability" : " "}
                           value={ability.id}
+                          modSlot={selectedSyncedMod.slot}
                           levelRequirement={selectedSyncedMod.levelRequirement}
                           abilityOptions={availableAbilities}
                           version={sharedDataVersion}
@@ -1716,6 +1808,7 @@ export default function ModWorkshop({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -2081,6 +2174,7 @@ function ModIconField({
 function AbilityPickerField({
   label,
   value,
+  modSlot,
   levelRequirement,
   onChange,
   abilityOptions,
@@ -2088,6 +2182,7 @@ function AbilityPickerField({
 }: {
   label: string;
   value: string;
+  modSlot?: string;
   levelRequirement?: string;
   onChange: (value: string) => void;
   abilityOptions: AbilityOption[];
@@ -2099,6 +2194,7 @@ function AbilityPickerField({
 
   const normalizedValue = normalizeAbilityId(value);
   const selectedAbility = abilityOptions.find((option) => normalizeAbilityId(option.id) === normalizedValue) ?? null;
+  const selectedAbilitySlotMatch = selectedAbility ? getAbilitySlotMatchType(selectedAbility, modSlot) : null;
   const currentLevel = parseNumber(levelRequirement ?? "");
   const filteredOptions = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
@@ -2118,8 +2214,19 @@ function AbilityPickerField({
         if (linkFilter === "all") return true;
         const hasLinkedEffects = (option.linkedEffectCount ?? 0) > 0;
         return linkFilter === "linked" ? hasLinkedEffects : !hasLinkedEffects;
+      })
+      .sort((left, right) => {
+        const leftMatch = getAbilitySlotMatchType(left, modSlot);
+        const rightMatch = getAbilitySlotMatchType(right, modSlot);
+        const leftRank = leftMatch === "primary" ? 2 : leftMatch === "secondary" ? 1 : 0;
+        const rightRank = rightMatch === "primary" ? 2 : rightMatch === "secondary" ? 1 : 0;
+        if (leftRank !== rightRank) return rightRank - leftRank;
+
+        const leftLabel = (left.name || normalizeAbilityId(left.id)).toLowerCase();
+        const rightLabel = (right.name || normalizeAbilityId(right.id)).toLowerCase();
+        return leftLabel.localeCompare(rightLabel);
       });
-  }, [abilityOptions, deliveryFilter, linkFilter, search]);
+  }, [abilityOptions, deliveryFilter, linkFilter, modSlot, search]);
   const previewSrc = buildIconSrc(selectedAbility?.icon || DEFAULT_ABILITY_ICON, normalizedValue || "ability", selectedAbility?.name || "Ability", version);
 
   return (
@@ -2149,6 +2256,24 @@ function AbilityPickerField({
             <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
               Linked Effects: {selectedAbility?.linkedEffectCount ?? 0}
             </span>
+            {selectedAbility?.primaryModSlot ? (
+              <span
+                className={`rounded border px-2 py-1 ${
+                  selectedAbilitySlotMatch === "primary" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-black/20 text-white/70"
+                }`}
+              >
+                Primary: {selectedAbility.primaryModSlot}
+              </span>
+            ) : null}
+            {selectedAbility?.secondaryModSlot ? (
+              <span
+                className={`rounded border px-2 py-1 ${
+                  selectedAbilitySlotMatch === "secondary" ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-100" : "border-white/10 bg-black/20 text-white/70"
+                }`}
+              >
+                Secondary: {selectedAbility.secondaryModSlot}
+              </span>
+            ) : null}
             {selectedAbility?.minimumModLevel ? (
               <span
                 className={`rounded border px-2 py-1 ${
@@ -2197,6 +2322,7 @@ function AbilityPickerField({
                 option.minimumModLevel !== undefined &&
                 currentLevel !== undefined &&
                 currentLevel < option.minimumModLevel;
+              const slotMatch = getAbilitySlotMatchType(option, modSlot);
               return (
                 <button
                   key={`ability-option-${normalizeAbilityId(option.id)}`}
@@ -2222,6 +2348,28 @@ function AbilityPickerField({
                       </div>
                       {option.description ? <div className="mt-1 line-clamp-2 text-xs text-white/60">{option.description}</div> : null}
                       <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+                        {option.primaryModSlot ? (
+                          <span
+                            className={`rounded border px-2 py-0.5 ${
+                              slotMatch === "primary"
+                                ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100"
+                                : "border-white/10 bg-black/20 text-white/65"
+                            }`}
+                          >
+                            Primary {option.primaryModSlot}
+                          </span>
+                        ) : null}
+                        {option.secondaryModSlot ? (
+                          <span
+                            className={`rounded border px-2 py-0.5 ${
+                              slotMatch === "secondary"
+                                ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-100"
+                                : "border-white/10 bg-black/20 text-white/65"
+                            }`}
+                          >
+                            Secondary {option.secondaryModSlot}
+                          </span>
+                        ) : null}
                         <span className="rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65">
                           Effects: {option.linkedEffectCount ?? 0}
                         </span>

@@ -1,5 +1,6 @@
 import { parseLooseJson } from "@lib/json";
 import { STATUS_EFFECT_MODIFIER_KEYS } from "@lib/ability-manager/types";
+import { MOD_SLOT_OPTIONS } from "@lib/constants";
 import type {
   AbilityDraft,
   AbilityEffectLink,
@@ -118,6 +119,19 @@ function parseNumberField(value: string, label: string, issues: AbilityManagerVa
 function parseNumericId(value: string) {
   const numberValue = Number(value.trim());
   return Number.isFinite(numberValue) ? Math.trunc(numberValue) : null;
+}
+
+function normalizeModSlotValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isKnownModSlot(value: string) {
+  const normalized = normalizeModSlotValue(value);
+  return MOD_SLOT_OPTIONS.some((option) => option.toLowerCase() === normalized);
+}
+
+function modSlotMatches(selectedSlot: string, modSlot: string) {
+  return normalizeModSlotValue(selectedSlot) === normalizeModSlotValue(modSlot);
 }
 
 export function normalizeAbilityReference(value: number | string) {
@@ -349,6 +363,8 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     chargeTime: "",
     energyCost: "5",
     minimumModLevel: "",
+    primaryModSlot: "",
+    secondaryModSlot: "",
     applyEffectsToCaster: false,
     effectVfxScene: "",
     attackRange: "",
@@ -461,6 +477,8 @@ export function syncDerivedAbilityFields(draft: AbilityDraft): AbilityDraft {
     ...draft,
     fileName: deriveAbilityFileName(draft.id, draft.name, deriveAbilityFileNameFallback(draft.fileName)),
     icon: normalizeIconPath(draft.icon, "abilities"),
+    primaryModSlot: draft.primaryModSlot.trim(),
+    secondaryModSlot: draft.secondaryModSlot.trim(),
     linkedEffects: sanitizeAbilityLinkedEffects(draft.linkedEffects),
   };
 }
@@ -559,9 +577,36 @@ export function validateAbilityDrafts(
     parseNumberField(draft.chargeTime, "Charge Time", issues, draft.key, "chargeTime");
     parseNumberField(draft.energyCost, "Energy Cost", issues, draft.key, "energyCost");
     const minimumModLevel = parseNumberField(draft.minimumModLevel, "Minimum Mod Level", issues, draft.key, "minimumModLevel");
+    const primaryModSlot = draft.primaryModSlot.trim();
+    const secondaryModSlot = draft.secondaryModSlot.trim();
     parseNumberField(draft.attackRange, "Attack Range", issues, draft.key, "attackRange");
     parseNumberField(draft.powerPercent, "Power Percent", issues, draft.key, "powerPercent");
     parseNumberField(draft.baseDamage, "Base Damage", issues, draft.key, "baseDamage");
+
+    if (primaryModSlot && !isKnownModSlot(primaryModSlot)) {
+      issues.push({
+        level: "error",
+        draftKey: draft.key,
+        field: "primaryModSlot",
+        message: `Primary Mod Slot must be one of: ${MOD_SLOT_OPTIONS.join(", ")}.`,
+      });
+    }
+    if (secondaryModSlot && !isKnownModSlot(secondaryModSlot)) {
+      issues.push({
+        level: "error",
+        draftKey: draft.key,
+        field: "secondaryModSlot",
+        message: `Secondary Mod Slot must be one of: ${MOD_SLOT_OPTIONS.join(", ")}.`,
+      });
+    }
+    if (primaryModSlot && secondaryModSlot && modSlotMatches(primaryModSlot, secondaryModSlot)) {
+      issues.push({
+        level: "warning",
+        draftKey: draft.key,
+        field: "secondaryModSlot",
+        message: "Primary Mod Slot and Secondary Mod Slot are the same.",
+      });
+    }
 
     if (minimumModLevel !== undefined) {
       if (!Number.isInteger(minimumModLevel) || minimumModLevel < 1 || minimumModLevel > 100) {
@@ -582,6 +627,20 @@ export function validateAbilityDrafts(
             message: `${mod.name} requires level ${mod.levelRequirement}, which is below this ability's Minimum Mod Level of ${minimumModLevel}.`,
           });
         }
+      }
+    }
+
+    if (modCatalogAvailable && !isAbilityExcludedFromModLinkChecks(draft) && (primaryModSlot || secondaryModSlot)) {
+      const linkedMods = modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? [];
+      for (const mod of linkedMods) {
+        if (primaryModSlot && modSlotMatches(primaryModSlot, mod.slot)) continue;
+        if (secondaryModSlot && modSlotMatches(secondaryModSlot, mod.slot)) continue;
+        issues.push({
+          level: "warning",
+          draftKey: draft.key,
+          field: "primaryModSlot",
+          message: `${mod.name} is a ${mod.slot} mod, which does not match this ability's allowed slot tags.`,
+        });
       }
     }
 
@@ -732,8 +791,10 @@ function exportAbilityObject(draft: AbilityDraft) {
     power_percent: draft.powerPercent.trim() ? Number(draft.powerPercent.trim()) : undefined,
     base_damage: draft.baseDamage.trim() ? Number(draft.baseDamage.trim()) : undefined,
     projectile_scene: draft.projectileScene.trim(),
-    ...parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON"),
   });
+  Object.assign(properties, parseJsonBlock(draft.extraPropertiesJson, "Additional runtime JSON"));
+  properties.primaryModSlot = draft.primaryModSlot.trim();
+  properties.secondaryModSlot = draft.secondaryModSlot.trim();
 
   return cleanObject({
     ...parseJsonBlock(draft.extraRootJson, "Additional root JSON"),

@@ -18,6 +18,7 @@ type Summary = {
   };
   counts: {
     mods: number;
+    modsWithoutAbilities: number;
     items: number;
     itemsMissingDescriptions: number;
     missions: number;
@@ -123,6 +124,7 @@ export default function DashboardPage() {
           },
           counts: {
             mods: 0,
+            modsWithoutAbilities: 0,
             items: 0,
             itemsMissingDescriptions: 0,
             missions: 0,
@@ -158,6 +160,7 @@ export default function DashboardPage() {
       label: "Mods",
       description: "Browse and author console mod data.",
       value: data.counts.mods,
+      notice: `${data.counts.modsWithoutAbilities} mod${data.counts.modsWithoutAbilities === 1 ? "" : "s"} without abilities attached`,
     },
     {
       href: "/abilities",

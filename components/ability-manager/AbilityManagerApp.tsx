@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerModOption, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
+import { MOD_SLOT_OPTIONS } from "@lib/constants";
 import {
   buildAbilityBundleFiles,
   computeAbilityLinkedEffects,
@@ -44,6 +45,16 @@ function sourceLabel(sources: string[]) {
 function selectInputContentsOnFocus(event: FocusEvent<HTMLInputElement>) {
   const target = event.currentTarget;
   window.requestAnimationFrame(() => target.select());
+}
+
+function normalizeModSlotLabel(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function abilityMatchesModSlot(primaryModSlot: string, secondaryModSlot: string, modSlot: string) {
+  const normalizedModSlot = normalizeModSlotLabel(modSlot);
+  if (!normalizedModSlot) return false;
+  return normalizeModSlotLabel(primaryModSlot) === normalizedModSlot || normalizeModSlotLabel(secondaryModSlot) === normalizedModSlot;
 }
 
 function splitDurationFields(value: string) {
@@ -351,6 +362,8 @@ export default function AbilityManagerApp() {
   const selectedMinRangeTypeValue = selectedAbility?.minRangeType.trim() ?? "";
   const selectedMaxRangeTypeValue = selectedAbility?.maxRangeType.trim() ?? "";
   const selectedMinimumModLevelValue = selectedAbility?.minimumModLevel.trim() ?? "";
+  const selectedPrimaryModSlotValue = selectedAbility?.primaryModSlot.trim() ?? "";
+  const selectedSecondaryModSlotValue = selectedAbility?.secondaryModSlot.trim() ?? "";
   const selectedMinimumModLevelNumber = selectedMinimumModLevelValue ? Number(selectedMinimumModLevelValue) : null;
   const selectedMinimumModLevel =
     selectedMinimumModLevelNumber !== null &&
@@ -360,6 +373,10 @@ export default function AbilityManagerApp() {
       ? selectedMinimumModLevelNumber
       : null;
   const selectedUnderleveledModCount = selectedMinimumModLevel === null ? 0 : selectedLinkedMods.filter((mod) => mod.levelRequirement < selectedMinimumModLevel).length;
+  const selectedSlotMismatchModCount =
+    !selectedPrimaryModSlotValue && !selectedSecondaryModSlotValue
+      ? 0
+      : selectedLinkedMods.filter((mod) => !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot)).length;
   const selectedValidTargetsMask = selectedValidTargetsValue ? Number(selectedValidTargetsValue) : 0;
   const validTargetUnknownBits = Number.isInteger(selectedValidTargetsMask) ? selectedValidTargetsMask & ~VALID_TARGET_KNOWN_MASK : null;
   const selectedValidTargetFlags = Number.isInteger(selectedValidTargetsMask)
@@ -1193,6 +1210,38 @@ export default function AbilityManagerApp() {
                     </select>
                     <div className="mt-2 text-xs text-white/45">Warn if any linked mod requires a lower level than this ability allows.</div>
                   </div>
+                  <div>
+                    <div className="label">Primary Mod Slot</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedPrimaryModSlotValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, primaryModSlot: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {MOD_SLOT_OPTIONS.map((option) => (
+                        <option key={`primary-slot-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">Primary slot match for mod pairing and auto-assignment.</div>
+                  </div>
+                  <div>
+                    <div className="label">Secondary Mod Slot</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedSecondaryModSlotValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, secondaryModSlot: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {MOD_SLOT_OPTIONS.map((option) => (
+                        <option key={`secondary-slot-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">Optional fallback slot if the ability also fits a second mod family.</div>
+                  </div>
                   <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
                     <input
                       type="checkbox"
@@ -1326,11 +1375,21 @@ export default function AbilityManagerApp() {
                             {selectedMinimumModLevel}.
                           </div>
                         ) : null}
+                        {selectedSlotMismatchModCount > 0 ? (
+                          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">
+                            {selectedSlotMismatchModCount} linked mod{selectedSlotMismatchModCount === 1 ? "" : "s"} do not match this ability's Primary or Secondary Mod Slot.
+                          </div>
+                        ) : null}
                         {selectedLinkedMods.map((mod) => (
                           <div
                             key={mod.id}
                             className={`rounded-lg border px-3 py-2 ${
-                              selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel ? "border-yellow-300/25 bg-yellow-300/10" : "border-white/5"
+                              selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel
+                                ? "border-yellow-300/25 bg-yellow-300/10"
+                                : (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
+                                    !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot)
+                                  ? "border-amber-300/25 bg-amber-300/10"
+                                  : "border-white/5"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-3">
@@ -1341,6 +1400,10 @@ export default function AbilityManagerApp() {
                               <div className="shrink-0 text-right text-xs text-white/45">
                                 {selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel ? (
                                   <div className="mb-1 rounded bg-yellow-300/15 px-2 py-0.5 font-medium text-yellow-100">Below minimum</div>
+                                ) : null}
+                                {(selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
+                                !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot) ? (
+                                  <div className="mb-1 rounded bg-amber-300/15 px-2 py-0.5 font-medium text-amber-100">Slot mismatch</div>
                                 ) : null}
                                 <div>{mod.slot || "Unknown slot"}</div>
                                 <div>
@@ -1437,6 +1500,8 @@ export default function AbilityManagerApp() {
                         {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {formatDurationSummary(selectedAbility.cooldown) || selectedAbility.cooldown}</span> : null}
                         {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
                         {selectedMinimumModLevel !== null ? <span className="rounded bg-white/5 px-2 py-1">Min Mod Lvl {selectedMinimumModLevel}</span> : null}
+                        {selectedPrimaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Primary {selectedPrimaryModSlotValue}</span> : null}
+                        {selectedSecondaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Secondary {selectedSecondaryModSlotValue}</span> : null}
                       </div>
                       {selectedAbility.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedAbility.description}</div> : null}
                       {selectedLinkedEffects.length ? (

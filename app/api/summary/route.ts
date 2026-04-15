@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     const merchantProfiles = merchantProfilesResult.count;
     const comms = commsResult.count;
     const itemsMissingDescriptions = store.items.filter((item) => !String(item.description ?? "").trim()).length;
+    const modsWithoutAbilities = store.mods.filter((mod) => !(mod.abilities ?? []).some((ability) => String(ability ?? "").trim())).length;
     let orphanAbilities = 0;
     let orphanStatusEffects = 0;
     let abilityModCatalogAvailable = false;
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest) {
 
     const counts = {
       mods: store.mods.length,
+      modsWithoutAbilities,
       items: store.items.length,
       itemsMissingDescriptions,
       missions: missionRows.length,
@@ -128,7 +130,7 @@ export async function GET(req: NextRequest) {
         lastValidated: null,
       },
       abilityModCatalogAvailable: false,
-      counts: { mods: 0, items: 0, itemsMissingDescriptions: 0, missions: 0, mobs: 0, abilities: 0, orphanAbilities: 0, orphanStatusEffects: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
+      counts: { mods: 0, modsWithoutAbilities: 0, items: 0, itemsMissingDescriptions: 0, missions: 0, mobs: 0, abilities: 0, orphanAbilities: 0, orphanStatusEffects: 0, merchantProfiles: 0, comms: 0, holes: 0, outliers: 0 },
       missionsByBand: [], modsCoverage: [], modsCoverageBands: [], bandLabels: [], rarityCounts: [], holes: [], outliers: []
     }, { status: 500 });
   }
