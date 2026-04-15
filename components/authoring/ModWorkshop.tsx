@@ -176,6 +176,12 @@ function hasAttachedAbility(mod: Pick<ModDraft, "abilities">) {
   return mod.abilities.some((ability) => ability.id.trim());
 }
 
+function modHasAbility(mod: Pick<ModDraft, "abilities">, abilityId: string) {
+  const normalizedId = normalizeAbilityId(abilityId);
+  if (!normalizedId) return false;
+  return mod.abilities.some((ability) => normalizeAbilityId(ability.id) === normalizedId);
+}
+
 function buildAbilityLinkedModCountMap(mods: ModDraft[]) {
   const counts = new Map<string, number>();
   for (const mod of mods) {
@@ -367,6 +373,7 @@ export default function ModWorkshop({
   const [status, setStatus] = useState("");
   const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
   const [abilityLinkFilter, setAbilityLinkFilter] = useState<AbilityLinkFilter>("all");
+  const [abilityUsageFilter, setAbilityUsageFilter] = useState("");
   const [rarityFilter, setRarityFilter] = useState("");
   const [slotFilter, setSlotFilter] = useState("");
   const [levelMinFilter, setLevelMinFilter] = useState("");
@@ -517,6 +524,10 @@ export default function ModWorkshop({
         if (abilityLinkFilter === "all") return true;
         return abilityLinkFilter === "missing" ? !hasAttachedAbility(mod) : true;
       })
+      .filter(({ mod }) => {
+        if (!abilityUsageFilter) return true;
+        return modHasAbility(mod, abilityUsageFilter);
+      })
       .sort((left, right) => {
         const leftLabel = (left.mod.name || left.mod.id || "").trim().toLowerCase();
         const rightLabel = (right.mod.name || right.mod.id || "").trim().toLowerCase();
@@ -524,7 +535,7 @@ export default function ModWorkshop({
         if (byLabel !== 0) return byLabel;
         return left.mod.id.trim().localeCompare(right.mod.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
-  }, [abilityLinkFilter, deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
+  }, [abilityLinkFilter, abilityUsageFilter, deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
 
   const selectedValidation = useMemo(() => validation.filter((message) => message.draftIndex === clampedSelectedIndex), [clampedSelectedIndex, validation]);
   const selectedHasErrors = useMemo(
@@ -542,6 +553,10 @@ export default function ModWorkshop({
       ).length,
     [effectiveAbilityOptions],
   );
+  const activeAbilityUsageFilter = useMemo(
+    () => effectiveAbilityOptions.find((ability) => normalizeAbilityId(ability.id) === abilityUsageFilter) ?? null,
+    [abilityUsageFilter, effectiveAbilityOptions],
+  );
   const modsBySlotCounts = useMemo(
     () =>
       MOD_SLOT_OPTIONS.reduce(
@@ -554,18 +569,21 @@ export default function ModWorkshop({
     [mods],
   );
   const activeSummaryFilter = useMemo<ModSummaryFilter | null>(() => {
+    if (abilityUsageFilter) return null;
     if (!slotFilter && abilityLinkFilter === "all") return "all";
     if (!slotFilter && abilityLinkFilter === "missing") return "missing";
     if (abilityLinkFilter === "all" && MOD_SLOT_OPTIONS.includes(slotFilter as (typeof MOD_SLOT_OPTIONS)[number])) {
       return slotFilter as ModSummaryFilter;
     }
     return null;
-  }, [abilityLinkFilter, slotFilter]);
+  }, [abilityLinkFilter, abilityUsageFilter, slotFilter]);
   const selectedMaxStats = useMemo(
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
   );
-  const hasActiveFilters = Boolean(issueFilter !== "all" || abilityLinkFilter !== "all" || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter);
+  const hasActiveFilters = Boolean(
+    issueFilter !== "all" || abilityLinkFilter !== "all" || abilityUsageFilter || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter,
+  );
 
   useEffect(() => {
     if (!filteredMods.length) return;
@@ -576,6 +594,7 @@ export default function ModWorkshop({
   function resetFilters() {
     setIssueFilter("all");
     setAbilityLinkFilter("all");
+    setAbilityUsageFilter("");
     setSearch("");
     setRarityFilter("");
     setSlotFilter("");
@@ -586,6 +605,7 @@ export default function ModWorkshop({
   function applySummaryFilter(filter: ModSummaryFilter) {
     setSearch("");
     setIssueFilter("all");
+    setAbilityUsageFilter("");
     setRarityFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
@@ -604,6 +624,21 @@ export default function ModWorkshop({
 
     setSlotFilter(filter);
     setAbilityLinkFilter("all");
+  }
+
+  function filterModsByAbility(abilityId: string) {
+    const normalizedId = normalizeAbilityId(abilityId);
+    if (!normalizedId) return;
+
+    setEditorMode("editor");
+    setSearch("");
+    setIssueFilter("all");
+    setAbilityLinkFilter("all");
+    setRarityFilter("");
+    setSlotFilter("");
+    setLevelMinFilter("");
+    setLevelMaxFilter("");
+    setAbilityUsageFilter(normalizedId);
   }
 
   function setModAt(index: number, next: ModDraft) {
@@ -959,7 +994,10 @@ export default function ModWorkshop({
                   ? "border-red-300/80 bg-red-500/20 text-red-50"
                   : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
               }`}
-              onClick={() => setIssueFilter("error")}
+              onClick={() => {
+                setAbilityUsageFilter("");
+                setIssueFilter("error");
+              }}
             >
               <div className="label text-red-100/80">Errors</div>
               <div className="mt-1 text-lg font-semibold">{errorDraftCount}</div>
@@ -970,7 +1008,10 @@ export default function ModWorkshop({
                   ? "border-yellow-300/80 bg-yellow-500/20 text-yellow-50"
                   : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
               }`}
-              onClick={() => setIssueFilter("warning")}
+              onClick={() => {
+                setAbilityUsageFilter("");
+                setIssueFilter("warning");
+              }}
             >
               <div className="label text-yellow-100/80">Warnings</div>
               <div className="mt-1 text-lg font-semibold">{warningDraftCount}</div>
@@ -981,7 +1022,10 @@ export default function ModWorkshop({
                   ? "border-accent/80 bg-accent/20 text-white"
                   : "border-accent/30 bg-accent/10 text-white/90 hover:bg-accent/15"
               }`}
-              onClick={() => setAbilityLinkFilter("missing")}
+              onClick={() => {
+                setAbilityUsageFilter("");
+                setAbilityLinkFilter("missing");
+              }}
             >
               <div className="label text-white/70">No Ability</div>
               <div className="mt-1 text-lg font-semibold">{modsWithoutAbilityCount}</div>
@@ -1054,6 +1098,21 @@ export default function ModWorkshop({
           <div className="text-xs text-white/50">
             Showing {filteredMods.length} result{filteredMods.length === 1 ? "" : "s"}.
           </div>
+
+          {activeAbilityUsageFilter ? (
+            <div className="flex items-center justify-between gap-3 rounded border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-50">
+              <div className="min-w-0">
+                Filtering by ability: <span className="font-medium">{activeAbilityUsageFilter.name || normalizeAbilityId(activeAbilityUsageFilter.id)}</span>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-current/25 px-2 py-1 text-xs font-medium hover:bg-white/10"
+                onClick={() => setAbilityUsageFilter("")}
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
 
           {status ? <div className="text-sm text-accent">{status}</div> : null}
 
@@ -1316,6 +1375,7 @@ export default function ModWorkshop({
                           levelRequirement={bulkCreate.levelRequirement}
                           abilityOptions={effectiveAbilityOptions}
                           version={sharedDataVersion}
+                          onFilterModsByAbility={filterModsByAbility}
                           onChange={(value) =>
                             updateBulkAbility(abilityIndex, (current) => ({ ...current, id: value }), {
                               syncAllStatValuesToMax: true,
@@ -1850,6 +1910,7 @@ export default function ModWorkshop({
                           levelRequirement={selectedSyncedMod.levelRequirement}
                           abilityOptions={effectiveAbilityOptions}
                           version={sharedDataVersion}
+                          onFilterModsByAbility={filterModsByAbility}
                           onChange={(value) => updateSelected((draft) => ({
                             ...draft,
                             abilities: draft.abilities.map((currentAbility, currentIndex) =>
@@ -2294,6 +2355,7 @@ function AbilityPickerField({
   modSlot,
   levelRequirement,
   onChange,
+  onFilterModsByAbility,
   abilityOptions,
   version,
 }: {
@@ -2302,6 +2364,7 @@ function AbilityPickerField({
   modSlot?: string;
   levelRequirement?: string;
   onChange: (value: string) => void;
+  onFilterModsByAbility?: (abilityId: string) => void;
   abilityOptions: AbilityOption[];
   version?: string;
 }) {
@@ -2370,9 +2433,17 @@ function AbilityPickerField({
             <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
               Type: {selectedAbility?.deliveryType ? selectedAbility.deliveryType[0].toUpperCase() + selectedAbility.deliveryType.slice(1) : "Unknown"}
             </span>
-            <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">
-              Mods: {selectedAbility?.linkedModCount ?? 0}
-            </span>
+            {selectedAbility ? (
+              <button
+                type="button"
+                className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70 transition hover:bg-white/10"
+                onClick={() => onFilterModsByAbility?.(normalizeAbilityId(selectedAbility.id))}
+              >
+                Mods: {selectedAbility.linkedModCount ?? 0}
+              </button>
+            ) : (
+              <span className="rounded border border-white/10 bg-black/20 px-2 py-1 text-white/70">Mods: 0</span>
+            )}
             {selectedAbility?.primaryModSlot ? (
               <span
                 className={`rounded border px-2 py-1 ${
@@ -2487,7 +2558,14 @@ function AbilityPickerField({
                             Secondary {option.secondaryModSlot}
                           </span>
                         ) : null}
-                        <span className="rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65">
+                        <span
+                          className="cursor-pointer rounded border border-white/10 bg-black/20 px-2 py-0.5 text-white/65 transition hover:bg-white/10"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onFilterModsByAbility?.(normalizeAbilityId(option.id));
+                          }}
+                        >
                           Mods: {option.linkedModCount ?? 0}
                         </span>
                         {option.minimumModLevel ? (
