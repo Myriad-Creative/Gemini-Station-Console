@@ -199,6 +199,7 @@ export default function AbilityManagerApp() {
   const [validationFilter, setValidationFilter] = useState("");
   const [modFilter, setModFilter] = useState("");
   const [statusEffectSearch, setStatusEffectSearch] = useState("");
+  const [linkedModSearch, setLinkedModSearch] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
@@ -353,8 +354,17 @@ export default function AbilityManagerApp() {
   const selectedLinkedMods = useMemo(() => {
     if (!selectedAbility || !database?.modCatalogAvailable) return [];
     if (isAbilityExcludedFromModLinkChecks(selectedAbility)) return [];
-    return modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods);
+    return [...(modLinksByAbilityId.get(normalizeAbilityReference(selectedAbility.id)) ?? computeAbilityLinkedMods(selectedAbility, database.mods))].sort((left, right) => {
+      const byName = left.name.trim().toLowerCase().localeCompare(right.name.trim().toLowerCase());
+      if (byName !== 0) return byName;
+      return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+    });
   }, [database?.modCatalogAvailable, database?.mods, modLinksByAbilityId, selectedAbility]);
+  const filteredLinkedMods = useMemo(() => {
+    const query = linkedModSearch.trim().toLowerCase();
+    if (!query) return selectedLinkedMods;
+    return selectedLinkedMods.filter((mod) => [mod.name, mod.id, mod.slot, mod.description].join(" ").toLowerCase().includes(query));
+  }, [linkedModSearch, selectedLinkedMods]);
   const selectedAbilityExcludedFromModChecks = selectedAbility ? isAbilityExcludedFromModLinkChecks(selectedAbility) : false;
   const selectedThreatTypeValue = selectedAbility?.threatType.trim() ?? "";
   const selectedValidTargetsValue = selectedAbility?.validTargets.trim() ?? "";
@@ -407,6 +417,10 @@ export default function AbilityManagerApp() {
       setSelectedAbilityKey(filteredAbilities[0]?.key ?? abilities[0]?.key ?? null);
     }
   }, [database, filteredAbilities, selectedAbilityKey]);
+
+  useEffect(() => {
+    setLinkedModSearch("");
+  }, [selectedAbility?.key]);
 
   const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
   const previewIcon = buildIconSrc(
@@ -1349,14 +1363,27 @@ export default function AbilityManagerApp() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="label">Mods Using This Ability</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="label">Mods Using This Ability</div>
+                    {database?.modCatalogAvailable && !selectedAbilityExcludedFromModChecks && selectedLinkedMods.length ? (
+                      <div className="text-xs text-white/45">
+                        {filteredLinkedMods.length} of {selectedLinkedMods.length} linked mod{selectedLinkedMods.length === 1 ? "" : "s"}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="rounded-xl border border-white/10 bg-black/20 p-3">
                     {!database?.modCatalogAvailable ? (
                       <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
                     ) : selectedAbilityExcludedFromModChecks ? (
                       <div className="text-sm text-white/45">Auto Cannon is excluded from orphan mod checks because it is the default ship ability.</div>
                     ) : selectedLinkedMods.length ? (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
+                        <input
+                          className="input"
+                          value={linkedModSearch}
+                          onChange={(event) => setLinkedModSearch(event.target.value)}
+                          placeholder="Search linked mods by name, ID, description, or slot..."
+                        />
                         {selectedUnderleveledModCount > 0 ? (
                           <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
                             {selectedUnderleveledModCount} linked mod{selectedUnderleveledModCount === 1 ? "" : "s"} fall below the current Minimum Mod Level of{" "}
@@ -1368,40 +1395,63 @@ export default function AbilityManagerApp() {
                             {selectedSlotMismatchModCount} linked mod{selectedSlotMismatchModCount === 1 ? "" : "s"} do not match this ability's Primary or Secondary Mod Slot.
                           </div>
                         ) : null}
-                        {selectedLinkedMods.map((mod) => (
-                          <div
-                            key={mod.id}
-                            className={`rounded-lg border px-3 py-2 ${
-                              selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel
-                                ? "border-yellow-300/25 bg-yellow-300/10"
-                                : (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
-                                    !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot)
-                                  ? "border-amber-300/25 bg-amber-300/10"
-                                  : "border-white/5"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="truncate text-sm text-white">{mod.name}</div>
-                                <div className="mt-1 text-xs text-white/45">{mod.id}</div>
-                              </div>
-                              <div className="shrink-0 text-right text-xs text-white/45">
-                                {selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel ? (
-                                  <div className="mb-1 rounded bg-yellow-300/15 px-2 py-0.5 font-medium text-yellow-100">Below minimum</div>
-                                ) : null}
-                                {(selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
-                                !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot) ? (
-                                  <div className="mb-1 rounded bg-amber-300/15 px-2 py-0.5 font-medium text-amber-100">Slot mismatch</div>
-                                ) : null}
-                                <div>{mod.slot || "Unknown slot"}</div>
-                                <div>
-                                  Lvl {mod.levelRequirement} · Rarity {mod.rarity}
+                        {filteredLinkedMods.length ? (
+                          <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+                            {filteredLinkedMods.map((mod) => {
+                              const isBelowMinimum = selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel;
+                              const hasSlotMismatch =
+                                (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
+                                !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot);
+
+                              return (
+                                <div
+                                  key={mod.id}
+                                  className={`rounded-lg border px-3 py-3 ${
+                                    isBelowMinimum
+                                      ? "border-yellow-300/25 bg-yellow-300/10"
+                                      : hasSlotMismatch
+                                        ? "border-amber-300/25 bg-amber-300/10"
+                                        : "border-white/5"
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={buildIconSrc(mod.icon, mod.id, mod.name || "Mod", sharedDataVersion)}
+                                        alt=""
+                                        className="h-full w-full object-cover"
+                                      />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="truncate text-base font-medium text-white">{mod.name}</div>
+                                          <div className="mt-1 text-xs text-white/45">
+                                            {mod.id} · {mod.slot || "Unknown slot"} · Lvl {mod.levelRequirement} · Rarity {mod.rarity}
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-wrap justify-end gap-2 text-xs">
+                                          {isBelowMinimum ? (
+                                            <div className="rounded bg-yellow-300/15 px-2 py-1 font-medium text-yellow-100">Below minimum</div>
+                                          ) : null}
+                                          {hasSlotMismatch ? (
+                                            <div className="rounded bg-amber-300/15 px-2 py-1 font-medium text-amber-100">Slot mismatch</div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                      {mod.description ? <div className="mt-2 text-sm leading-6 text-white/60">{mod.description}</div> : null}
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                            {mod.description ? <div className="mt-2 text-sm leading-5 text-white/60">{mod.description}</div> : null}
+                              );
+                            })}
                           </div>
-                        ))}
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                            No linked mods matched this search.
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-sm text-white/45">No mods currently include this ability.</div>

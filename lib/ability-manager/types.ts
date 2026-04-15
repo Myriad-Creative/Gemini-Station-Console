@@ -38,6 +38,7 @@ export type AbilityManagerStatusEffectOption = {
 export type AbilityManagerModOption = {
   id: string;
   name: string;
+  icon: string;
   slot: string;
   rarity: number;
   levelRequirement: number;

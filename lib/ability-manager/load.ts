@@ -479,6 +479,7 @@ function loadMods(gameRoot: string) {
   return parseMods(gameRoot).map<AbilityManagerModOption>((mod) => ({
     id: mod.id.trim(),
     name: mod.name.trim() || mod.id.trim() || "Unnamed Mod",
+    icon: String(mod.icon ?? "").trim(),
     slot: mod.slot.trim(),
     rarity: mod.rarity,
     levelRequirement: mod.levelRequirement,
