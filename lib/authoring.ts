@@ -246,6 +246,17 @@ function normalizeStoredExtraJson(value: unknown) {
   return typeof value === "string" ? value.trim() : prettyExtraJson(asObject(value));
 }
 
+function normalizeModIconPath(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("res://")) return trimmed;
+
+  const cleaned = trimmed.replace(/^\/+/, "");
+  if (cleaned.startsWith("assets/")) return `res://${cleaned}`;
+  if (cleaned.startsWith("mods/")) return `res://assets/${cleaned}`;
+  return `res://assets/mods/${cleaned}`;
+}
+
 function stripKeys(value: JsonObject, keys: string[]) {
   const hidden = new Set(keys);
   const out: JsonObject = {};
@@ -524,6 +535,7 @@ export function syncDerivedModFields(mod: ModDraft): ModDraft {
     levelRequirement: normalizedLevelRequirement,
     itemLevel: budget.itemLevel === undefined ? "" : String(budget.itemLevel),
     sellPrice: derivedSellPrice === undefined ? "" : String(derivedSellPrice),
+    icon: normalizeModIconPath(mod.icon),
     extraJson: normalizeStoredExtraJson(mod.extraJson),
   };
 }

@@ -2,6 +2,7 @@
 
 import { HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
 import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { buildIconSrc } from "@lib/icon-src";
 import {
   autoBalanceModDraft,
   BulkModTemplateDraft,
@@ -33,10 +34,17 @@ import {
   getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
 } from "@lib/mod-budget";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
 type IssueFilter = "all" | "error" | "warning";
 type EditorMode = "editor" | "bulk" | "auto";
 type AbilityOption = { id: number | string; name?: string; description?: string };
+type ModIconOption = {
+  fileName: string;
+  resPath: string;
+  slot: string | null;
+  slotKey: string | null;
+};
 
 type BulkCreateState = {
   titles: string;
@@ -109,6 +117,29 @@ const EMPTY_AUTO_GENERATE_STATE: AutoGenerateState = {
   abilityPool: [],
   abilitySearch: "",
 };
+
+const DEFAULT_MOD_ICON = "res://assets/mods/DEFAULT.png";
+
+function normalizeModSlotForIconFilter(slot: string) {
+  const normalized = slot.trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized === "weapon" ? "weapon" : normalized;
+}
+
+function filterModIconOptionsBySlot(options: ModIconOption[], slot: string) {
+  const slotKey = normalizeModSlotForIconFilter(slot);
+  if (!slotKey) return options;
+  return options.filter((option) => !option.slotKey || option.slotKey === slotKey);
+}
+
+function matchesModIconValue(option: ModIconOption, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed === option.resPath || trimmed === option.fileName) return true;
+
+  const cleaned = trimmed.replace(/^res:\/\//i, "").replace(/^\/+/, "");
+  return cleaned === `assets/mods/${option.fileName}` || cleaned === `mods/${option.fileName}` || cleaned.endsWith(`/${option.fileName}`);
+}
 
 function formatDraftNumber(value: number) {
   if (!Number.isFinite(value)) return "";
@@ -186,6 +217,7 @@ export default function ModWorkshop({
   mods: ModDraft[];
   onChange: (next: ModDraft[]) => void;
 }) {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -198,6 +230,9 @@ export default function ModWorkshop({
   const [bulkCreate, setBulkCreate] = useState<BulkCreateState>(EMPTY_BULK_CREATE_STATE);
   const [autoGenerate, setAutoGenerate] = useState<AutoGenerateState>(EMPTY_AUTO_GENERATE_STATE);
   const [availableAbilities, setAvailableAbilities] = useState<AbilityOption[]>([]);
+  const [availableModIcons, setAvailableModIcons] = useState<ModIconOption[]>([]);
+  const [modIconsLoading, setModIconsLoading] = useState(false);
+  const [modIconStatus, setModIconStatus] = useState("");
 
   useEffect(() => {
     if (selectedIndex <= mods.length - 1) return;
@@ -224,6 +259,36 @@ export default function ModWorkshop({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadModIcons() {
+      setModIconsLoading(true);
+
+      try {
+        const response = await fetch(`/api/mod-icons?_v=${sharedDataVersion}`, { cache: "no-store" });
+        const json = await response.json().catch(() => ({ data: [], message: "" }));
+        if (cancelled) return;
+
+        setAvailableModIcons(Array.isArray(json.data) ? (json.data as ModIconOption[]) : []);
+        setModIconStatus(typeof json.message === "string" ? json.message : "");
+      } catch {
+        if (cancelled) return;
+        setAvailableModIcons([]);
+        setModIconStatus("Mod icon catalog could not be loaded from the active local game root.");
+      } finally {
+        if (!cancelled) {
+          setModIconsLoading(false);
+        }
+      }
+    }
+
+    loadModIcons();
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedDataVersion]);
 
   const clampedSelectedIndex = Math.max(0, Math.min(selectedIndex, Math.max(0, mods.length - 1)));
   const deferredSearch = search.trim().toLowerCase();
@@ -709,6 +774,7 @@ export default function ModWorkshop({
                 const budget = buildModBudgetSummary(mod);
                 const rarityValue = parseNumber(mod.rarity);
                 const rarityColor = rarityValue !== undefined ? RARITY_COLOR[rarityValue] || "#FFFFFF" : "#FFFFFF";
+                const iconSrc = buildIconSrc(mod.icon || DEFAULT_MOD_ICON, mod.id || "mod", mod.name || "Mod", sharedDataVersion);
                 return (
                   <button
                     key={`${mod.id || "mod"}-${index}`}
@@ -717,11 +783,19 @@ export default function ModWorkshop({
                     }`}
                     onClick={() => setSelectedIndex(index)}
                   >
-                    <div className="truncate font-medium" style={{ color: rarityColor }}>
-                      {mod.name || "Untitled mod"}
-                    </div>
-                    <div className="truncate text-xs text-white/60">
-                      {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={iconSrc} alt={mod.name || mod.id || "Mod"} className="h-full w-full object-cover" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium" style={{ color: rarityColor }}>
+                          {mod.name || "Untitled mod"}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-white/60">
+                          {mod.id || "missing-id"} · {mod.slot || "missing-slot"} · ilvl {budget.itemLevel ?? 0}
+                        </div>
+                      </div>
                     </div>
                   </button>
                 );
@@ -820,8 +894,19 @@ export default function ModWorkshop({
                   options={CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value }))}
                   onChange={(value) => updateBulkCreate("classRestriction", value)}
                 />
-                <Field label="Icon" value={bulkCreate.icon} onChange={(value) => updateBulkCreate("icon", value)} />
               </div>
+
+              <ModIconField
+                label="Icon"
+                value={bulkCreate.icon}
+                slot={bulkCreate.slot}
+                onChange={(value) => updateBulkCreate("icon", value)}
+                iconOptions={availableModIcons}
+                loading={modIconsLoading}
+                status={modIconStatus}
+                version={sharedDataVersion}
+                helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
+              />
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1286,8 +1371,19 @@ export default function ModWorkshop({
                     ]}
                     onChange={(value) => updateSelected((draft) => ({ ...draft, classRestriction: value ? [value] : [] }))}
                   />
-                  <Field label="Icon" value={selectedSyncedMod.icon} onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))} />
                 </div>
+
+                <ModIconField
+                  label="Icon"
+                  value={selectedSyncedMod.icon}
+                  slot={selectedSyncedMod.slot}
+                  onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
+                  iconOptions={availableModIcons}
+                  loading={modIconsLoading}
+                  status={modIconStatus}
+                  version={sharedDataVersion}
+                  helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
+                />
 
                 <div className="grid gap-3 md:grid-cols-4">
                   <CheckboxField
@@ -1767,6 +1863,107 @@ function Field({
       />
       {helpText ? <div className="mt-1 text-xs text-white/50">{helpText}</div> : null}
     </label>
+  );
+}
+
+function ModIconField({
+  label,
+  value,
+  slot,
+  onChange,
+  iconOptions,
+  loading,
+  status,
+  version,
+  helpText,
+}: {
+  label: string;
+  value: string;
+  slot: string;
+  onChange: (value: string) => void;
+  iconOptions: ModIconOption[];
+  loading: boolean;
+  status: string;
+  version?: string;
+  helpText?: string;
+}) {
+  const filteredOptions = filterModIconOptionsBySlot(iconOptions, slot);
+  const selectedOption = iconOptions.find((option) => matchesModIconValue(option, value)) ?? null;
+  const previewSrc = buildIconSrc(value || DEFAULT_MOD_ICON, selectedOption?.fileName || "mod", selectedOption?.fileName || "Mod icon", version);
+  const slotLabel = slot.trim();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="label mb-2">{label}</div>
+          {helpText ? <div className="text-xs text-white/50">{helpText}</div> : null}
+        </div>
+        <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+          {loading
+            ? "Loading icons…"
+            : `${filteredOptions.length} icon option(s)${slotLabel ? ` for ${slotLabel}` : ""}`}
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[96px,minmax(0,1fr)]">
+        <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewSrc} alt={selectedOption?.fileName || "Mod icon preview"} className="h-full w-full object-cover" />
+        </div>
+        <div className="space-y-2">
+          <input className="input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="res://assets/mods/DEFAULT.png" />
+          <div className="text-xs text-white/50">
+            {selectedOption
+              ? `Selected file: ${selectedOption.fileName}`
+              : slotLabel
+                ? `Showing icons that match the ${slotLabel} slot, plus shared defaults.`
+                : "Select a slot to narrow the icon gallery, or choose from the full mod icon list."}
+          </div>
+        </div>
+      </div>
+
+      {status ? <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">{status}</div> : null}
+
+      <div className="max-h-72 overflow-auto pr-1">
+        {filteredOptions.length ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredOptions.map((option) => {
+              const selected = matchesModIconValue(option, value);
+              return (
+                <button
+                  key={option.resPath}
+                  type="button"
+                  className={`rounded border p-2 text-left transition ${
+                    selected ? "border-accent bg-white/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                  }`}
+                  onClick={() => onChange(option.resPath)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={buildIconSrc(option.resPath, option.fileName, option.fileName, version)}
+                        alt={option.fileName}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                      <div className="truncate text-xs text-white/50">{option.slot ?? "Shared default"}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+            {slotLabel ? `No icons matched the ${slotLabel} slot in assets/mods.` : "No mod icons were found in assets/mods."}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
