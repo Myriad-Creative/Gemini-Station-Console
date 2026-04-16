@@ -896,6 +896,13 @@ export function summarizeAbilityManager(
       projectileCount: 0,
       beamCount: 0,
       linkedAbilityCount: 0,
+      effectLinkedAbilityCount: 0,
+      modAssignableAbilityCount: 0,
+      modLinkedAbilityCount: 0,
+      slotTaggedAbilityCount: 0,
+      minimumModLevelAbilityCount: 0,
+      trackedStatusEffectCount: 0,
+      linkedStatusEffectCount: 0,
       orphanAbilityCount: 0,
       orphanStatusEffectCount: 0,
       warningCount: 0,
@@ -903,22 +910,41 @@ export function summarizeAbilityManager(
     };
   }
 
+  const statusEffectOptions = statusEffectOptionsFromDatabase(database);
   const modLinkedAbilityIds = new Set(database.mods.flatMap((mod) => mod.abilityIds));
+  const modAssignableAbilities = database.abilities.filter((draft) => !isAbilityExcludedFromModLinkChecks(draft));
+  const trackedStatusEffects = database.statusEffects.filter((draft) => !isStatusEffectExcludedFromAbilityLinkChecks(draft));
+  const effectLinkedAbilityCount = database.abilities.filter((draft) => computeAbilityLinkedEffects(draft, statusEffectOptions).length > 0).length;
+  const modLinkedAbilityCount = modAssignableAbilities.filter((draft) => {
+    const normalizedId = normalizeAbilityReference(draft.id);
+    return !!normalizedId && modLinkedAbilityIds.has(normalizedId);
+  }).length;
+  const slotTaggedAbilityCount = modAssignableAbilities.filter(
+    (draft) => draft.primaryModSlot.trim() || draft.secondaryModSlot.trim(),
+  ).length;
+  const minimumModLevelAbilityCount = modAssignableAbilities.filter((draft) => draft.minimumModLevel.trim()).length;
+  const linkedStatusEffectCount = trackedStatusEffects.filter((draft) => draft.linkedAbilityIds.length > 0).length;
 
   return {
     totalAbilities: database.abilities.length,
     totalStatusEffects: database.statusEffects.length,
     projectileCount: database.abilities.filter((draft) => inferAbilityDeliveryType(draft) === "projectile").length,
     beamCount: database.abilities.filter((draft) => inferAbilityDeliveryType(draft) === "beam").length,
-    linkedAbilityCount: database.abilities.filter((draft) => draft.linkedEffects.length > 0).length,
+    linkedAbilityCount: effectLinkedAbilityCount,
+    effectLinkedAbilityCount,
+    modAssignableAbilityCount: modAssignableAbilities.length,
+    modLinkedAbilityCount,
+    slotTaggedAbilityCount,
+    minimumModLevelAbilityCount,
+    trackedStatusEffectCount: trackedStatusEffects.length,
+    linkedStatusEffectCount,
     orphanAbilityCount: database.modCatalogAvailable
-      ? database.abilities.filter((draft) => {
-          if (isAbilityExcludedFromModLinkChecks(draft)) return false;
+      ? modAssignableAbilities.filter((draft) => {
           const normalizedId = normalizeAbilityReference(draft.id);
           return !normalizedId || !modLinkedAbilityIds.has(normalizedId);
         }).length
       : 0,
-    orphanStatusEffectCount: database.statusEffects.filter((draft) => !isStatusEffectExcludedFromAbilityLinkChecks(draft) && draft.linkedAbilityIds.length === 0).length,
+    orphanStatusEffectCount: trackedStatusEffects.filter((draft) => draft.linkedAbilityIds.length === 0).length,
     warningCount:
       abilityIssues.filter((issue) => issue.level === "warning").length + statusEffectIssues.filter((issue) => issue.level === "warning").length,
     errorCount:

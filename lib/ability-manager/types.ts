@@ -148,6 +148,13 @@ export type AbilityManagerSummary = {
   projectileCount: number;
   beamCount: number;
   linkedAbilityCount: number;
+  effectLinkedAbilityCount: number;
+  modAssignableAbilityCount: number;
+  modLinkedAbilityCount: number;
+  slotTaggedAbilityCount: number;
+  minimumModLevelAbilityCount: number;
+  trackedStatusEffectCount: number;
+  linkedStatusEffectCount: number;
   orphanAbilityCount: number;
   orphanStatusEffectCount: number;
   warningCount: number;
