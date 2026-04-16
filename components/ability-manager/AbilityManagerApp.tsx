@@ -778,7 +778,7 @@ export default function AbilityManagerApp() {
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)_380px]">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
         <aside className="space-y-6 xl:min-w-0">
           <div className="card h-fit space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -978,7 +978,7 @@ export default function AbilityManagerApp() {
                   </button>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-4">
                   <div>
                     <div className="label">Ability ID</div>
                     <input className="input mt-1" value={selectedAbility.id} onChange={(event) => updateSelectedAbility((current) => ({ ...current, id: event.target.value }))} />
@@ -1010,7 +1010,7 @@ export default function AbilityManagerApp() {
                       <option value="other">Other</option>
                     </select>
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <div className="label">Script</div>
                     <div className="relative mt-1">
                       <input
@@ -1052,6 +1052,20 @@ export default function AbilityManagerApp() {
                     <div className="label">Threat Multiplier</div>
                     <input className="input mt-1" value={selectedAbility.threatMultiplier} onChange={(event) => updateSelectedAbility((current) => ({ ...current, threatMultiplier: event.target.value }))} />
                   </div>
+                  <label className="flex items-start gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm text-white/75">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={selectedAbility.requiresTarget}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, requiresTarget: event.target.checked }))}
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium text-white">Requires Target</div>
+                      <div className="mt-1 text-xs leading-5 text-white/45">
+                        Check if a specific target is required to use this ability. Uncheck if the ability is targetless or self-casting.
+                      </div>
+                    </div>
+                  </label>
                   <div>
                     <div className="label">Valid Targets</div>
                     <div className="mt-1 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
@@ -1073,20 +1087,6 @@ export default function AbilityManagerApp() {
                     </div>
                     {validTargetUnknownBits ? <div className="mt-1 text-xs text-amber-200/80">This ability has additional unknown target flags that will be preserved unless you replace them.</div> : null}
                   </div>
-                  <label className="flex items-start gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm text-white/75">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={selectedAbility.requiresTarget}
-                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, requiresTarget: event.target.checked }))}
-                    />
-                    <div className="min-w-0">
-                      <div className="font-medium text-white">Requires Target</div>
-                      <div className="mt-1 text-xs leading-5 text-white/45">
-                        Check if a specific target is required to use this ability. Uncheck if the ability is targetless or self-casting.
-                      </div>
-                    </div>
-                  </label>
                   <div>
                     <div className="label">Min Range Type</div>
                     <select
@@ -1141,7 +1141,7 @@ export default function AbilityManagerApp() {
                       {selectedFacingRequirementOption?.description ?? "Choose whether the target has to be in front, rear, or side arc."}
                     </div>
                   </div>
-                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75 md:col-span-2">
+                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/75">
                     <input
                       type="checkbox"
                       checked={selectedAbility.isGcdLocked}
@@ -1272,11 +1272,11 @@ export default function AbilityManagerApp() {
                     <div className="label">Projectile Scene</div>
                     <input className="input mt-1" value={selectedAbility.projectileScene} onChange={(event) => updateSelectedAbility((current) => ({ ...current, projectileScene: event.target.value }))} />
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <div className="label">Icon</div>
                     <input className="input mt-1" value={selectedAbility.icon} onChange={(event) => updateSelectedAbility((current) => ({ ...current, icon: event.target.value }))} />
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <div className="label">Description</div>
                     <textarea className="input mt-1 min-h-24" value={selectedAbility.description} onChange={(event) => updateSelectedAbility((current) => ({ ...current, description: event.target.value }))} />
                   </div>
@@ -1326,7 +1326,7 @@ export default function AbilityManagerApp() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-4">
                   <div>
                     <div className="label">Additional Runtime JSON</div>
                     <textarea
