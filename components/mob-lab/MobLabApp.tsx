@@ -190,6 +190,7 @@ export default function MobLabApp() {
   const [search, setSearch] = useState("");
   const [factionFilter, setFactionFilter] = useState("");
   const [aiFilter, setAiFilter] = useState("");
+  const [issueFilter, setIssueFilter] = useState<"all" | "error" | "warning">("all");
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [pasteJson, setPasteJson] = useState("");
@@ -216,8 +217,20 @@ export default function MobLabApp() {
     }
     return next;
   }, [validation]);
+  const issueFlagsByMobKey = useMemo(() => {
+    const next = new Map<string, { error: boolean; warning: boolean }>();
+    for (const [mobKey, issues] of validationByMobKey.entries()) {
+      next.set(mobKey, {
+        error: issues.some((issue) => issue.level === "error"),
+        warning: issues.some((issue) => issue.level === "warning"),
+      });
+    }
+    return next;
+  }, [validationByMobKey]);
   const duplicateIds = useMemo(() => duplicateMobIdMap(workspace?.mobs ?? []), [workspace]);
   const summary = useMemo(() => summarizeMobWorkspace(workspace, validation), [workspace, validation]);
+  const errorMobCount = useMemo(() => Array.from(issueFlagsByMobKey.values()).filter((flags) => flags.error).length, [issueFlagsByMobKey]);
+  const warningMobCount = useMemo(() => Array.from(issueFlagsByMobKey.values()).filter((flags) => flags.warning).length, [issueFlagsByMobKey]);
 
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -244,7 +257,12 @@ export default function MobLabApp() {
         return haystack.includes(query);
       })
       .filter((mob) => (factionFilter ? mob.faction.trim() === factionFilter : true))
-      .filter((mob) => (aiFilter ? mob.ai_type.trim() === aiFilter : true));
+      .filter((mob) => (aiFilter ? mob.ai_type.trim() === aiFilter : true))
+      .filter((mob) => {
+        if (issueFilter === "all") return true;
+        const flags = issueFlagsByMobKey.get(mob.key);
+        return issueFilter === "error" ? Boolean(flags?.error) : Boolean(flags?.warning);
+      });
 
     filtered.sort((left, right) => {
       if (sortBy === "level") {
@@ -259,7 +277,7 @@ export default function MobLabApp() {
     });
 
     return filtered;
-  }, [aiFilter, factionFilter, search, sortBy, sortDirection, workspace]);
+  }, [aiFilter, factionFilter, issueFilter, issueFlagsByMobKey, search, sortBy, sortDirection, workspace]);
 
   useEffect(() => {
     const mobs = workspace?.mobs ?? [];
@@ -297,7 +315,7 @@ export default function MobLabApp() {
         }
         if (cancelled) return;
         if (workspaceRef.current && workspaceRef.current.sourceType !== "uploaded") return;
-        importText(payload.text, payload.sourceLabel || "Local game source", "uploaded");
+        importText(payload.text, payload.sourceLabel || "Local game source", "uploaded", { showSuccessStatus: false });
       } catch {
         // Local game source may not be configured yet.
       }
@@ -334,18 +352,26 @@ export default function MobLabApp() {
     setWorkspace(updateMobDraftAt(workspace, selectedMob.key, updater));
   }
 
-  function importText(text: string, sourceLabel: string | null, sourceType: "uploaded" | "pasted") {
+  function importText(
+    text: string,
+    sourceLabel: string | null,
+    sourceType: "uploaded" | "pasted",
+    options?: { showSuccessStatus?: boolean },
+  ) {
+    const showSuccessStatus = options?.showSuccessStatus ?? true;
     try {
       const result = importMobWorkspace(text, sourceLabel, sourceType);
       setWorkspace(result.workspace);
       setSelectedMobKey(result.workspace.mobs[0]?.key ?? null);
-      setStatus({
-        tone: "success",
-        message: result.warnings.length
-          ? `Imported ${result.workspace.mobs.length} mobs.${sourceLabel ? ` Source: ${sourceLabel}.` : ""} ${result.warnings.join(" ")}`
-          : `Imported ${result.workspace.mobs.length} mobs${sourceLabel ? ` from ${sourceLabel}` : ""}.`,
-        dismissAfterMs: 7000,
-      });
+      if (showSuccessStatus) {
+        setStatus({
+          tone: "success",
+          message: result.warnings.length
+            ? `Imported ${result.workspace.mobs.length} mobs.${sourceLabel ? ` Source: ${sourceLabel}.` : ""} ${result.warnings.join(" ")}`
+            : `Imported ${result.workspace.mobs.length} mobs${sourceLabel ? ` from ${sourceLabel}` : ""}.`,
+          dismissAfterMs: 7000,
+        });
+      }
     } catch (error) {
       setStatus({
         tone: "error",
@@ -379,6 +405,13 @@ export default function MobLabApp() {
     if (nextValue.trim()) {
       importText(nextValue, "Pasted JSON", "pasted");
     }
+  }
+
+  function resetBrowserFilters() {
+    setIssueFilter("all");
+    setSearch("");
+    setFactionFilter("");
+    setAiFilter("");
   }
 
   function startBlankWorkspace() {
@@ -533,6 +566,7 @@ export default function MobLabApp() {
   }
 
   const hasWorkspaceErrors = validation.some((issue) => issue.level === "error");
+  const hasActiveBrowserFilters = Boolean(issueFilter !== "all" || search.trim() || factionFilter || aiFilter);
   const workspaceSourceLabel =
     workspace?.sourceType === "uploaded" || workspace?.sourceType === "pasted"
       ? `${workspace.sourceLabel ?? "Local game source"} (${workspace.parseStrategy === "strict" ? "strict JSON" : "JSON5"})`
@@ -622,6 +656,42 @@ export default function MobLabApp() {
             </div>
 
             <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <button
+                  type="button"
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    issueFilter === "error"
+                      ? "border-red-300/60 bg-red-500/20 text-red-50"
+                      : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+                  }`}
+                  onClick={() => setIssueFilter((current) => (current === "error" ? "all" : "error"))}
+                >
+                  <div className="label text-red-100/80">Errors</div>
+                  <div className="mt-1 text-lg font-semibold">{errorMobCount}</div>
+                </button>
+                <button
+                  type="button"
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    issueFilter === "warning"
+                      ? "border-yellow-300/60 bg-yellow-500/20 text-yellow-50"
+                      : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+                  }`}
+                  onClick={() => setIssueFilter((current) => (current === "warning" ? "all" : "warning"))}
+                >
+                  <div className="label text-yellow-100/80">Warnings</div>
+                  <div className="mt-1 text-lg font-semibold">{warningMobCount}</div>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="w-full rounded bg-white/5 px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                disabled={!hasActiveBrowserFilters}
+                onClick={resetBrowserFilters}
+              >
+                Reset Filter
+              </button>
+
               <div>
                 <div className="label">Search</div>
                 <input
@@ -684,8 +754,9 @@ export default function MobLabApp() {
             <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
               {filteredMobs.length ? (
                 filteredMobs.map((mob) => {
-                  const issues = validationByMobKey.get(mob.key) ?? [];
-                  const hasErrors = issues.some((issue) => issue.level === "error");
+                  const issueFlags = issueFlagsByMobKey.get(mob.key);
+                  const hasErrors = Boolean(issueFlags?.error);
+                  const hasWarnings = Boolean(issueFlags?.warning);
                   const isDuplicate = duplicateIds.has(mob.id.trim());
                   const selected = selectedMob?.key === mob.key;
                   const spriteSrc = mob.sprite.trim()
@@ -725,6 +796,7 @@ export default function MobLabApp() {
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
                             {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}
+                            {!hasErrors && hasWarnings ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Warnings</span> : null}
                           </div>
                         </div>
                       </div>
