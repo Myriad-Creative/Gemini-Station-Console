@@ -542,8 +542,8 @@ export default function StatusEffectManagerApp() {
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <aside className="space-y-6 xl:min-w-0">
           <div className="card h-fit space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -663,30 +663,9 @@ export default function StatusEffectManagerApp() {
             </div>
           </div>
 
-          <div className="card space-y-4">
-            <div className="text-lg font-semibold text-white">Validation</div>
-            {selectedStatusEffect ? (
-              selectedIssues.length ? (
-                <div className="space-y-3">
-                  {selectedIssues.map((issue, index) => (
-                    <div key={`${issue.field}-${index}`} className={`rounded-xl border px-3 py-3 ${issueTone(issue.level)}`}>
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em]">{issue.level}</div>
-                      <div className="mt-2 text-sm">{issue.message}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
-                  no issues
-                </div>
-              )
-            ) : (
-              <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">Select a status effect to review validation.</div>
-            )}
-          </div>
         </aside>
 
-        <div className="space-y-6">
+        <div className={`space-y-6 xl:min-w-0 ${selectedStatusEffect ? "" : "xl:col-span-2"}`}>
           {selectedStatusEffect ? (
             <>
               <Section
@@ -884,35 +863,6 @@ export default function StatusEffectManagerApp() {
                 </div>
               </Section>
 
-              <Section title="Preview" description="Quick view of the current icon, label, and linked-ability context for the selected status effect.">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <div className="flex flex-col gap-5 md:flex-row md:items-start">
-                    <img src={previewIcon} alt="" className="h-24 w-24 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-3xl font-semibold text-white">{selectedStatusEffect.name || "Unnamed Status Effect"}</div>
-                      <div className="mt-2 font-mono text-xs text-white/55">
-                        {selectedStatusEffect.numericId || "missing-id"} · {selectedStatusEffect.effectId || "no properties.id"}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
-                        <span className="rounded bg-white/5 px-2 py-1">{selectedStatusEffect.isBuff ? "Buff" : "Debuff"}</span>
-                        {selectedStatusEffect.duration.trim() ? <span className="rounded bg-white/5 px-2 py-1">Duration {formatDurationSummary(selectedStatusEffect.duration) || selectedStatusEffect.duration}</span> : null}
-                        {selectedStatusEffect.canStack ? <span className="rounded bg-white/5 px-2 py-1">Stacks</span> : null}
-                      </div>
-                      {selectedStatusEffect.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedStatusEffect.description}</div> : null}
-                      {selectedStatusEffect.linkedAbilityNames.length ? (
-                        <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/70">
-                          {selectedStatusEffect.linkedAbilityNames.map((name, index) => (
-                            <span key={`${name}-${index}`} className="rounded bg-white/5 px-2 py-1">
-                              {name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </Section>
-
               <Section title="Export Preview" description="The full status-effect bundle exports as indexed per-file JSON, matching the real game data layout.">
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" onClick={() => void handleCopyIndexJson()}>
@@ -933,6 +883,61 @@ export default function StatusEffectManagerApp() {
             </Section>
           )}
         </div>
+
+        {selectedStatusEffect ? (
+          <aside className="space-y-6 xl:min-w-0">
+            <Section title="Preview" description="Quick view of the current icon, label, and linked-ability context for the selected status effect.">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex items-start gap-4">
+                  <img src={previewIcon} alt="" className="h-20 w-20 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-semibold text-white">{selectedStatusEffect.name || "Unnamed Status Effect"}</div>
+                    <div className="mt-2 font-mono text-xs text-white/55">
+                      {selectedStatusEffect.numericId || "missing-id"} · {selectedStatusEffect.effectId || "no properties.id"}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/65">
+                      <span className="rounded bg-white/5 px-2 py-1">{selectedStatusEffect.isBuff ? "Buff" : "Debuff"}</span>
+                      {selectedStatusEffect.duration.trim() ? <span className="rounded bg-white/5 px-2 py-1">Duration {formatDurationSummary(selectedStatusEffect.duration) || selectedStatusEffect.duration}</span> : null}
+                      {selectedStatusEffect.canStack ? <span className="rounded bg-white/5 px-2 py-1">Stacks</span> : null}
+                      {selectedStatusEffect.linkedAbilityIds.length ? (
+                        <span className="rounded bg-white/5 px-2 py-1">
+                          {selectedStatusEffect.linkedAbilityIds.length} linked abilit{selectedStatusEffect.linkedAbilityIds.length === 1 ? "y" : "ies"}
+                        </span>
+                      ) : null}
+                    </div>
+                    {selectedStatusEffect.description.trim() ? <div className="mt-4 text-sm leading-6 text-white/70">{selectedStatusEffect.description}</div> : null}
+                    {selectedStatusEffect.linkedAbilityNames.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/70">
+                        {selectedStatusEffect.linkedAbilityNames.map((name, index) => (
+                          <span key={`${name}-${index}`} className="rounded bg-white/5 px-2 py-1">
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Validation" description="Current draft issues for the selected status effect.">
+              {selectedIssues.length ? (
+                <div className="space-y-3">
+                  {selectedIssues.map((issue, index) => (
+                    <div key={`${issue.field}-${index}`} className={`rounded-xl border px-3 py-3 ${issueTone(issue.level)}`}>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em]">{issue.level}</div>
+                      <div className="mt-2 text-sm">{issue.message}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
+                  no issues
+                </div>
+              )}
+            </Section>
+          </aside>
+        ) : null}
       </div>
     </div>
   );
