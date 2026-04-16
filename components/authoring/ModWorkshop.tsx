@@ -1,6 +1,7 @@
 "use client";
 
 import { HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { SummaryCard } from "@components/ability-manager/common";
 import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
@@ -367,6 +368,8 @@ export default function ModWorkshop({
   mods: ModDraft[];
   onChange: (next: ModDraft[]) => void;
 }) {
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [search, setSearch] = useState("");
@@ -594,6 +597,23 @@ export default function ModWorkshop({
     if (filteredMods.some(({ index }) => index === clampedSelectedIndex)) return;
     setSelectedIndex(filteredMods[0].index);
   }, [clampedSelectedIndex, filteredMods]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const summary = params.get("summary");
+    const issue = params.get("issue");
+    const ability = params.get("ability");
+
+    setEditorMode("editor");
+    setSearch("");
+    setRarityFilter("");
+    setSlotFilter("");
+    setLevelMinFilter("");
+    setLevelMaxFilter("");
+    setIssueFilter(issue === "error" || issue === "warning" ? issue : "all");
+    setAbilityLinkFilter(summary === "missing" ? "missing" : "all");
+    setAbilityUsageFilter(ability ? normalizeAbilityId(ability) : "");
+  }, [searchParamsKey]);
 
   function resetFilters() {
     setIssueFilter("all");

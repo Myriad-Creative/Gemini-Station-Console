@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerModOption, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
@@ -127,6 +128,7 @@ type AbilityFlagOption = {
 };
 
 type AbilitySummaryFilter = "all" | "projectile" | "beam" | "linked" | "orphans";
+type AbilityDashboardFilter = "" | "slotTagged" | "missingSlotTags" | "minimumModLevel" | "missingMinimumModLevel";
 
 type OrphanStatusEffectOption = {
   numericId: number;
@@ -189,6 +191,8 @@ function withCurrentAbilityValueOption(value: string, options: AbilityValueOptio
 }
 
 export default function AbilityManagerApp() {
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
@@ -198,6 +202,7 @@ export default function AbilityManagerApp() {
   const [linkedFilter, setLinkedFilter] = useState("");
   const [validationFilter, setValidationFilter] = useState("");
   const [modFilter, setModFilter] = useState("");
+  const [dashboardFilter, setDashboardFilter] = useState<AbilityDashboardFilter>("");
   const [statusEffectSearch, setStatusEffectSearch] = useState("");
   const [linkedModSearch, setLinkedModSearch] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
@@ -242,7 +247,7 @@ export default function AbilityManagerApp() {
   const summary = useMemo(() => summarizeAbilityManager(database, abilityIssues, []), [database, abilityIssues]);
   const errorDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.error).length, [abilityIssueFlagsByKey]);
   const warningDraftCount = useMemo(() => Array.from(abilityIssueFlagsByKey.values()).filter((entry) => entry.warning).length, [abilityIssueFlagsByKey]);
-  const hasActiveFilters = Boolean(search.trim() || deliveryFilter || linkedFilter || validationFilter || modFilter);
+  const hasActiveFilters = Boolean(search.trim() || deliveryFilter || linkedFilter || validationFilter || modFilter || dashboardFilter);
   const activeSummaryFilter = useMemo<AbilitySummaryFilter | null>(() => {
     if (!deliveryFilter && !linkedFilter && !modFilter) return "all";
     if (deliveryFilter === "projectile" && !linkedFilter && !modFilter) return "projectile";
@@ -294,6 +299,19 @@ export default function AbilityManagerApp() {
         const linkedModCount = (modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? []).length;
         return modFilter === "linked" ? linkedModCount > 0 : linkedModCount === 0;
       })
+      .filter((draft) => {
+        if (!dashboardFilter) return true;
+        if (isAbilityExcludedFromModLinkChecks(draft)) return false;
+
+        const hasSlotTags = Boolean(draft.primaryModSlot.trim() || draft.secondaryModSlot.trim());
+        const hasMinimumModLevel = Boolean(draft.minimumModLevel.trim());
+
+        if (dashboardFilter === "slotTagged") return hasSlotTags;
+        if (dashboardFilter === "missingSlotTags") return !hasSlotTags;
+        if (dashboardFilter === "minimumModLevel") return hasMinimumModLevel;
+        if (dashboardFilter === "missingMinimumModLevel") return !hasMinimumModLevel;
+        return true;
+      })
       .sort((left, right) => {
         const leftLabel = (left.name || left.id || "").trim().toLowerCase();
         const rightLabel = (right.name || right.id || "").trim().toLowerCase();
@@ -301,7 +319,7 @@ export default function AbilityManagerApp() {
         if (byLabel !== 0) return byLabel;
         return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
-  }, [abilityIssuesByKey, database, deliveryFilter, linkedFilter, modFilter, modLinksByAbilityId, search, statusEffectOptions, validationFilter]);
+  }, [abilityIssuesByKey, dashboardFilter, database, deliveryFilter, linkedFilter, modFilter, modLinksByAbilityId, search, statusEffectOptions, validationFilter]);
 
   const selectedAbility = useMemo(() => {
     const abilities = database?.abilities ?? [];
@@ -422,7 +440,36 @@ export default function AbilityManagerApp() {
     setLinkedModSearch("");
   }, [selectedAbility?.key]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const summary = params.get("summary");
+    const validation = params.get("validation");
+    const mod = params.get("mod");
+    const meta = params.get("meta");
+
+    setSearch("");
+    setDeliveryFilter(summary === "projectile" || summary === "beam" ? summary : "");
+    setLinkedFilter(summary === "linked" ? "linked" : "");
+    setValidationFilter(validation === "errors" || validation === "warnings" ? validation : "");
+    setModFilter(summary === "orphans" ? "unlinked" : mod === "linked" || mod === "unlinked" ? mod : "");
+    setDashboardFilter(
+      meta === "slotTagged" ||
+        meta === "missingSlotTags" ||
+        meta === "minimumModLevel" ||
+        meta === "missingMinimumModLevel"
+        ? meta
+        : "",
+    );
+  }, [searchParamsKey]);
+
   const abilityIndexJson = useMemo(() => (database ? stringifyAbilityIndexJson(database.abilities) : "{}"), [database]);
+  const dashboardFilterLabel = useMemo(() => {
+    if (dashboardFilter === "slotTagged") return "Dashboard filter: Slot-tagged abilities";
+    if (dashboardFilter === "missingSlotTags") return "Dashboard filter: Abilities missing slot tags";
+    if (dashboardFilter === "minimumModLevel") return "Dashboard filter: Abilities with minimum mod level";
+    if (dashboardFilter === "missingMinimumModLevel") return "Dashboard filter: Abilities missing minimum mod level";
+    return "";
+  }, [dashboardFilter]);
   const previewIcon = buildIconSrc(
     selectedAbility?.icon || "icon_lootbox.png",
     selectedAbility?.id || "ability",
@@ -546,11 +593,13 @@ export default function AbilityManagerApp() {
     setLinkedFilter("");
     setValidationFilter("");
     setModFilter("");
+    setDashboardFilter("");
   }
 
   function applySummaryFilter(filter: AbilitySummaryFilter) {
     setSearch("");
     setValidationFilter("");
+    setDashboardFilter("");
 
     if (filter === "all") {
       setDeliveryFilter("");
@@ -794,6 +843,11 @@ export default function AbilityManagerApp() {
             </div>
 
             <div className="space-y-3">
+              {dashboardFilterLabel ? (
+                <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
+                  {dashboardFilterLabel}
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <button
                   className={`rounded border px-3 py-2 text-left transition ${

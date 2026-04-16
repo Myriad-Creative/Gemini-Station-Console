@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   DismissibleStatusBanner,
@@ -96,13 +97,20 @@ function Section({
   );
 }
 
+type ItemIssueFilter = "all" | "error" | "warning";
+type ItemDashboardFilter = "" | "missingDescription";
+
 export default function ItemManagerApp() {
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<ItemManagerWorkspace | null>(null);
   const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [rarityFilter, setRarityFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [issueFilter, setIssueFilter] = useState<ItemIssueFilter>("all");
+  const [dashboardFilter, setDashboardFilter] = useState<ItemDashboardFilter>("");
   const [status, setStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
   const clearStatus = () => setStatus(EMPTY_TIMED_STATUS);
   const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
@@ -129,6 +137,17 @@ export default function ItemManagerApp() {
       })
       .filter((item) => (rarityFilter ? item.rarity.trim() === rarityFilter : true))
       .filter((item) => (typeFilter ? item.type.trim() === typeFilter : true))
+      .filter((item) => {
+        if (issueFilter === "all") return true;
+        const issues = validationByItemKey.get(item.key) ?? [];
+        const hasErrors = issues.some((issue) => issue.level === "error");
+        const hasWarnings = issues.some((issue) => issue.level === "warning");
+        return issueFilter === "error" ? hasErrors : hasWarnings;
+      })
+      .filter((item) => {
+        if (!dashboardFilter) return true;
+        return dashboardFilter === "missingDescription" ? !item.description.trim() : true;
+      })
       .sort((left, right) => {
         const leftLabel = (left.name || left.id || "").trim().toLowerCase();
         const rightLabel = (right.name || right.id || "").trim().toLowerCase();
@@ -136,7 +155,7 @@ export default function ItemManagerApp() {
         if (byLabel !== 0) return byLabel;
         return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
-  }, [rarityFilter, search, typeFilter, workspace]);
+  }, [dashboardFilter, issueFilter, rarityFilter, search, typeFilter, validationByItemKey, workspace]);
 
   useEffect(() => {
     const items = workspace?.items ?? [];
@@ -197,6 +216,18 @@ export default function ItemManagerApp() {
     };
   }, [sharedDataVersion]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const issue = params.get("issue");
+    const content = params.get("content");
+
+    setSearch("");
+    setRarityFilter("");
+    setTypeFilter("");
+    setIssueFilter(issue === "error" || issue === "warning" ? issue : "all");
+    setDashboardFilter(content === "missingDescription" ? "missingDescription" : "");
+  }, [searchParamsKey]);
+
   const selectedItem = useMemo(() => {
     const items = workspace?.items ?? [];
     return items.find((item) => item.key === selectedItemKey) ?? filteredItems[0] ?? items[0] ?? null;
@@ -210,6 +241,17 @@ export default function ItemManagerApp() {
       : [];
   const fullJson = useMemo(() => (workspace ? stringifyItemWorkspace(workspace) : "[]"), [workspace]);
   const selectedJson = useMemo(() => (selectedItem ? stringifySingleItem(selectedItem) : ""), [selectedItem]);
+  const hasActiveFilters = Boolean(search.trim() || rarityFilter || typeFilter || issueFilter !== "all" || dashboardFilter);
+  const dashboardFilterLabel = dashboardFilter === "missingDescription" ? "Dashboard filter: Items missing descriptions" : "";
+
+  function resetFilters() {
+    setSearch("");
+    setRarityFilter("");
+    setTypeFilter("");
+    setIssueFilter("all");
+    setDashboardFilter("");
+  }
+
   function updateSelectedItem(updater: (current: ItemDraft) => ItemDraft) {
     if (!workspace || !selectedItem) return;
     setWorkspace(updateItemDraftAt(workspace, selectedItem.key, updater));
@@ -351,6 +393,18 @@ export default function ItemManagerApp() {
                 </div>
 
                 <div className="space-y-3">
+                  {dashboardFilterLabel ? (
+                    <div className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
+                      {dashboardFilterLabel}
+                    </div>
+                  ) : null}
+
+                  {issueFilter !== "all" ? (
+                    <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-xs text-yellow-100">
+                      Dashboard filter: {issueFilter === "error" ? "Items with errors" : "Items with warnings"}
+                    </div>
+                  ) : null}
+
                   <div>
                     <div className="label">Search</div>
                     <input
@@ -384,6 +438,12 @@ export default function ItemManagerApp() {
                       ))}
                     </select>
                   </div>
+
+                  {hasActiveFilters ? (
+                    <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={resetFilters}>
+                      Reset Filter
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="max-h-[56vh] space-y-2 overflow-y-auto pr-1">

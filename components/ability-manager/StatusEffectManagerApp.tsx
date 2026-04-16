@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import { STATUS_EFFECT_MODIFIER_KEYS, type AbilityManagerDatabase, type AbilityManagerValidationIssue, type StatusEffectDraft } from "@lib/ability-manager/types";
@@ -111,6 +112,8 @@ function formatDurationSummary(value: string) {
   return `${numericSeconds}s`;
 }
 export default function StatusEffectManagerApp() {
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const { database: loadedDatabase, loading } = useAbilityDatabase();
   const [database, setDatabase] = useState<AbilityManagerDatabase | null>(null);
@@ -322,6 +325,17 @@ export default function StatusEffectManagerApp() {
     setBuffFilter(filter === "buffs" ? "buff" : filter === "debuffs" ? "debuff" : "");
     setLinkedFilter(filter === "linked" ? "linked" : filter === "orphans" ? "unlinked" : "");
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsKey);
+    const summary = params.get("summary");
+    const issue = params.get("issue");
+
+    setSearch("");
+    setIssueFilter(issue === "errors" || issue === "warnings" ? issue : "");
+    setBuffFilter(summary === "buffs" ? "buff" : summary === "debuffs" ? "debuff" : "");
+    setLinkedFilter(summary === "linked" ? "linked" : summary === "orphans" ? "unlinked" : "");
+  }, [searchParamsKey]);
 
   function cloneSelectedStatusEffect() {
     if (!database || !selectedStatusEffect) return;

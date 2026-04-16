@@ -146,6 +146,16 @@ function formatValidationNotice(summary: ValidationSummary, labelPrefix?: string
   ]);
 }
 
+function buildHref(path: string, params: Record<string, string | null | undefined>) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (!value) continue;
+    searchParams.set(key, value);
+  }
+  const query = searchParams.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 function MetricLinkRow({
   href,
   label,
@@ -213,6 +223,7 @@ function CoverageRow({
   available?: boolean;
 }) {
   const percent = available && total > 0 ? Math.round((count / total) * 100) : 0;
+  const fillClass = available ? (percent >= 100 ? "bg-emerald-300/80" : "bg-cyan-300/80") : "bg-white/20";
 
   return (
     <Link href={href} className="block rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 transition hover:border-cyan-300/30 hover:bg-white/[0.05]">
@@ -224,7 +235,7 @@ function CoverageRow({
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
         <div
-          className={`h-full rounded-full ${available ? "bg-cyan-300/80" : "bg-white/20"}`}
+          className={`h-full rounded-full ${fillClass}`}
           style={{ width: `${available ? Math.min(percent, 100) : 100}%` }}
         />
       </div>
@@ -326,10 +337,35 @@ export default function DashboardPage() {
     errors: data.validation.abilities.errors + data.validation.statusEffects.errors,
     warnings: data.validation.abilities.warnings + data.validation.statusEffects.warnings,
   } satisfies ValidationSummary;
+  const modsCardHref =
+    data.validation.mods.errors > 0
+      ? buildHref("/mods/manager", { issue: "error" })
+      : data.validation.mods.warnings > 0
+        ? buildHref("/mods/manager", { issue: "warning" })
+        : data.counts.modsWithoutAbilities > 0
+          ? buildHref("/mods/manager", { summary: "missing" })
+          : "/mods/manager";
+  const abilitiesCardHref = (() => {
+    if (data.validation.abilities.errors > 0) return buildHref("/abilities/manager", { validation: "errors" });
+    if (data.validation.abilities.warnings > 0) return buildHref("/abilities/manager", { validation: "warnings" });
+    if (data.validation.statusEffects.errors > 0) return buildHref("/abilities/status-effects", { issue: "errors" });
+    if (data.validation.statusEffects.warnings > 0) return buildHref("/abilities/status-effects", { issue: "warnings" });
+    if (data.abilityModCatalogAvailable && data.counts.orphanAbilities > 0) return buildHref("/abilities/manager", { summary: "orphans" });
+    if (data.counts.orphanStatusEffects > 0) return buildHref("/abilities/status-effects", { summary: "orphans" });
+    return "/abilities/manager";
+  })();
+  const itemsCardHref =
+    data.validation.items.errors > 0
+      ? buildHref("/items/manager", { issue: "error" })
+      : data.validation.items.warnings > 0
+        ? buildHref("/items/manager", { issue: "warning" })
+        : data.counts.itemsMissingDescriptions > 0
+          ? buildHref("/items/manager", { content: "missingDescription" })
+          : "/items/manager";
 
   const serviceCards: ServiceCard[] = [
     {
-      href: "/mods",
+      href: modsCardHref,
       label: "Mods",
       description: "Browse and author console mod data.",
       value: data.counts.mods,
@@ -341,7 +377,7 @@ export default function DashboardPage() {
       ]),
     },
     {
-      href: "/abilities",
+      href: abilitiesCardHref,
       label: "Abilities",
       description: "Manage runtime abilities and linked status effects.",
       value: data.counts.abilities,
@@ -354,7 +390,7 @@ export default function DashboardPage() {
       ]),
     },
     {
-      href: "/items",
+      href: itemsCardHref,
       label: "Items",
       description: "Inspect the current item catalog.",
       value: data.counts.items,
@@ -429,14 +465,14 @@ export default function DashboardPage() {
         <DashboardCard title="Authoring Priorities">
           <div className="grid gap-3">
             <MetricLinkRow
-              href="/mods"
+              href={buildHref("/mods/manager", { summary: "missing" })}
               label="Mods Without Abilities"
               value={data.priorities.modsWithoutAbilities}
               description="Mods still missing their first ability assignment."
               accent={data.priorities.modsWithoutAbilities ? "text-amber-200" : undefined}
             />
             <MetricLinkRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { summary: "orphans" })}
               label="Orphan Abilities"
               value={data.abilityModCatalogAvailable ? data.priorities.orphanAbilities : "N/A"}
               description={
@@ -447,28 +483,28 @@ export default function DashboardPage() {
               accent={data.abilityModCatalogAvailable && data.priorities.orphanAbilities ? "text-amber-200" : undefined}
             />
             <MetricLinkRow
-              href="/abilities/status-effects"
+              href={buildHref("/abilities/status-effects", { summary: "orphans" })}
               label="Orphan Status Effects"
               value={data.priorities.orphanStatusEffects}
               description="Tracked status effects still waiting for an ability."
               accent={data.priorities.orphanStatusEffects ? "text-amber-200" : undefined}
             />
             <MetricLinkRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { meta: "missingSlotTags" })}
               label="Missing Slot Tags"
               value={data.priorities.abilitiesMissingSlotTags}
               description="Abilities without primary or secondary mod slot tags."
               accent={data.priorities.abilitiesMissingSlotTags ? "text-amber-200" : undefined}
             />
             <MetricLinkRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { meta: "missingMinimumModLevel" })}
               label="Missing Minimum Mod Level"
               value={data.priorities.abilitiesMissingMinimumModLevel}
               description="Abilities without minimum tier guidance for pairing."
               accent={data.priorities.abilitiesMissingMinimumModLevel ? "text-amber-200" : undefined}
             />
             <MetricLinkRow
-              href="/items"
+              href={buildHref("/items/manager", { content: "missingDescription" })}
               label="Items Missing Descriptions"
               value={data.priorities.itemsMissingDescriptions}
               description="Items that exist in data but still need player-facing copy."
@@ -480,14 +516,14 @@ export default function DashboardPage() {
         <DashboardCard title="Ability Coverage">
           <div className="grid gap-3">
             <CoverageRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { summary: "linked" })}
               label="Effect-Linked Abilities"
               count={data.abilityCoverage.effectLinkedAbilities}
               total={data.abilityCoverage.totalAbilities}
               description="Abilities with at least one resolved status-effect link."
             />
             <CoverageRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { mod: "linked" })}
               label="Mod-Linked Abilities"
               count={data.abilityCoverage.modLinkedAbilities}
               total={data.abilityCoverage.modAssignableAbilities}
@@ -499,21 +535,21 @@ export default function DashboardPage() {
               available={data.abilityModCatalogAvailable}
             />
             <CoverageRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { meta: "slotTagged" })}
               label="Slot-Tagged Abilities"
               count={data.abilityCoverage.slotTaggedAbilities}
               total={data.abilityCoverage.modAssignableAbilities}
               description="Assignable abilities with primary or secondary mod slots."
             />
             <CoverageRow
-              href="/abilities"
+              href={buildHref("/abilities/manager", { meta: "minimumModLevel" })}
               label="Minimum-Level Tagged"
               count={data.abilityCoverage.minimumModLevelAbilities}
               total={data.abilityCoverage.modAssignableAbilities}
               description="Assignable abilities with minimumModLevel defined."
             />
             <CoverageRow
-              href="/abilities/status-effects"
+              href={buildHref("/abilities/status-effects", { summary: "linked" })}
               label="Linked Status Effects"
               count={data.abilityCoverage.linkedStatusEffects}
               total={data.abilityCoverage.trackedStatusEffects}
@@ -524,10 +560,10 @@ export default function DashboardPage() {
 
         <DashboardCard title="Validation Snapshot">
           <div className="grid gap-3 md:grid-cols-2">
-            <ValidationLinkTile href="/mods" label="Mods" summary={data.validation.mods} />
-            <ValidationLinkTile href="/abilities" label="Abilities" summary={data.validation.abilities} />
-            <ValidationLinkTile href="/abilities/status-effects" label="Status Effects" summary={data.validation.statusEffects} />
-            <ValidationLinkTile href="/items" label="Items" summary={data.validation.items} />
+            <ValidationLinkTile href={buildHref("/mods/manager", { issue: data.validation.mods.errors > 0 ? "error" : data.validation.mods.warnings > 0 ? "warning" : null })} label="Mods" summary={data.validation.mods} />
+            <ValidationLinkTile href={buildHref("/abilities/manager", { validation: data.validation.abilities.errors > 0 ? "errors" : data.validation.abilities.warnings > 0 ? "warnings" : null })} label="Abilities" summary={data.validation.abilities} />
+            <ValidationLinkTile href={buildHref("/abilities/status-effects", { issue: data.validation.statusEffects.errors > 0 ? "errors" : data.validation.statusEffects.warnings > 0 ? "warnings" : null })} label="Status Effects" summary={data.validation.statusEffects} />
+            <ValidationLinkTile href={buildHref("/items/manager", { issue: data.validation.items.errors > 0 ? "error" : data.validation.items.warnings > 0 ? "warning" : null })} label="Items" summary={data.validation.items} />
             <ValidationLinkTile href="/missions" label="Missions" summary={data.validation.missions} />
             <ValidationLinkTile href="/mob-lab" label="Mobs" summary={data.validation.mobs} />
             <ValidationLinkTile href="/merchant-lab" label="Merchant Profiles" summary={data.validation.merchantProfiles} />
