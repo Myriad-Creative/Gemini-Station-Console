@@ -1054,7 +1054,7 @@ export default function ModWorkshop({
             <label>
               <div className="label mb-2">Rarity</div>
               <select className="select w-full" value={rarityFilter} onChange={(event) => setRarityFilter(event.target.value)}>
-                <option value="">All rarities</option>
+                <option value="">All</option>
                 {Object.entries(RARITY_LABEL).map(([rarityValue, rarityLabel]) => (
                   <option key={`filter-rarity-${rarityValue}`} value={rarityValue}>
                     {rarityLabel}
@@ -1065,7 +1065,7 @@ export default function ModWorkshop({
             <label>
               <div className="label mb-2">Mod Type</div>
               <select className="select w-full" value={slotFilter} onChange={(event) => setSlotFilter(event.target.value)}>
-                <option value="">All types</option>
+                <option value="">All</option>
                 {MOD_SLOT_OPTIONS.map((slot) => (
                   <option key={`filter-slot-${slot}`} value={slot}>
                     {slot}
@@ -1782,102 +1782,6 @@ export default function ModWorkshop({
                 </div>
               </div>
 
-              <div className="card space-y-4">
-                <ModIconField
-                  label="Icon"
-                  value={selectedSyncedMod.icon}
-                  slot={selectedSyncedMod.slot}
-                  onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
-                  iconOptions={availableModIcons}
-                  loading={modIconsLoading}
-                  status={modIconStatus}
-                  version={sharedDataVersion}
-                  helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
-                />
-              </div>
-
-              <div className="card space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold">Abilities</h2>
-                    <div className="text-xs text-white/50">
-                      Up to {MOD_MAX_ABILITIES} abilities. The first ability is included for free. Each additional ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.
-                    </div>
-                  </div>
-                  <button
-                    className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-                    disabled={selectedSyncedMod.abilities.length >= MOD_MAX_ABILITIES}
-                    onClick={() =>
-                      updateSelected((draft) => ({
-                        ...draft,
-                        abilities: [...draft.abilities, createModAbilityDraft()],
-                      }), { autoBalance: true, syncAllStatValuesToMax: true })
-                    }
-                  >
-                    Add Ability
-                  </button>
-                </div>
-
-                {selectedSyncedMod.abilities.length ? (
-                  <div className="space-y-3">
-                    {selectedSyncedMod.abilities.map((ability, abilityIndex) => (
-                      <div key={`${ability.id || "ability"}-${abilityIndex}`} className="space-y-3">
-                        <AbilityPickerField
-                          label={abilityIndex === 0 ? "Ability" : " "}
-                          value={ability.id}
-                          modSlot={selectedSyncedMod.slot}
-                          levelRequirement={selectedSyncedMod.levelRequirement}
-                          abilityOptions={effectiveAbilityOptions}
-                          version={sharedDataVersion}
-                          onFilterModsByAbility={filterModsByAbility}
-                          onChange={(value) => updateSelected((draft) => ({
-                            ...draft,
-                            abilities: draft.abilities.map((currentAbility, currentIndex) =>
-                              currentIndex === abilityIndex ? { ...currentAbility, id: value } : currentAbility,
-                            ),
-                          }), { autoBalance: true, syncAllStatValuesToMax: true })}
-                        />
-                        <div className="grid gap-3 md:grid-cols-[180px,auto]">
-                          <Field
-                            label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
-                            value={ability.budgetCost}
-                            inputMode="numeric"
-                            step={0.01}
-                            onChange={(value) => updateSelected((draft) => ({
-                              ...draft,
-                              abilities: draft.abilities.map((currentAbility, currentIndex) =>
-                                currentIndex === abilityIndex ? { ...currentAbility, budgetCost: value } : currentAbility,
-                              ),
-                            }), { autoBalance: true, syncAllStatValuesToMax: true })}
-                          />
-                          <div className="flex items-end">
-                            <button
-                              className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
-                              onClick={() =>
-                                updateSelected((draft) => ({
-                                  ...draft,
-                                  abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
-                                }), { autoBalance: true, syncAllStatValuesToMax: true })
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
-                    No abilities set on this mod.
-                  </div>
-                )}
-
-                <div className="text-xs text-white/50">
-                  Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array. The first ability is free, and each additional ability consumes at least {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity.
-                </div>
-              </div>
-
               <div className="card">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h2 className="text-lg font-semibold">Export Preview</h2>
@@ -1893,6 +1797,106 @@ export default function ModWorkshop({
           )}
         </div>
       )}
+
+      {selectedSyncedMod && editorMode === "editor" ? (
+        <div className="space-y-6 xl:col-start-2 xl:col-span-2 xl:min-w-0">
+          <div className="card space-y-4">
+            <ModIconField
+              label="Icon"
+              value={selectedSyncedMod.icon}
+              slot={selectedSyncedMod.slot}
+              onChange={(value) => updateSelected((draft) => ({ ...draft, icon: value }))}
+              iconOptions={availableModIcons}
+              loading={modIconsLoading}
+              status={modIconStatus}
+              version={sharedDataVersion}
+              helpText="Choose from the local assets/mods catalog. The gallery narrows automatically to the selected slot."
+            />
+          </div>
+
+          <div className="card space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Abilities</h2>
+                <div className="text-xs text-white/50">
+                  Up to {MOD_MAX_ABILITIES} abilities. The first ability is included for free. Each additional ability consumes {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} of a full stat slot, plus any extra slot cost you enter.
+                </div>
+              </div>
+              <button
+                className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                disabled={selectedSyncedMod.abilities.length >= MOD_MAX_ABILITIES}
+                onClick={() =>
+                  updateSelected((draft) => ({
+                    ...draft,
+                    abilities: [...draft.abilities, createModAbilityDraft()],
+                  }), { autoBalance: true, syncAllStatValuesToMax: true })
+                }
+              >
+                Add Ability
+              </button>
+            </div>
+
+            {selectedSyncedMod.abilities.length ? (
+              <div className="space-y-3">
+                {selectedSyncedMod.abilities.map((ability, abilityIndex) => (
+                  <div key={`${ability.id || "ability"}-${abilityIndex}`} className="space-y-3">
+                    <AbilityPickerField
+                      label={abilityIndex === 0 ? "Ability" : " "}
+                      value={ability.id}
+                      modSlot={selectedSyncedMod.slot}
+                      levelRequirement={selectedSyncedMod.levelRequirement}
+                      abilityOptions={effectiveAbilityOptions}
+                      version={sharedDataVersion}
+                      onFilterModsByAbility={filterModsByAbility}
+                      onChange={(value) => updateSelected((draft) => ({
+                        ...draft,
+                        abilities: draft.abilities.map((currentAbility, currentIndex) =>
+                          currentIndex === abilityIndex ? { ...currentAbility, id: value } : currentAbility,
+                        ),
+                      }), { autoBalance: true, syncAllStatValuesToMax: true })}
+                    />
+                    <div className="grid gap-3 md:grid-cols-[180px,auto]">
+                      <Field
+                        label={abilityIndex === 0 ? "Extra Slot Cost" : " "}
+                        value={ability.budgetCost}
+                        inputMode="numeric"
+                        step={0.01}
+                        onChange={(value) => updateSelected((draft) => ({
+                          ...draft,
+                          abilities: draft.abilities.map((currentAbility, currentIndex) =>
+                            currentIndex === abilityIndex ? { ...currentAbility, budgetCost: value } : currentAbility,
+                          ),
+                        }), { autoBalance: true, syncAllStatValuesToMax: true })}
+                      />
+                      <div className="flex items-end">
+                        <button
+                          className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                          onClick={() =>
+                            updateSelected((draft) => ({
+                              ...draft,
+                              abilities: draft.abilities.filter((_, currentIndex) => currentIndex !== abilityIndex),
+                            }), { autoBalance: true, syncAllStatValuesToMax: true })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                No abilities set on this mod.
+              </div>
+            )}
+
+            <div className="text-xs text-white/50">
+              Ability rows are authoring-only budget inputs. Exported `Mods.json` still writes only the ability ids array. The first ability is free, and each additional ability consumes at least {MOD_BASE_ABILITY_SLOT_COST.toFixed(2)} slot capacity.
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedSyncedMod && editorMode === "editor" ? (
         <aside className="space-y-6 xl:min-w-0">
@@ -1943,26 +1947,29 @@ export default function ModWorkshop({
           </div>
 
           <div className="card space-y-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),auto] md:items-start">
               <div>
                 <h2 className="text-lg font-semibold">Stats</h2>
-                <div className="text-xs text-white/50">
-                  This rarity supports up to {selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS} stats.
-                  Fewer stats are valid. The first ability is free, and additional abilities consume slot capacity and lower the live stat caps automatically.
-                </div>
               </div>
-              <button
-                className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-                disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
-                onClick={() =>
-                  updateSelected((draft) => ({
-                    ...draft,
-                    stats: [...draft.stats, { key: "", value: "" }],
-                  }), { autoBalance: true, syncAllStatValuesToMax: true })
-                }
-              >
-                Add Stat
-              </button>
+              <div className="md:justify-self-end">
+                <button
+                  className="whitespace-nowrap rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                  disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
+                  onClick={() =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      stats: [...draft.stats, { key: "", value: "" }],
+                    }), { autoBalance: true, syncAllStatValuesToMax: true })
+                  }
+                >
+                  Add Stat
+                </button>
+              </div>
+            </div>
+
+            <div className="text-xs text-white/50">
+              This rarity supports up to {selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS} stats.
+              Fewer stats are valid. The first ability is free, and additional abilities consume slot capacity and lower the live stat caps automatically.
             </div>
 
             <div className="space-y-3">
@@ -1979,7 +1986,7 @@ export default function ModWorkshop({
                 const slotMultiplier = slotIndex >= 0 ? selectedBudget?.slotProfile?.[slotIndex] : undefined;
                 return (
                   <div key={`${entry.key || "stat"}-${statIndex}`} className="space-y-2">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),180px,auto]">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr),96px,auto] md:items-end">
                       <SelectField
                         label={statIndex === 0 ? "Stat Key" : " "}
                         value={entry.key}

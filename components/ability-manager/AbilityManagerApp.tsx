@@ -922,27 +922,6 @@ export default function AbilityManagerApp() {
             </div>
           </div>
 
-          <div className="card space-y-4">
-            <div className="text-lg font-semibold text-white">Validation</div>
-            {selectedAbility ? (
-              selectedIssues.length ? (
-                <div className="space-y-3">
-                  {selectedIssues.map((issue, index) => (
-                    <div key={`${issue.field}-${index}`} className={`rounded-xl border px-3 py-3 ${issueTone(issue.level)}`}>
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em]">{issue.level}</div>
-                      <div className="mt-2 text-sm">{issue.message}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
-                  no issues
-                </div>
-              )
-            ) : (
-              <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">Select an ability to review validation.</div>
-            )}
-          </div>
         </aside>
 
         <div className={`space-y-6 xl:min-w-0 ${selectedAbility ? "" : "xl:col-span-2"}`}>
@@ -1393,84 +1372,21 @@ export default function AbilityManagerApp() {
               </div>
             </Section>
 
-            <Section title="JSON Link Status Effects" description="Manage JSON-linked status effects and compare them against the resolved runtime links for this ability.">
-              <div className="space-y-4">
+            <Section title="Validation" description="Review the current draft warnings and errors before exporting or saving it.">
+              {selectedIssues.length ? (
                 <div className="space-y-3">
-                  <div className="label">JSON-linked Status Effects</div>
-                  <input
-                    className="input"
-                    value={statusEffectSearch}
-                    placeholder="Search status effects by name..."
-                    onChange={(event) => setStatusEffectSearch(event.target.value)}
-                  />
-                  <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
-                    {filteredStatusEffectOptions.length ? (
-                      filteredStatusEffectOptions.map((effect) => {
-                        const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
-                        return (
-                          <label
-                            key={effect.numericId}
-                            className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
-                          >
-                            <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedStatusEffect(effect.numericId, event.target.checked)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 flex flex-wrap items-center gap-2">
-                                  <div className="truncate text-sm font-medium text-white">{effect.name}</div>
-                                  {effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect) ? (
-                                    <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
-                                  ) : null}
-                                </div>
-                                <div className="shrink-0 text-right text-xs text-white/45">
-                                  {effect.numericId} · {effect.effectId || "no properties.id"}
-                                </div>
-                              </div>
-                              {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
-                            </div>
-                          </label>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
-                        No status effects match the current search.
-                      </div>
-                    )}
-                  </div>
+                  {selectedIssues.map((issue, index) => (
+                    <div key={`${issue.field}-${index}`} className={`rounded-xl border px-3 py-3 ${issueTone(issue.level)}`}>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em]">{issue.level}</div>
+                      <div className="mt-2 text-sm">{issue.message}</div>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="space-y-3">
-                  <div className="label">Resolved Effect Links</div>
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                    {selectedLinkedEffects.length ? (
-                      <div className="space-y-2">
-                        {selectedLinkedEffects.map((link) => (
-                          <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
-                                <div className="mt-1 text-xs text-white/45">
-                                  {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
-                                </div>
-                              </div>
-                              {link.sources.includes("json") ? (
-                                <button
-                                  type="button"
-                                  className="shrink-0 rounded border border-red-400/25 px-2.5 py-1 text-xs text-red-100 hover:bg-red-400/10"
-                                  onClick={() => setSelectedStatusEffect(link.numericId, false)}
-                                >
-                                  Remove
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
-                    )}
-                  </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-4 text-sm text-emerald-100">
+                  no issues
                 </div>
-              </div>
+              )}
             </Section>
 
             <Section title="Mods Using This Ability" description="Review every mod that currently points at this ability from the live mod workspace.">
@@ -1557,6 +1473,86 @@ export default function AbilityManagerApp() {
               ) : (
                 <div className="text-sm text-white/45">No mods currently include this ability.</div>
               )}
+            </Section>
+
+            <Section title="JSON Link Status Effects" description="Manage JSON-linked status effects and compare them against the resolved runtime links for this ability.">
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <div className="label">JSON-linked Status Effects</div>
+                  <input
+                    className="input"
+                    value={statusEffectSearch}
+                    placeholder="Search status effects by name..."
+                    onChange={(event) => setStatusEffectSearch(event.target.value)}
+                  />
+                  <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
+                    {filteredStatusEffectOptions.length ? (
+                      filteredStatusEffectOptions.map((effect) => {
+                        const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
+                        return (
+                          <label
+                            key={effect.numericId}
+                            className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
+                          >
+                            <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedStatusEffect(effect.numericId, event.target.checked)} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                  <div className="truncate text-sm font-medium text-white">{effect.name}</div>
+                                  {effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect) ? (
+                                    <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
+                                  ) : null}
+                                </div>
+                                <div className="shrink-0 text-right text-xs text-white/45">
+                                  {effect.numericId} · {effect.effectId || "no properties.id"}
+                                </div>
+                              </div>
+                              {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
+                            </div>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                        No status effects match the current search.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="label">Resolved Effect Links</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    {selectedLinkedEffects.length ? (
+                      <div className="space-y-2">
+                        {selectedLinkedEffects.map((link) => (
+                          <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
+                                <div className="mt-1 text-xs text-white/45">
+                                  {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
+                                </div>
+                              </div>
+                              {link.sources.includes("json") ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded border border-red-400/25 px-2.5 py-1 text-xs text-red-100 hover:bg-red-400/10"
+                                  onClick={() => setSelectedStatusEffect(link.numericId, false)}
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </Section>
           </aside>
         ) : null}
