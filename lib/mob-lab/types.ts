@@ -15,6 +15,7 @@ export interface MobDraft {
   sourceIndex: number;
   id: string;
   display_name: string;
+  meta_description: string;
   scene: string;
   sprite: string;
   faction: string;

@@ -240,7 +240,7 @@ export default function MobLabApp() {
     const filtered = (workspace?.mobs ?? [])
       .filter((mob) => {
         if (!query) return true;
-        const haystack = [mob.id, mob.display_name, mob.faction, mob.ai_type, mob.scene, mob.sprite].join(" ").toLowerCase();
+        const haystack = [mob.id, mob.display_name, mob.meta_description, mob.faction, mob.ai_type, mob.scene, mob.sprite].join(" ").toLowerCase();
         return haystack.includes(query);
       })
       .filter((mob) => (factionFilter ? mob.faction.trim() === factionFilter : true))
@@ -838,6 +838,16 @@ export default function MobLabApp() {
                         </div>
                       </div>
                     ) : null}
+                    <div className="lg:col-span-2 xl:col-span-3">
+                      <div className="label">Meta Description</div>
+                      <textarea
+                        className="input mt-1 min-h-28"
+                        value={selectedMob.meta_description}
+                        placeholder="Console-only notes about where this mob is used, where it appears, encounter context, or location details."
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, meta_description: event.target.value }))}
+                      />
+                      <div className="mt-2 text-xs text-white/45">Console-only field. This is not exported into the live game JSON.</div>
+                    </div>
                   </div>
                 </Section>
 
