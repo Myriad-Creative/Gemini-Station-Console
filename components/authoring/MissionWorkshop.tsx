@@ -67,6 +67,8 @@ type LookupOption = {
   meta?: string;
 };
 
+type IssueFilter = "all" | "error" | "warning";
+
 export default function MissionWorkshop({
   missions,
   onChange,
@@ -88,6 +90,7 @@ export default function MissionWorkshop({
   const [arcFilter, setArcFilter] = useState(FILTER_ALL);
   const [tagFilter, setTagFilter] = useState(FILTER_ALL);
   const [modeFilter, setModeFilter] = useState(FILTER_ALL);
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
   const [status, setStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
   const [items, setItems] = useState<Item[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
@@ -149,6 +152,17 @@ export default function MissionWorkshop({
   const selectedMission = missions[clampedSelectedIndex] ?? null;
 
   const validation = useMemo(() => validateMissionDrafts(missions, knownMissionIds), [knownMissionIds, missions]);
+  const issueFlagsByIndex = useMemo(() => {
+    const next = new Map<number, { error: boolean; warning: boolean }>();
+    for (const message of validation) {
+      if (typeof message.draftIndex !== "number") continue;
+      const current = next.get(message.draftIndex) ?? { error: false, warning: false };
+      if (message.level === "error") current.error = true;
+      if (message.level === "warning") current.warning = true;
+      next.set(message.draftIndex, current);
+    }
+    return next;
+  }, [validation]);
   const selectedValidation = useMemo(
     () => validation.filter((message) => message.draftIndex === clampedSelectedIndex),
     [clampedSelectedIndex, validation],
@@ -212,7 +226,7 @@ export default function MissionWorkshop({
   const filteredMissions = useMemo(() => {
     return missions
       .map((mission, index) => ({ mission, index }))
-      .filter(({ mission }) => {
+      .filter(({ mission, index }) => {
         const modes = mission.steps.map((step) => step.mode.trim().toLowerCase()).filter(Boolean);
         const target = [
           mission.id,
@@ -238,13 +252,19 @@ export default function MissionWorkshop({
         if (arcFilter !== FILTER_ALL && !mission.arcs.includes(arcFilter)) return false;
         if (tagFilter !== FILTER_ALL && !mission.tags.includes(tagFilter)) return false;
         if (modeFilter !== FILTER_ALL && !modes.includes(modeFilter)) return false;
+        if (issueFilter !== "all") {
+          const flags = issueFlagsByIndex.get(index);
+          if (issueFilter === "error" && !flags?.error) return false;
+          if (issueFilter === "warning" && !flags?.warning) return false;
+        }
         return true;
       });
-  }, [arcFilter, deferredSearch, factionFilter, levelFilter, missions, modeFilter, tagFilter]);
+  }, [arcFilter, deferredSearch, factionFilter, issueFilter, issueFlagsByIndex, levelFilter, missions, modeFilter, tagFilter]);
 
-  const errorCount = validation.filter((message) => message.level === "error").length;
-  const warningCount = validation.length - errorCount;
+  const errorCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((flags) => flags.error).length, [issueFlagsByIndex]);
+  const warningCount = useMemo(() => Array.from(issueFlagsByIndex.values()).filter((flags) => flags.warning).length, [issueFlagsByIndex]);
   const hasActiveFilters =
+    issueFilter !== "all" ||
     factionFilter !== FILTER_ALL ||
     levelFilter !== FILTER_ALL ||
     arcFilter !== FILTER_ALL ||
@@ -372,6 +392,7 @@ export default function MissionWorkshop({
   }
 
   function resetFilters() {
+    setIssueFilter("all");
     setFactionFilter(FILTER_ALL);
     setLevelFilter(FILTER_ALL);
     setArcFilter(FILTER_ALL);
@@ -422,15 +443,37 @@ export default function MissionWorkshop({
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-100">
+            <button
+              type="button"
+              className={`rounded border px-3 py-2 text-left transition ${
+                issueFilter === "error"
+                  ? "border-red-300/60 bg-red-500/20 text-red-50"
+                  : "border-red-400/30 bg-red-500/10 text-red-100 hover:bg-red-500/15"
+              }`}
+              onClick={() => setIssueFilter((current) => (current === "error" ? "all" : "error"))}
+            >
               <div className="label text-red-100/80">Errors</div>
               <div className="mt-1 text-lg font-semibold">{errorCount}</div>
-            </div>
-            <div className="rounded border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-yellow-100">
+            </button>
+            <button
+              type="button"
+              className={`rounded border px-3 py-2 text-left transition ${
+                issueFilter === "warning"
+                  ? "border-yellow-300/60 bg-yellow-500/20 text-yellow-50"
+                  : "border-yellow-400/30 bg-yellow-500/10 text-yellow-100 hover:bg-yellow-500/15"
+              }`}
+              onClick={() => setIssueFilter((current) => (current === "warning" ? "all" : "warning"))}
+            >
               <div className="label text-yellow-100/80">Warnings</div>
               <div className="mt-1 text-lg font-semibold">{warningCount}</div>
-            </div>
+            </button>
           </div>
+
+          {issueFilter !== "all" ? (
+            <div className="rounded border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/65">
+              Filtering missions with {issueFilter === "error" ? "errors" : "warnings"}.
+            </div>
+          ) : null}
 
           {status.message ? (
             status.tone === "neutral" ? (
@@ -444,6 +487,9 @@ export default function MissionWorkshop({
             {filteredMissions.length ? (
               filteredMissions.map(({ mission, index }) => {
                 const firstMode = mission.steps[0]?.mode.trim().toLowerCase() || "single";
+                const flags = issueFlagsByIndex.get(index);
+                const hasErrors = Boolean(flags?.error);
+                const hasWarnings = Boolean(flags?.warning);
                 return (
                   <button
                     key={`${mission.id || "mission"}-${index}`}
@@ -452,7 +498,13 @@ export default function MissionWorkshop({
                     }`}
                     onClick={() => setSelectedIndex(index)}
                   >
-                    <div className="truncate font-medium">{mission.title || "Untitled mission"}</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 truncate font-medium">{mission.title || "Untitled mission"}</div>
+                      <div className="flex shrink-0 gap-2 text-[11px]">
+                        {hasErrors ? <span className="rounded bg-red-400/15 px-2 py-1 text-red-100">Errors</span> : null}
+                        {!hasErrors && hasWarnings ? <span className="rounded bg-yellow-300/15 px-2 py-1 text-yellow-100">Warnings</span> : null}
+                      </div>
+                    </div>
                     <div className="truncate text-xs text-white/60">{mission.id || "missing-id"}</div>
                     <div className="mt-1 truncate text-[11px] text-white/45">
                       {(mission.faction.trim() || "No faction") + " · "}Level {mission.level.trim() || "?"}
