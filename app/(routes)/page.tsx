@@ -400,13 +400,6 @@ export default function DashboardPage() {
       value: data.counts.holes,
       accent: data.counts.holes ? "text-yellow-200" : "text-white",
     },
-    {
-      href: "/reports/outliers",
-      label: "Outliers",
-      description: "Stat outliers and suspicious mod rolls.",
-      value: data.counts.outliers,
-      accent: data.counts.outliers ? "text-yellow-200" : "text-white",
-    },
   ];
 
   const issueCount = data.errors.length + data.warnings.length;
