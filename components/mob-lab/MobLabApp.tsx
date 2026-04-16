@@ -466,6 +466,52 @@ export default function MobLabApp() {
     }
   }
 
+  async function handleSaveAllMobsToBuild() {
+    if (!workspace) return;
+    if (hasWorkspaceErrors) {
+      setStatus({
+        tone: "error",
+        message: "Fix mob validation errors before saving mobs.json into the configured game build.",
+        dismissAfterMs: null,
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/mobs/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspace,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save mobs.json into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "success",
+        message: `Saved all ${workspace.mobs.length} mobs into the live mobs.json file.`,
+        dismissAfterMs: 10000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
+  }
+
   function handleCurrentMobCopy() {
     if (!selectedMob) return;
     try {
@@ -504,6 +550,9 @@ export default function MobLabApp() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllMobsToBuild()}>
+            Save All Mobs To Build
+          </button>
           <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
             Download Updated mobs.json
           </button>
