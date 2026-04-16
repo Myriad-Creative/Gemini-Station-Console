@@ -778,8 +778,8 @@ export default function AbilityManagerApp() {
         <SummaryCard label="Warnings / Errors" value={`${summary.warningCount} / ${summary.errorCount}`} accent={summary.errorCount ? "text-red-200" : undefined} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)_380px]">
+        <aside className="space-y-6 xl:min-w-0">
           <div className="card h-fit space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -945,7 +945,7 @@ export default function AbilityManagerApp() {
           </div>
         </aside>
 
-        <div className="space-y-6">
+        <div className={`space-y-6 xl:min-w-0 ${selectedAbility ? "" : "xl:col-span-2"}`}>
           {selectedAbility ? (
             <>
               <Section
@@ -1282,183 +1282,6 @@ export default function AbilityManagerApp() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                  <div className="space-y-3">
-                    <div className="label">JSON-linked Status Effects</div>
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <input
-                        className="input"
-                        value={statusEffectSearch}
-                        placeholder="Search status effects by name..."
-                        onChange={(event) => setStatusEffectSearch(event.target.value)}
-                      />
-                      <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-                        {filteredStatusEffectOptions.length ? (
-                          filteredStatusEffectOptions.map((effect) => {
-                            const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
-                            return (
-                              <label
-                                key={effect.numericId}
-                                className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
-                              >
-                                <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedStatusEffect(effect.numericId, event.target.checked)} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0 flex flex-wrap items-center gap-2">
-                                      <div className="truncate text-sm font-medium text-white">{effect.name}</div>
-                                      {effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect) ? (
-                                        <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
-                                      ) : null}
-                                    </div>
-                                    <div className="shrink-0 text-right text-xs text-white/45">
-                                      {effect.numericId} · {effect.effectId || "no properties.id"}
-                                    </div>
-                                  </div>
-                                  {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
-                                </div>
-                              </label>
-                            );
-                          })
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
-                            No status effects match the current search.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="label">Resolved Effect Links</div>
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      {selectedLinkedEffects.length ? (
-                        <div className="space-y-2">
-                          {selectedLinkedEffects.map((link) => (
-                            <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
-                                  <div className="mt-1 text-xs text-white/45">
-                                    {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
-                                  </div>
-                                </div>
-                                {link.sources.includes("json") ? (
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded border border-red-400/25 px-2.5 py-1 text-xs text-red-100 hover:bg-red-400/10"
-                                    onClick={() => setSelectedStatusEffect(link.numericId, false)}
-                                  >
-                                    Remove
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="label">Mods Using This Ability</div>
-                    {database?.modCatalogAvailable && !selectedAbilityExcludedFromModChecks && selectedLinkedMods.length ? (
-                      <div className="text-xs text-white/45">
-                        {filteredLinkedMods.length} of {selectedLinkedMods.length} linked mod{selectedLinkedMods.length === 1 ? "" : "s"}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                    {!database?.modCatalogAvailable ? (
-                      <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
-                    ) : selectedAbilityExcludedFromModChecks ? (
-                      <div className="text-sm text-white/45">Auto Cannon is excluded from orphan mod checks because it is the default ship ability.</div>
-                    ) : selectedLinkedMods.length ? (
-                      <div className="space-y-3">
-                        <input
-                          className="input"
-                          value={linkedModSearch}
-                          onChange={(event) => setLinkedModSearch(event.target.value)}
-                          placeholder="Search linked mods by name, ID, description, or slot..."
-                        />
-                        {selectedUnderleveledModCount > 0 ? (
-                          <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
-                            {selectedUnderleveledModCount} linked mod{selectedUnderleveledModCount === 1 ? "" : "s"} fall below the current Minimum Mod Level of{" "}
-                            {selectedMinimumModLevel}.
-                          </div>
-                        ) : null}
-                        {selectedSlotMismatchModCount > 0 ? (
-                          <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">
-                            {selectedSlotMismatchModCount} linked mod{selectedSlotMismatchModCount === 1 ? "" : "s"} do not match this ability's Primary or Secondary Mod Slot.
-                          </div>
-                        ) : null}
-                        {filteredLinkedMods.length ? (
-                          <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
-                            {filteredLinkedMods.map((mod) => {
-                              const isBelowMinimum = selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel;
-                              const hasSlotMismatch =
-                                (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
-                                !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot);
-
-                              return (
-                                <div
-                                  key={mod.id}
-                                  className={`rounded-lg border px-3 py-3 ${
-                                    isBelowMinimum
-                                      ? "border-yellow-300/25 bg-yellow-300/10"
-                                      : hasSlotMismatch
-                                        ? "border-amber-300/25 bg-amber-300/10"
-                                        : "border-white/5"
-                                  }`}
-                                >
-                                  <div className="flex items-start gap-3">
-                                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={buildIconSrc(mod.icon, mod.id, mod.name || "Mod", sharedDataVersion)}
-                                        alt=""
-                                        className="h-full w-full object-cover"
-                                      />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <div className="truncate text-base font-medium text-white">{mod.name}</div>
-                                          <div className="mt-1 text-xs text-white/45">
-                                            {mod.id} · {mod.slot || "Unknown slot"} · Lvl {mod.levelRequirement} · Rarity {mod.rarity}
-                                          </div>
-                                        </div>
-                                        <div className="flex flex-wrap justify-end gap-2 text-xs">
-                                          {isBelowMinimum ? (
-                                            <div className="rounded bg-yellow-300/15 px-2 py-1 font-medium text-yellow-100">Below minimum</div>
-                                          ) : null}
-                                          {hasSlotMismatch ? (
-                                            <div className="rounded bg-amber-300/15 px-2 py-1 font-medium text-amber-100">Slot mismatch</div>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                      {mod.description ? <div className="mt-2 text-sm leading-6 text-white/60">{mod.description}</div> : null}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
-                            No linked mods matched this search.
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-white/45">No mods currently include this ability.</div>
-                    )}
-                  </div>
-                </div>
-
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="label">Orphan Status Effects</div>
@@ -1525,37 +1348,6 @@ export default function AbilityManagerApp() {
                 </div>
               </Section>
 
-              <Section title="Preview" description="Quick view of the current ability icon, description, and linked status-effect behavior.">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <div className="flex flex-col gap-5 md:flex-row md:items-start">
-                    <img src={previewIcon} alt="" className="h-24 w-24 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-3xl font-semibold text-white">{selectedAbility.name || "Unnamed Ability"}</div>
-                      <div className="mt-2 font-mono text-xs text-white/55">{selectedAbility.id || "missing-id"}</div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/65">
-                        <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
-                        {selectedThreatTypeOption ? <span className="rounded bg-white/5 px-2 py-1">Threat {selectedThreatTypeOption.label}</span> : null}
-                        {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {formatDurationSummary(selectedAbility.cooldown) || selectedAbility.cooldown}</span> : null}
-                        {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
-                        {selectedMinimumModLevel !== null ? <span className="rounded bg-white/5 px-2 py-1">Min Mod Lvl {selectedMinimumModLevel}</span> : null}
-                        {selectedPrimaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Primary {selectedPrimaryModSlotValue}</span> : null}
-                        {selectedSecondaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Secondary {selectedSecondaryModSlotValue}</span> : null}
-                      </div>
-                      {selectedAbility.description.trim() ? <div className="mt-4 max-w-3xl text-sm leading-6 text-white/70">{selectedAbility.description}</div> : null}
-                      {selectedLinkedEffects.length ? (
-                        <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/70">
-                          {selectedLinkedEffects.map((link) => (
-                            <span key={`${link.numericId}-${link.sources.join("-")}`} className="rounded bg-white/5 px-2 py-1">
-                              {link.effectName || `Status ${link.numericId}`} · {sourceLabel(link.sources)}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </Section>
-
               <Section title="Export Preview" description="The full ability bundle still exports as indexed per-file JSON, matching the real game data layout.">
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" onClick={() => void handleCopyIndexJson()}>
@@ -1576,6 +1368,198 @@ export default function AbilityManagerApp() {
             </Section>
           )}
         </div>
+
+        {selectedAbility ? (
+          <aside className="space-y-6 xl:min-w-0">
+            <Section title="Preview" description="Quick view of the current ability icon, description, and key runtime tags.">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex items-start gap-4">
+                  <img src={previewIcon} alt="" className="h-20 w-20 shrink-0 rounded-2xl border border-white/10 bg-[#07111d] object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-semibold text-white">{selectedAbility.name || "Unnamed Ability"}</div>
+                    <div className="mt-2 font-mono text-xs text-white/55">{selectedAbility.id || "missing-id"}</div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/65">
+                      <span className="rounded bg-white/5 px-2 py-1 capitalize">{inferAbilityDeliveryType(selectedAbility)}</span>
+                      {selectedThreatTypeOption ? <span className="rounded bg-white/5 px-2 py-1">Threat {selectedThreatTypeOption.label}</span> : null}
+                      {selectedAbility.cooldown.trim() ? <span className="rounded bg-white/5 px-2 py-1">Cooldown {formatDurationSummary(selectedAbility.cooldown) || selectedAbility.cooldown}</span> : null}
+                      {selectedAbility.energyCost.trim() ? <span className="rounded bg-white/5 px-2 py-1">Energy {selectedAbility.energyCost}</span> : null}
+                      {selectedMinimumModLevel !== null ? <span className="rounded bg-white/5 px-2 py-1">Min Mod Lvl {selectedMinimumModLevel}</span> : null}
+                      {selectedPrimaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Primary {selectedPrimaryModSlotValue}</span> : null}
+                      {selectedSecondaryModSlotValue ? <span className="rounded bg-white/5 px-2 py-1">Secondary {selectedSecondaryModSlotValue}</span> : null}
+                    </div>
+                    {selectedAbility.description.trim() ? <div className="mt-4 text-sm leading-6 text-white/70">{selectedAbility.description}</div> : null}
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="JSON Link Status Effects" description="Manage JSON-linked status effects and compare them against the resolved runtime links for this ability.">
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <div className="label">JSON-linked Status Effects</div>
+                  <input
+                    className="input"
+                    value={statusEffectSearch}
+                    placeholder="Search status effects by name..."
+                    onChange={(event) => setStatusEffectSearch(event.target.value)}
+                  />
+                  <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
+                    {filteredStatusEffectOptions.length ? (
+                      filteredStatusEffectOptions.map((effect) => {
+                        const checked = selectedAbility.appliesEffectIds.includes(String(effect.numericId));
+                        return (
+                          <label
+                            key={effect.numericId}
+                            className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/5 px-4 py-3 hover:bg-white/[0.03]"
+                          >
+                            <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedStatusEffect(effect.numericId, event.target.checked)} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex flex-wrap items-center gap-2">
+                                  <div className="truncate text-sm font-medium text-white">{effect.name}</div>
+                                  {effect.linkedAbilityCount === 0 && !isStatusEffectExcludedFromAbilityLinkChecks(effect) ? (
+                                    <span className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-100">Not linked</span>
+                                  ) : null}
+                                </div>
+                                <div className="shrink-0 text-right text-xs text-white/45">
+                                  {effect.numericId} · {effect.effectId || "no properties.id"}
+                                </div>
+                              </div>
+                              {effect.description.trim() ? <div className="mt-2 text-sm leading-5 text-white/60">{effect.description}</div> : null}
+                            </div>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+                        No status effects match the current search.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="label">Resolved Effect Links</div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    {selectedLinkedEffects.length ? (
+                      <div className="space-y-2">
+                        {selectedLinkedEffects.map((link) => (
+                          <div key={`${link.numericId}-${link.sources.join("-")}`} className="rounded-lg border border-white/5 px-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-white">{link.effectName || link.effectId || `Status ${link.numericId}`}</div>
+                                <div className="mt-1 text-xs text-white/45">
+                                  {link.numericId} · {sourceLabel(link.sources)} {link.missing ? "· Missing from status effect files" : ""}
+                                </div>
+                              </div>
+                              {link.sources.includes("json") ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded border border-red-400/25 px-2.5 py-1 text-xs text-red-100 hover:bg-red-400/10"
+                                  onClick={() => setSelectedStatusEffect(link.numericId, false)}
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white/45">No linked status effects detected for this ability yet.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Mods Using This Ability" description="Review every mod that currently points at this ability from the live mod workspace.">
+              {!database?.modCatalogAvailable ? (
+                <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
+              ) : selectedAbilityExcludedFromModChecks ? (
+                <div className="text-sm text-white/45">Auto Cannon is excluded from orphan mod checks because it is the default ship ability.</div>
+              ) : selectedLinkedMods.length ? (
+                <div className="space-y-3">
+                  <div className="text-xs text-white/45">
+                    {filteredLinkedMods.length} of {selectedLinkedMods.length} linked mod{selectedLinkedMods.length === 1 ? "" : "s"}
+                  </div>
+                  <input
+                    className="input"
+                    value={linkedModSearch}
+                    onChange={(event) => setLinkedModSearch(event.target.value)}
+                    placeholder="Search linked mods by name, ID, description, or slot..."
+                  />
+                  {selectedUnderleveledModCount > 0 ? (
+                    <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+                      {selectedUnderleveledModCount} linked mod{selectedUnderleveledModCount === 1 ? "" : "s"} fall below the current Minimum Mod Level of{" "}
+                      {selectedMinimumModLevel}.
+                    </div>
+                  ) : null}
+                  {selectedSlotMismatchModCount > 0 ? (
+                    <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">
+                      {selectedSlotMismatchModCount} linked mod{selectedSlotMismatchModCount === 1 ? "" : "s"} do not match this ability's Primary or Secondary Mod Slot.
+                    </div>
+                  ) : null}
+                  {filteredLinkedMods.length ? (
+                    <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
+                      {filteredLinkedMods.map((mod) => {
+                        const isBelowMinimum = selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel;
+                        const hasSlotMismatch =
+                          (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
+                          !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot);
+
+                        return (
+                          <div
+                            key={mod.id}
+                            className={`rounded-lg border px-3 py-3 ${
+                              isBelowMinimum
+                                ? "border-yellow-300/25 bg-yellow-300/10"
+                                : hasSlotMismatch
+                                  ? "border-amber-300/25 bg-amber-300/10"
+                                  : "border-white/5"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={buildIconSrc(mod.icon, mod.id, mod.name || "Mod", sharedDataVersion)}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-base font-medium text-white">{mod.name}</div>
+                                    <div className="mt-1 text-xs text-white/45">
+                                      {mod.id} · {mod.slot || "Unknown slot"} · Lvl {mod.levelRequirement} · Rarity {mod.rarity}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap justify-end gap-2 text-xs">
+                                    {isBelowMinimum ? <div className="rounded bg-yellow-300/15 px-2 py-1 font-medium text-yellow-100">Below minimum</div> : null}
+                                    {hasSlotMismatch ? <div className="rounded bg-amber-300/15 px-2 py-1 font-medium text-amber-100">Slot mismatch</div> : null}
+                                  </div>
+                                </div>
+                                {mod.description ? <div className="mt-2 text-sm leading-6 text-white/60">{mod.description}</div> : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+                      No linked mods matched this search.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-white/45">No mods currently include this ability.</div>
+              )}
+            </Section>
+          </aside>
+        ) : null}
       </div>
     </div>
   );
