@@ -1917,7 +1917,13 @@ export default function ModWorkshop({
               })}
             </div>
           </div>
+        </aside>
+      ) : null}
 
+      {selectedSyncedMod && editorMode === "editor" ? (
+        <div className="space-y-6 xl:min-w-0">
+          <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
+          <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact />
           <div className="card space-y-4">
             <div>
               <div className="label mb-2">Mod extra JSON (merged at export)</div>
@@ -1929,13 +1935,6 @@ export default function ModWorkshop({
               />
             </div>
           </div>
-        </aside>
-      ) : null}
-
-      {selectedSyncedMod && editorMode === "editor" ? (
-        <div className="space-y-6 xl:min-w-0">
-          <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
-          <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact />
           {selectedSyncedMod.generatorMeta ? <GeneratorMetaCard mod={selectedSyncedMod} /> : null}
           <div className="card">
             <div className="mb-3 flex items-center justify-between gap-3">
