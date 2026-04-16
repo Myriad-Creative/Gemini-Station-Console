@@ -1477,11 +1477,14 @@ export default function AbilityManagerApp() {
                         const hasSlotMismatch =
                           (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
                           !abilityMatchesModSlot(selectedPrimaryModSlotValue, selectedSecondaryModSlotValue, mod.slot);
+                        const modManagerHref = `/mods/manager?mod=${encodeURIComponent(String(mod.id ?? ""))}`;
 
                         return (
-                          <div
+                          <Link
                             key={mod.id}
-                            className={`rounded-lg border px-3 py-3 ${
+                            href={modManagerHref}
+                            title={`Open ${mod.name || "this mod"} in Mod Manager`}
+                            className={`block rounded-lg border px-3 py-3 transition hover:bg-white/10 ${
                               isBelowMinimum
                                 ? "border-yellow-300/25 bg-yellow-300/10"
                                 : hasSlotMismatch
@@ -1514,7 +1517,7 @@ export default function AbilityManagerApp() {
                                 {mod.description ? <div className="mt-2 text-sm leading-6 text-white/60">{mod.description}</div> : null}
                               </div>
                             </div>
-                          </div>
+                          </Link>
                         );
                       })}
                     </div>

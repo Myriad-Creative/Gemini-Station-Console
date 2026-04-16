@@ -173,6 +173,13 @@ function normalizeAbilityId(value: number | string) {
   return Number.isFinite(numericValue) ? String(Math.trunc(numericValue)) : trimmed;
 }
 
+function normalizeModId(value: number | string | null | undefined) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const numericValue = Number(trimmed);
+  return Number.isFinite(numericValue) ? String(Math.trunc(numericValue)) : trimmed;
+}
+
 function hasAttachedAbility(mod: Pick<ModDraft, "abilities">) {
   return mod.abilities.some((ability) => ability.id.trim());
 }
@@ -388,6 +395,7 @@ export default function ModWorkshop({
   const [availableModIcons, setAvailableModIcons] = useState<ModIconOption[]>([]);
   const [modIconsLoading, setModIconsLoading] = useState(false);
   const [modIconStatus, setModIconStatus] = useState("");
+  const [selectedModRouteId, setSelectedModRouteId] = useState("");
 
   useEffect(() => {
     if (selectedIndex <= mods.length - 1) return;
@@ -603,6 +611,7 @@ export default function ModWorkshop({
     const summary = params.get("summary");
     const issue = params.get("issue");
     const ability = params.get("ability");
+    const mod = params.get("mod");
 
     setEditorMode("editor");
     setSearch("");
@@ -613,7 +622,16 @@ export default function ModWorkshop({
     setIssueFilter(issue === "error" || issue === "warning" ? issue : "all");
     setAbilityLinkFilter(summary === "missing" ? "missing" : "all");
     setAbilityUsageFilter(ability ? normalizeAbilityId(ability) : "");
+    setSelectedModRouteId(mod ? normalizeModId(mod) : "");
   }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (!selectedModRouteId) return;
+    const matchedIndex = mods.findIndex((mod) => normalizeModId(mod.id) === selectedModRouteId);
+    if (matchedIndex >= 0) {
+      setSelectedIndex(matchedIndex);
+    }
+  }, [mods, selectedModRouteId]);
 
   function resetFilters() {
     setIssueFilter("all");
