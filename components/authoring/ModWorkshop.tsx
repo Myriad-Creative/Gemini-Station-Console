@@ -945,7 +945,7 @@ export default function ModWorkshop({
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[300px,minmax(0,1fr),360px]">
+      <div className="grid gap-6 xl:grid-cols-[300px,minmax(0,1fr),340px]">
         <div className="space-y-6 xl:min-w-0">
         <div className="card h-fit space-y-4">
           <div className="space-y-1">
@@ -1166,11 +1166,6 @@ export default function ModWorkshop({
             )}
           </div>
 
-          {selectedSyncedMod ? <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." /> : null}
-
-          {selectedSyncedMod ? <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact /> : null}
-
-          {selectedSyncedMod?.generatorMeta ? <GeneratorMetaCard mod={selectedSyncedMod} /> : null}
         </div>
 
       </div>
@@ -1938,7 +1933,26 @@ export default function ModWorkshop({
       ) : null}
 
       {selectedSyncedMod && editorMode === "editor" ? (
-        <div className="space-y-6 xl:col-start-2 xl:col-span-2 xl:min-w-0">
+        <div className="space-y-6 xl:min-w-0">
+          <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mod." />
+          <BudgetSummaryCard title="Budget Summary" summary={selectedBudget} compact />
+          {selectedSyncedMod.generatorMeta ? <GeneratorMetaCard mod={selectedSyncedMod} /> : null}
+          <div className="card">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Export Preview</h2>
+              <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copyExportPreview}>
+                Copy Preview JSON
+              </button>
+            </div>
+            <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
+              {selectedExportPreview}
+            </pre>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedSyncedMod && editorMode === "editor" ? (
+        <div className="space-y-6 xl:col-span-2 xl:min-w-0">
           <div className="card space-y-4">
             <ModIconField
               label="Icon"
@@ -2035,17 +2049,94 @@ export default function ModWorkshop({
             </div>
           </div>
 
-          <div className="card">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Export Preview</h2>
-              <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copyExportPreview}>
-                Copy Preview JSON
-              </button>
+          <div className="card space-y-4">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),auto] md:items-start">
+              <div>
+                <h2 className="text-lg font-semibold">Stats</h2>
+              </div>
+              <div className="md:justify-self-end">
+                <button
+                  className="whitespace-nowrap rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
+                  disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
+                  onClick={() =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      stats: [...draft.stats, { key: "", value: "" }],
+                    }), { autoBalance: true, syncAllStatValuesToMax: true })
+                  }
+                >
+                  Add Stat
+                </button>
+              </div>
             </div>
-            <pre className="max-h-[70vh] overflow-auto rounded bg-black/30 p-4 text-xs text-white/80">
-              {selectedExportPreview}
-            </pre>
+
+            <div className="text-xs text-white/50">
+              This rarity supports up to {selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS} stats.
+              Fewer stats are valid. The first ability is free, and additional abilities consume slot capacity and lower the live stat caps automatically.
+            </div>
+
+            <div className="space-y-3">
+              {selectedSyncedMod.stats.map((entry, statIndex) => {
+                const levelRequirement = parseNumber(selectedSyncedMod.levelRequirement);
+                const maxAtLevel = levelRequirement !== undefined ? getModStatMaxAtRequiredLevel(entry.key, levelRequirement) : undefined;
+                const slotIndex = entry.key.trim()
+                  ? selectedSyncedMod.stats.slice(0, statIndex + 1).filter((stat) => stat.key.trim()).length - 1
+                  : -1;
+                const statSummary =
+                  slotIndex >= 0
+                    ? selectedBudget?.stats.find((stat) => stat.slotIndex === slotIndex && stat.key === entry.key.trim())
+                    : undefined;
+                const slotMultiplier = slotIndex >= 0 ? selectedBudget?.slotProfile?.[slotIndex] : undefined;
+                return (
+                  <div key={`${entry.key || "stat"}-${statIndex}`} className="space-y-2">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr),96px,auto] md:items-end">
+                      <SelectField
+                        label={statIndex === 0 ? "Stat Key" : " "}
+                        value={entry.key}
+                        options={buildStatOptions(entry.key)}
+                        onChange={(value) =>
+                          updateStat(statIndex, (current) => ({
+                            ...current,
+                            key: value,
+                          }), { fillBlankStatValues: true, syncAllStatValuesToMax: true })
+                        }
+                      />
+                      <Field
+                        label={statIndex === 0 ? "Value" : " "}
+                        value={entry.value}
+                        inputMode="numeric"
+                        step={getModStatBudgetConfig(entry.key)?.roundStep ?? 1}
+                        onChange={(value) => updateStat(statIndex, (current) => ({ ...current, value }))}
+                      />
+                      <div className="flex items-end">
+                        <button
+                          className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                          onClick={() =>
+                            updateSelected((draft) => ({
+                              ...draft,
+                              stats: draft.stats.filter((_, currentIndex) => currentIndex !== statIndex),
+                            }), { autoBalance: true, syncAllStatValuesToMax: true })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    {entry.key.trim() ? (
+                      <div className="text-xs text-white/50">
+                        {maxAtLevel !== undefined ? `Base level max: ${maxAtLevel}.` : "Set required level to calculate the per-level stat max."}{" "}
+                        {slotMultiplier !== undefined ? `Slot ${slotIndex + 1} profile share: ${slotMultiplier.toFixed(2)}.` : ""}
+                        {statSummary?.adjustedSlotMultiplier !== undefined ? ` Current share after abilities: ${statSummary.adjustedSlotMultiplier.toFixed(2)}.` : ""}
+                        {statSummary?.effectiveMaxValue !== undefined ? ` Default synced max: ${statSummary.effectiveMaxValue}.` : ""}
+                        {statSummary?.currentMaxValue !== undefined ? ` Current max: ${statSummary.currentMaxValue}.` : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
         </div>
       ) : null}
       </div>
