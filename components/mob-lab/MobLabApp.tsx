@@ -639,6 +639,9 @@ export default function MobLabApp() {
                   const hasErrors = issues.some((issue) => issue.level === "error");
                   const isDuplicate = duplicateIds.has(mob.id.trim());
                   const selected = selectedMob?.key === mob.key;
+                  const spriteSrc = mob.sprite.trim()
+                    ? buildIconSrc(mob.sprite || undefined, mob.id || "mob", mob.display_name || mob.id || "Mob", sharedDataVersion)
+                    : "";
 
                   return (
                     <button
@@ -651,18 +654,30 @@ export default function MobLabApp() {
                           : "border-white/10 bg-black/20 hover:border-cyan-300/25 hover:bg-white/[0.04]"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-base font-semibold text-white">{mob.display_name || mob.id || "Untitled Mob"}</div>
-                          <div className="mt-1 truncate text-xs text-white/50">{mob.id || "Missing ID"}</div>
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                          {spriteSrc ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={spriteSrc} alt={mob.display_name || mob.id || "Mob sprite"} className="h-full w-full object-contain" />
+                          ) : (
+                            <div className="px-2 text-center text-[11px] uppercase tracking-[0.12em] text-white/30">No Sprite</div>
+                          )}
                         </div>
-                        <div className="rounded border border-white/10 px-2 py-1 text-xs text-white/70">Lv {mob.level || "?"}</div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        {mob.faction ? <span className="badge">{mob.faction}</span> : null}
-                        {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
-                        {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
-                        {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-base font-semibold text-white">{mob.display_name || mob.id || "Untitled Mob"}</div>
+                              <div className="mt-1 truncate text-xs text-white/50">{mob.id || "Missing ID"}</div>
+                            </div>
+                            <div className="rounded border border-white/10 px-2 py-1 text-xs text-white/70">Lv {mob.level || "?"}</div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            {mob.faction ? <span className="badge">{mob.faction}</span> : null}
+                            {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
+                            {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
+                            {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}
+                          </div>
+                        </div>
                       </div>
                     </button>
                   );
