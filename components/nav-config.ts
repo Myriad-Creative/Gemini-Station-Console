@@ -49,6 +49,7 @@ const DATA_SECTION_LINKS: NavLink[] = [
   { href: "/data/map", label: "Map" },
   { href: "/data/routes", label: "Routes" },
   { href: "/data/tutorial", label: "Tutorial" },
+  { href: "/data/zones", label: "Zones" },
   { href: "/data/systems", label: "Systems" },
 ];
 

@@ -53,10 +53,16 @@ const DATA_SECTIONS = [
     keys: ["tutorialEntries", "tutorialTriggers"],
   },
   {
+    href: "/data/zones",
+    title: "Zones",
+    description: "Manage zone layouts, stage placements, mob spawns, and save live Zones.json updates back into the game root.",
+    keys: ["zones"],
+  },
+  {
     href: "/data/systems",
     title: "Systems",
-    description: "Manage ship stat descriptions, zones, stages, and hazard barrier profiles.",
-    keys: ["shipStatDescriptions", "zones", "stages", "hazardBarrierProfiles"],
+    description: "Manage ship stat descriptions, stage definitions, and hazard barrier profiles.",
+    keys: ["shipStatDescriptions", "stages", "hazardBarrierProfiles"],
   },
 ];
 
@@ -98,7 +104,7 @@ export default function DataDashboard() {
         <h1 className="page-title mb-2">Data</h1>
         <p className="max-w-4xl text-white/65">
           These editors read directly from the active Gemini Station local game root and are intended for non-mission JSON used by the Godot game:
-          map data, trade routes, tutorial info, ship stat descriptions, zones, stages, hazard barriers, and traffic config.
+          map data, trade routes, tutorial info, zones, ship stat descriptions, stages, hazard barriers, and traffic config.
         </p>
       </div>
 
