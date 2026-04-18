@@ -50,6 +50,7 @@ type AbilityOption = {
   deliveryType?: "energy" | "beam" | "projectile" | "other";
   linkedEffectCount?: number;
   linkedModCount?: number;
+  rarity?: number | null;
   minimumModLevel?: number | null;
   primaryModSlot?: string | null;
   secondaryModSlot?: string | null;
@@ -226,6 +227,7 @@ function autoPairMissingModAbilities(mods: ModDraft[], abilityOptions: AbilityOp
   let pairedCount = 0;
   let skippedCount = 0;
   let unmatchedSlotCount = 0;
+  let rarityBlockedCount = 0;
   let levelBlockedCount = 0;
 
   const nextMods = mods.map((mod) => {
@@ -239,7 +241,12 @@ function autoPairMissingModAbilities(mods: ModDraft[], abilityOptions: AbilityOp
     }
 
     const modLevel = parseNumber(mod.levelRequirement);
+    const modRarity = parseNumber(mod.rarity);
     const eligibleAbilities = slotMatches.filter((ability) => {
+      if (ability.rarity !== null && ability.rarity !== undefined) {
+        if (modRarity === undefined) return false;
+        if (modRarity < ability.rarity) return false;
+      }
       if (ability.minimumModLevel === null || ability.minimumModLevel === undefined) return true;
       if (modLevel === undefined) return false;
       return modLevel >= ability.minimumModLevel;
@@ -247,7 +254,12 @@ function autoPairMissingModAbilities(mods: ModDraft[], abilityOptions: AbilityOp
 
     if (!eligibleAbilities.length) {
       skippedCount += 1;
-      levelBlockedCount += 1;
+      if (slotMatches.some((ability) => ability.rarity !== null && ability.rarity !== undefined && (modRarity === undefined || modRarity < ability.rarity))) {
+        rarityBlockedCount += 1;
+      }
+      if (slotMatches.some((ability) => ability.minimumModLevel !== null && ability.minimumModLevel !== undefined && (modLevel === undefined || modLevel < ability.minimumModLevel))) {
+        levelBlockedCount += 1;
+      }
       return mod;
     }
 
@@ -280,6 +292,7 @@ function autoPairMissingModAbilities(mods: ModDraft[], abilityOptions: AbilityOp
     pairedCount,
     skippedCount,
     unmatchedSlotCount,
+    rarityBlockedCount,
     levelBlockedCount,
   };
 }
@@ -887,17 +900,22 @@ export default function ModWorkshop({
 
     const result = autoPairMissingModAbilities(mods, effectiveAbilityOptions);
     if (!result.pairedCount) {
-      if (result.levelBlockedCount && !result.unmatchedSlotCount) {
+      if (result.rarityBlockedCount && !result.levelBlockedCount && !result.unmatchedSlotCount) {
+        setStatus("No missing-ability mods could be paired because every slot-matched ability required a higher mod rarity.");
+        return;
+      }
+
+      if (result.levelBlockedCount && !result.rarityBlockedCount && !result.unmatchedSlotCount) {
         setStatus("No missing-ability mods could be paired because every slot-matched ability was above the mod's minimum level.");
         return;
       }
 
-      if (result.unmatchedSlotCount && !result.levelBlockedCount) {
+      if (result.unmatchedSlotCount && !result.levelBlockedCount && !result.rarityBlockedCount) {
         setStatus("No missing-ability mods could be paired because no abilities matched their slot assignments.");
         return;
       }
 
-      setStatus("No missing-ability mods could be paired with the current slot assignments and minimum level rules.");
+      setStatus("No missing-ability mods could be paired with the current slot assignments, rarity rules, and minimum level rules.");
       return;
     }
 
@@ -906,7 +924,9 @@ export default function ModWorkshop({
       `Auto-paired ${result.pairedCount} mod(s) with abilities using slot matches and balanced assignment counts.${
         result.skippedCount
           ? ` Skipped ${result.skippedCount} mod(s)${result.unmatchedSlotCount ? ` with no slot match` : ""}${
-              result.unmatchedSlotCount && result.levelBlockedCount ? " and" : ""
+              result.unmatchedSlotCount && (result.rarityBlockedCount || result.levelBlockedCount) ? "," : ""
+            }${result.rarityBlockedCount ? ` blocked by rarity` : ""}${
+              result.rarityBlockedCount && result.levelBlockedCount ? "," : ""
             }${result.levelBlockedCount ? ` blocked by minimum level` : ""}.`
           : ""
       }`,
@@ -1410,6 +1430,7 @@ export default function ModWorkshop({
                           label={abilityIndex === 0 ? "Ability" : " "}
                           value={ability.id}
                           modSlot={bulkCreate.slot}
+                          rarity={bulkCreate.rarity}
                           levelRequirement={bulkCreate.levelRequirement}
                           abilityOptions={effectiveAbilityOptions}
                           version={sharedDataVersion}
@@ -2034,6 +2055,7 @@ export default function ModWorkshop({
                       label={abilityIndex === 0 ? "Ability" : " "}
                       value={ability.id}
                       modSlot={selectedSyncedMod.slot}
+                      rarity={selectedSyncedMod.rarity}
                       levelRequirement={selectedSyncedMod.levelRequirement}
                       abilityOptions={effectiveAbilityOptions}
                       version={sharedDataVersion}
@@ -2543,6 +2565,7 @@ function AbilityPickerField({
   label,
   value,
   modSlot,
+  rarity,
   levelRequirement,
   onChange,
   onFilterModsByAbility,
@@ -2552,6 +2575,7 @@ function AbilityPickerField({
   label: string;
   value: string;
   modSlot?: string;
+  rarity?: string;
   levelRequirement?: string;
   onChange: (value: string) => void;
   onFilterModsByAbility?: (abilityId: string) => void;
@@ -2566,6 +2590,7 @@ function AbilityPickerField({
   const selectedAbility = abilityOptions.find((option) => normalizeAbilityId(option.id) === normalizedValue) ?? null;
   const selectedAbilitySlotMatch = selectedAbility ? getAbilitySlotMatchType(selectedAbility, modSlot) : null;
   const currentLevel = parseNumber(levelRequirement ?? "");
+  const currentRarity = parseNumber(rarity ?? "");
   const filteredOptions = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
     return abilityOptions
@@ -2592,12 +2617,25 @@ function AbilityPickerField({
         const rightRank = rightMatch === "primary" ? 2 : rightMatch === "secondary" ? 1 : 0;
         if (leftRank !== rightRank) return rightRank - leftRank;
 
+        const leftMismatch = left.rarity !== null && left.rarity !== undefined && currentRarity !== undefined ? left.rarity > currentRarity : false;
+        const rightMismatch = right.rarity !== null && right.rarity !== undefined && currentRarity !== undefined ? right.rarity > currentRarity : false;
+        if (leftMismatch !== rightMismatch) return Number(leftMismatch) - Number(rightMismatch);
+
+        const leftRarity = left.rarity ?? -1;
+        const rightRarity = right.rarity ?? -1;
+        if (leftRarity !== rightRarity) return leftRarity - rightRarity;
+
         const leftLabel = (left.name || normalizeAbilityId(left.id)).toLowerCase();
         const rightLabel = (right.name || normalizeAbilityId(right.id)).toLowerCase();
         return leftLabel.localeCompare(rightLabel);
       });
-  }, [abilityOptions, deliveryFilter, linkFilter, modSlot, search]);
+  }, [abilityOptions, currentRarity, deliveryFilter, linkFilter, modSlot, search]);
   const previewSrc = buildIconSrc(selectedAbility?.icon || DEFAULT_ABILITY_ICON, normalizedValue || "ability", selectedAbility?.name || "Ability", version);
+  const selectedRarityMismatch =
+    selectedAbility?.rarity !== null &&
+    selectedAbility?.rarity !== undefined &&
+    currentRarity !== undefined &&
+    selectedAbility.rarity > currentRarity;
 
   return (
     <div className="space-y-3">
@@ -2663,6 +2701,15 @@ function AbilityPickerField({
                 Min Mod Level: {selectedAbility.minimumModLevel}
               </span>
             ) : null}
+            {selectedAbility?.rarity !== null && selectedAbility?.rarity !== undefined ? (
+              <span
+                className={`rounded border px-2 py-1 ${
+                  selectedRarityMismatch ? "border-fuchsia-300/40 bg-fuchsia-500/10 text-fuchsia-100" : "border-white/10 bg-black/20 text-white/70"
+                }`}
+              >
+                Rarity: {RARITY_LABEL[selectedAbility.rarity] ?? `Rarity ${selectedAbility.rarity}`}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2695,6 +2742,11 @@ function AbilityPickerField({
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {filteredOptions.map((option) => {
               const selected = normalizeAbilityId(option.id) === normalizedValue;
+              const rarityMismatch =
+                option.rarity !== null &&
+                option.rarity !== undefined &&
+                currentRarity !== undefined &&
+                option.rarity > currentRarity;
               const minLevelMismatch =
                 option.minimumModLevel !== null &&
                 option.minimumModLevel !== undefined &&
@@ -2767,6 +2819,15 @@ function AbilityPickerField({
                             }`}
                           >
                             Min {option.minimumModLevel}
+                          </span>
+                        ) : null}
+                        {option.rarity !== null && option.rarity !== undefined ? (
+                          <span
+                            className={`rounded border px-2 py-0.5 ${
+                              rarityMismatch ? "border-fuchsia-300/40 bg-fuchsia-500/10 text-fuchsia-100" : "border-white/10 bg-black/20 text-white/65"
+                            }`}
+                          >
+                            {RARITY_LABEL[option.rarity] ?? `Rarity ${option.rarity}`}
                           </span>
                         ) : null}
                       </div>

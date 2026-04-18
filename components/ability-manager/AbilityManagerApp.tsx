@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { AbilityDraft, AbilityManagerDatabase, AbilityManagerModOption, AbilityManagerValidationIssue } from "@lib/ability-manager/types";
-import { MOD_SLOT_OPTIONS } from "@lib/constants";
+import { MOD_SLOT_OPTIONS, RARITY_LABEL } from "@lib/constants";
 import {
   buildAbilityBundleFiles,
   computeAbilityLinkedEffects,
@@ -169,6 +169,12 @@ const RANGE_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "2", label: "Normal", description: "1001 to 2000 range." },
   { value: "3", label: "Long", description: "2001 to 3000 range." },
 ];
+
+const ABILITY_RARITY_OPTIONS: AbilityValueOption[] = Object.entries(RARITY_LABEL).map(([value, label]) => ({
+  value,
+  label,
+  description: `${label} or higher mods can use this ability.`,
+}));
 
 const MINIMUM_MOD_LEVEL_OPTIONS = Array.from({ length: 100 }, (_, index) => String(index + 1));
 
@@ -389,9 +395,13 @@ export default function AbilityManagerApp() {
   const selectedFacingRequirementValue = selectedAbility?.facingRequirement.trim() ?? "";
   const selectedMinRangeTypeValue = selectedAbility?.minRangeType.trim() ?? "";
   const selectedMaxRangeTypeValue = selectedAbility?.maxRangeType.trim() ?? "";
+  const selectedRarityValue = selectedAbility?.rarity.trim() ?? "";
   const selectedMinimumModLevelValue = selectedAbility?.minimumModLevel.trim() ?? "";
   const selectedPrimaryModSlotValue = selectedAbility?.primaryModSlot.trim() ?? "";
   const selectedSecondaryModSlotValue = selectedAbility?.secondaryModSlot.trim() ?? "";
+  const selectedRarityNumber = selectedRarityValue ? Number(selectedRarityValue) : null;
+  const selectedAbilityRarity =
+    selectedRarityNumber !== null && Number.isInteger(selectedRarityNumber) && selectedRarityNumber in RARITY_LABEL ? selectedRarityNumber : null;
   const selectedMinimumModLevelNumber = selectedMinimumModLevelValue ? Number(selectedMinimumModLevelValue) : null;
   const selectedMinimumModLevel =
     selectedMinimumModLevelNumber !== null &&
@@ -400,6 +410,7 @@ export default function AbilityManagerApp() {
     selectedMinimumModLevelNumber <= 100
       ? selectedMinimumModLevelNumber
       : null;
+  const selectedBelowRarityModCount = selectedAbilityRarity === null ? 0 : selectedLinkedMods.filter((mod) => mod.rarity < selectedAbilityRarity).length;
   const selectedUnderleveledModCount = selectedMinimumModLevel === null ? 0 : selectedLinkedMods.filter((mod) => mod.levelRequirement < selectedMinimumModLevel).length;
   const selectedSlotMismatchModCount =
     !selectedPrimaryModSlotValue && !selectedSecondaryModSlotValue
@@ -418,6 +429,8 @@ export default function AbilityManagerApp() {
   const selectedFacingRequirementOption = resolveAbilityValueOption(selectedFacingRequirementValue, facingRequirementOptions);
   const selectedMinRangeTypeOption = resolveAbilityValueOption(selectedMinRangeTypeValue, minRangeTypeOptions);
   const selectedMaxRangeTypeOption = resolveAbilityValueOption(selectedMaxRangeTypeValue, maxRangeTypeOptions);
+  const selectedRarityOptions = withCurrentAbilityValueOption(selectedRarityValue, ABILITY_RARITY_OPTIONS, "Rarity");
+  const selectedRarityOption = resolveAbilityValueOption(selectedRarityValue, selectedRarityOptions);
 
   useEffect(() => {
     const abilities = database?.abilities ?? [];
@@ -1230,6 +1243,24 @@ export default function AbilityManagerApp() {
                     />
                   </div>
                   <div>
+                    <div className="label">Rarity</div>
+                    <select
+                      className="select mt-1 w-full"
+                      value={selectedRarityValue}
+                      onChange={(event) => updateSelectedAbility((current) => ({ ...current, rarity: event.target.value }))}
+                    >
+                      <option value="">Not set</option>
+                      {selectedRarityOptions.map((option) => (
+                        <option key={`ability-rarity-${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 text-xs text-white/45">
+                      {selectedRarityOption?.description ?? "Minimum mod rarity required to use this ability."}
+                    </div>
+                  </div>
+                  <div>
                     <div className="label">Minimum Mod Level</div>
                     <select
                       className="select mt-1 w-full"
@@ -1465,6 +1496,12 @@ export default function AbilityManagerApp() {
                       {selectedMinimumModLevel}.
                     </div>
                   ) : null}
+                  {selectedBelowRarityModCount > 0 && selectedAbilityRarity !== null ? (
+                    <div className="rounded-lg border border-fuchsia-300/25 bg-fuchsia-300/10 px-3 py-2 text-sm text-fuchsia-100">
+                      {selectedBelowRarityModCount} linked mod{selectedBelowRarityModCount === 1 ? "" : "s"} fall below this ability's rarity of{" "}
+                      {RARITY_LABEL[selectedAbilityRarity] ?? `Rarity ${selectedAbilityRarity}`}.
+                    </div>
+                  ) : null}
                   {selectedSlotMismatchModCount > 0 ? (
                     <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">
                       {selectedSlotMismatchModCount} linked mod{selectedSlotMismatchModCount === 1 ? "" : "s"} do not match this ability's Primary or Secondary Mod Slot.
@@ -1473,6 +1510,7 @@ export default function AbilityManagerApp() {
                   {filteredLinkedMods.length ? (
                     <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
                       {filteredLinkedMods.map((mod) => {
+                        const hasRarityMismatch = selectedAbilityRarity !== null && mod.rarity < selectedAbilityRarity;
                         const isBelowMinimum = selectedMinimumModLevel !== null && mod.levelRequirement < selectedMinimumModLevel;
                         const hasSlotMismatch =
                           (selectedPrimaryModSlotValue || selectedSecondaryModSlotValue) &&
@@ -1485,7 +1523,9 @@ export default function AbilityManagerApp() {
                             href={modManagerHref}
                             title={`Open ${mod.name || "this mod"} in Mod Manager`}
                             className={`block rounded-lg border px-3 py-3 transition hover:bg-white/10 ${
-                              isBelowMinimum
+                              hasRarityMismatch
+                                ? "border-fuchsia-300/25 bg-fuchsia-300/10"
+                                : isBelowMinimum
                                 ? "border-yellow-300/25 bg-yellow-300/10"
                                 : hasSlotMismatch
                                   ? "border-amber-300/25 bg-amber-300/10"
@@ -1510,6 +1550,7 @@ export default function AbilityManagerApp() {
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap justify-end gap-2 text-xs">
+                                    {hasRarityMismatch ? <div className="rounded bg-fuchsia-300/15 px-2 py-1 font-medium text-fuchsia-100">Below rarity</div> : null}
                                     {isBelowMinimum ? <div className="rounded bg-yellow-300/15 px-2 py-1 font-medium text-yellow-100">Below minimum</div> : null}
                                     {hasSlotMismatch ? <div className="rounded bg-amber-300/15 px-2 py-1 font-medium text-amber-100">Slot mismatch</div> : null}
                                   </div>

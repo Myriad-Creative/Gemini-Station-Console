@@ -75,6 +75,7 @@ export type AbilityDraft = {
   cooldown: string;
   chargeTime: string;
   energyCost: string;
+  rarity: string;
   minimumModLevel: string;
   primaryModSlot: string;
   secondaryModSlot: string;

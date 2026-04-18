@@ -35,6 +35,7 @@ export interface AutoGenerateModsRequest {
 
 export interface AutoGenerateAbilityOption {
   id: number | string;
+  rarity?: number | null;
   primaryModSlot?: string | null;
   secondaryModSlot?: string | null;
 }
@@ -487,10 +488,15 @@ function maybePickAbility(
   const rankedPool = abilityPool
     .map((ability) => ({
       value: ability,
+      abilityMeta: catalogById.get(normalizeAbilityId(ability)),
       weight: 1,
       rank: getAbilitySlotMatchRank(catalogById.get(normalizeAbilityId(ability)), slotLabel),
     }))
-    .filter((entry) => entry.rank > 0);
+    .filter((entry) => entry.rank > 0)
+    .filter((entry) => {
+      const abilityRarity = entry.abilityMeta?.rarity;
+      return abilityRarity === null || abilityRarity === undefined || abilityRarity <= rarity;
+    });
 
   if (!rankedPool.length) return [];
   const bestRank = Math.max(...rankedPool.map((entry) => entry.rank));

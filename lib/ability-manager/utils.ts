@@ -1,6 +1,6 @@
 import { parseLooseJson } from "@lib/json";
 import { STATUS_EFFECT_MODIFIER_KEYS } from "@lib/ability-manager/types";
-import { MOD_SLOT_OPTIONS } from "@lib/constants";
+import { MOD_SLOT_OPTIONS, RARITY_LABEL } from "@lib/constants";
 import type {
   AbilityDraft,
   AbilityEffectLink,
@@ -362,6 +362,7 @@ export function createBlankAbility(existingIds: string[] = [], existingFileNames
     cooldown: "",
     chargeTime: "",
     energyCost: "5",
+    rarity: "",
     minimumModLevel: "",
     primaryModSlot: "",
     secondaryModSlot: "",
@@ -576,6 +577,7 @@ export function validateAbilityDrafts(
     parseNumberField(draft.cooldown, "Cooldown", issues, draft.key, "cooldown");
     parseNumberField(draft.chargeTime, "Charge Time", issues, draft.key, "chargeTime");
     parseNumberField(draft.energyCost, "Energy Cost", issues, draft.key, "energyCost");
+    const rarity = parseNumberField(draft.rarity, "Rarity", issues, draft.key, "rarity");
     const minimumModLevel = parseNumberField(draft.minimumModLevel, "Minimum Mod Level", issues, draft.key, "minimumModLevel");
     const primaryModSlot = draft.primaryModSlot.trim();
     const secondaryModSlot = draft.secondaryModSlot.trim();
@@ -606,6 +608,30 @@ export function validateAbilityDrafts(
         field: "secondaryModSlot",
         message: "Primary Mod Slot and Secondary Mod Slot are the same.",
       });
+    }
+
+    if (rarity !== undefined) {
+      if (!Number.isInteger(rarity) || !(rarity in RARITY_LABEL)) {
+        issues.push({
+          level: "error",
+          draftKey: draft.key,
+          field: "rarity",
+          message: `Rarity must be one of: ${Object.entries(RARITY_LABEL)
+            .map(([value, label]) => `${value} (${label})`)
+            .join(", ")}.`,
+        });
+      } else if (modCatalogAvailable && !isAbilityExcludedFromModLinkChecks(draft)) {
+        const linkedMods = modLinksByAbilityId.get(normalizeAbilityReference(draft.id)) ?? [];
+        for (const mod of linkedMods) {
+          if (mod.rarity >= rarity) continue;
+          issues.push({
+            level: "warning",
+            draftKey: draft.key,
+            field: "rarity",
+            message: `${mod.name} is ${RARITY_LABEL[mod.rarity] ?? `Rarity ${mod.rarity}`}, which is below this ability's rarity of ${RARITY_LABEL[rarity] ?? `Rarity ${rarity}`}.`,
+          });
+        }
+      }
     }
 
     if (minimumModLevel !== undefined) {
@@ -776,6 +802,7 @@ function exportAbilityObject(draft: AbilityDraft) {
     cooldown: draft.cooldown.trim() ? Number(draft.cooldown.trim()) : undefined,
     charge_time: draft.chargeTime.trim() ? Number(draft.chargeTime.trim()) : undefined,
     energy_cost: draft.energyCost.trim() ? Number(draft.energyCost.trim()) : undefined,
+    rarity: draft.rarity.trim() ? Number(draft.rarity.trim()) : undefined,
     minimumModLevel: draft.minimumModLevel.trim() ? Number(draft.minimumModLevel.trim()) : undefined,
     valid_targets: draft.validTargets.trim() ? Number(draft.validTargets.trim()) : undefined,
     requires_target: draft.requiresTarget,
