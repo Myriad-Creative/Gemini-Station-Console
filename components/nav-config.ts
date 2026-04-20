@@ -35,6 +35,7 @@ const MOD_SECTION_LINKS: NavLink[] = [
 const ABILITY_SECTION_LINKS: NavLink[] = [
   { href: "/abilities", label: "Abilities Dashboard" },
   { href: "/abilities/manager", label: "Abilities" },
+  { href: "/abilities/bulk", label: "Bulk Edit" },
   { href: "/abilities/status-effects", label: "Status Effects" },
 ];
 

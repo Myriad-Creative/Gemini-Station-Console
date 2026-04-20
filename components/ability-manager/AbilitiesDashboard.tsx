@@ -68,12 +68,19 @@ export default function AbilitiesDashboard() {
         />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Link href="/abilities/manager" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
           <div className="text-xl font-semibold text-white">Abilities Manager</div>
           <div className="text-sm leading-6 text-white/65">
             Search, create, clone, edit, delete, and export the indexed ability JSON set. Filter by delivery type like projectile or beam and inspect
             JSON-linked or script-linked status effects.
+          </div>
+        </Link>
+        <Link href="/abilities/bulk" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
+          <div className="text-xl font-semibold text-white">Ability Bulk Edit</div>
+          <div className="text-sm leading-6 text-white/65">
+            Filter the ability library, select any subset, and apply shared gameplay changes like threat, targeting, range, cooldown, rarity, and mod
+            gating in one pass.
           </div>
         </Link>
         <Link href="/abilities/status-effects" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
