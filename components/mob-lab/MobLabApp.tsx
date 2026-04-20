@@ -518,7 +518,6 @@ export default function MobLabApp() {
         contact.id,
         contact.name,
         contact.portrait,
-        contact.greeting,
         contact.notes,
         contact.dialog.join(" "),
       ]
@@ -1329,7 +1328,7 @@ export default function MobLabApp() {
                       <input
                         className="input"
                         value={commsContactSearch}
-                        placeholder="Search comms contacts by name, ID, greeting, notes, or portrait..."
+                        placeholder="Search comms contacts by name, ID, notes, dialog, or portrait..."
                         onChange={(event) => setCommsContactSearch(event.target.value)}
                       />
 
@@ -1373,10 +1372,9 @@ export default function MobLabApp() {
                                       </div>
                                       {isSelected ? <div className="rounded bg-cyan-300/15 px-2 py-1 text-xs font-medium text-cyan-100">Selected</div> : null}
                                     </div>
-                                    {contact.greeting.trim() ? (
-                                      <div className="mt-2 line-clamp-2 text-sm leading-5 text-white/60">{contact.greeting}</div>
-                                    ) : null}
-                                    {contact.notes.trim() ? <div className="mt-2 text-xs text-white/45">{contact.notes}</div> : null}
+                                    <div className={`mt-2 line-clamp-2 text-sm leading-5 ${contact.notes.trim() ? "text-white/60" : "text-white/35"}`}>
+                                      {contact.notes.trim() || "No comms notes."}
+                                    </div>
                                   </div>
                                 </div>
                               </button>
