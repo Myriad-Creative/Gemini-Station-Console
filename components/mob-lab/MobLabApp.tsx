@@ -12,6 +12,16 @@ import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
+import type { CommsContactDraft } from "@lib/comms-manager/types";
+import { importCommsWorkspace, resolvedPortraitPath } from "@lib/comms-manager/utils";
+import type { MerchantProfileDraft } from "@lib/merchant-lab/types";
+import { importMerchantWorkspace } from "@lib/merchant-lab/utils";
+
+type HailImageOption = {
+  fileName: string;
+  relativePath: string;
+  resPath: string;
+};
 import {
   cloneMobDraft,
   createBlankMobDraft,
@@ -181,6 +191,10 @@ function mergeTextareaPaste(currentValue: string, pastedText: string, selectionS
   return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
 }
 
+function normalizeCatalogText(value: string | number | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 export default function MobLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<MobLabWorkspace | null>(null);
@@ -193,6 +207,15 @@ export default function MobLabApp() {
   const [issueFilter, setIssueFilter] = useState<"all" | "error" | "warning">("all");
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [merchantProfiles, setMerchantProfiles] = useState<MerchantProfileDraft[]>([]);
+  const [merchantProfileSearch, setMerchantProfileSearch] = useState("");
+  const [merchantProfileCatalogStatus, setMerchantProfileCatalogStatus] = useState("");
+  const [commsContacts, setCommsContacts] = useState<CommsContactDraft[]>([]);
+  const [commsContactSearch, setCommsContactSearch] = useState("");
+  const [commsCatalogStatus, setCommsCatalogStatus] = useState("");
+  const [hailImageOptions, setHailImageOptions] = useState<HailImageOption[]>([]);
+  const [hailImageSearch, setHailImageSearch] = useState("");
+  const [hailImageCatalogStatus, setHailImageCatalogStatus] = useState("");
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
@@ -327,6 +350,102 @@ export default function MobLabApp() {
     };
   }, [sharedDataVersion]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMerchantProfiles() {
+      try {
+        const response = await fetch("/api/settings/data/source?kind=merchantProfiles");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled) {
+            setMerchantProfiles([]);
+            setMerchantProfileCatalogStatus("No merchant profile catalog was found under the active local game root.");
+          }
+          return;
+        }
+
+        const result = importMerchantWorkspace(payload.text, payload.sourceLabel || "Local game source", "uploaded");
+        if (cancelled) return;
+        setMerchantProfiles(
+          result.workspace.profiles
+            .filter((profile) => profile.id.trim())
+            .sort((left, right) => {
+              const leftLabel = (left.name || left.id).trim().toLowerCase();
+              const rightLabel = (right.name || right.id).trim().toLowerCase();
+              const byLabel = leftLabel.localeCompare(rightLabel);
+              if (byLabel !== 0) return byLabel;
+              return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+            }),
+        );
+        setMerchantProfileCatalogStatus(result.warnings.join(" "));
+      } catch (error) {
+        if (!cancelled) {
+          setMerchantProfiles([]);
+          setMerchantProfileCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    async function loadCommsContacts() {
+      try {
+        const response = await fetch("/api/settings/data/source?kind=comms");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled) {
+            setCommsContacts([]);
+            setCommsCatalogStatus("No comms catalog was found under the active local game root.");
+          }
+          return;
+        }
+
+        const result = importCommsWorkspace(payload.text, payload.sourceLabel || "Local game source", "uploaded");
+        if (cancelled) return;
+        setCommsContacts(
+          result.workspace.contacts
+            .filter((contact) => contact.id.trim())
+            .sort((left, right) => {
+              const leftLabel = (left.name || left.id).trim().toLowerCase();
+              const rightLabel = (right.name || right.id).trim().toLowerCase();
+              const byLabel = leftLabel.localeCompare(rightLabel);
+              if (byLabel !== 0) return byLabel;
+              return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+            }),
+        );
+        setCommsCatalogStatus(result.warnings.join(" "));
+      } catch (error) {
+        if (!cancelled) {
+          setCommsContacts([]);
+          setCommsCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    async function loadHailImages() {
+      try {
+        const response = await fetch("/api/hail-images");
+        const payload = await response.json().catch(() => ({}));
+        const data = Array.isArray(payload?.data) ? (payload.data as HailImageOption[]) : [];
+        if (cancelled) return;
+        setHailImageOptions(data);
+        setHailImageCatalogStatus(typeof payload?.message === "string" ? payload.message : "");
+      } catch (error) {
+        if (!cancelled) {
+          setHailImageOptions([]);
+          setHailImageCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    void loadMerchantProfiles();
+    void loadCommsContacts();
+    void loadHailImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedDataVersion]);
+
   const selectedMob = useMemo(() => {
     const mobs = workspace?.mobs ?? [];
     return mobs.find((mob) => mob.key === selectedMobKey) ?? filteredMobs[0] ?? mobs[0] ?? null;
@@ -346,10 +465,96 @@ export default function MobLabApp() {
         sharedDataVersion,
       )
     : null;
+  const hailImagePreviewSrc = selectedMob?.hail_image.trim()
+    ? buildIconSrc(
+        selectedMob.hail_image,
+        selectedMob.id || "mob",
+        selectedMob.hail_name || selectedMob.display_name || "Mob",
+        sharedDataVersion,
+      )
+    : null;
+  const selectedMerchantProfile = useMemo(() => {
+    const currentId = selectedMob?.merchant_profile.trim();
+    if (!currentId) return null;
+    return merchantProfiles.find((profile) => profile.id.trim() === currentId) ?? null;
+  }, [merchantProfiles, selectedMob?.merchant_profile]);
+  const filteredMerchantProfiles = useMemo(() => {
+    const query = merchantProfileSearch.trim().toLowerCase();
+    if (!query) return merchantProfiles;
+    return merchantProfiles.filter((profile) => {
+      const haystack = [
+        profile.id,
+        profile.name,
+        profile.description,
+        profile.items.join(" "),
+        profile.mods.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [merchantProfileSearch, merchantProfiles]);
+  const selectedCommsContact = useMemo(() => {
+    if (!selectedMob) return null;
+    const commDirectoryIds = new Set(selectedMob.comms_directory.map((entry) => entry.trim()).filter(Boolean));
+    const directoryMatch = commsContacts.find((contact) => commDirectoryIds.has(contact.id.trim()));
+    if (directoryMatch) return directoryMatch;
+
+    const hailName = normalizeCatalogText(selectedMob.hail_name);
+    const hailPortrait = normalizeCatalogText(selectedMob.hail_portrait);
+    return (
+      commsContacts.find((contact) => {
+        const contactName = normalizeCatalogText(contact.name);
+        const contactPortrait = normalizeCatalogText(resolvedPortraitPath(contact.portrait));
+        return (hailName && contactName === hailName) || (hailPortrait && contactPortrait === hailPortrait);
+      }) ?? null
+    );
+  }, [commsContacts, selectedMob]);
+  const filteredCommsContacts = useMemo(() => {
+    const query = commsContactSearch.trim().toLowerCase();
+    if (!query) return commsContacts;
+    return commsContacts.filter((contact) => {
+      const haystack = [
+        contact.id,
+        contact.name,
+        contact.portrait,
+        contact.greeting,
+        contact.notes,
+        contact.dialog.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [commsContactSearch, commsContacts]);
+  const filteredHailImageOptions = useMemo(() => {
+    const query = hailImageSearch.trim().toLowerCase();
+    if (!query) return hailImageOptions;
+    return hailImageOptions.filter((option) =>
+      [option.fileName, option.relativePath, option.resPath].join(" ").toLowerCase().includes(query),
+    );
+  }, [hailImageOptions, hailImageSearch]);
 
   function updateSelectedMob(updater: (current: MobDraft) => MobDraft) {
     if (!workspace || !selectedMob) return;
     setWorkspace(updateMobDraftAt(workspace, selectedMob.key, updater));
+  }
+
+  function applyCommsContactToSelectedMob(contact: CommsContactDraft) {
+    updateSelectedMob((current) => {
+      const contactId = contact.id.trim();
+      const nextCommsDirectory = contactId && !current.comms_directory.includes(contactId)
+        ? [...current.comms_directory, contactId]
+        : current.comms_directory;
+
+      return {
+        ...current,
+        comms_directory: nextCommsDirectory,
+        hail_name: contact.name.trim(),
+        hail_portrait: resolvedPortraitPath(contact.portrait),
+        hail_can_hail_target: true,
+      };
+    });
   }
 
   function importText(
@@ -993,15 +1198,77 @@ export default function MobLabApp() {
                     />
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                    <div>
-                      <div className="label">Merchant Profile</div>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="label">Merchant Profile</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            Pick from the active merchant profile catalog instead of typing profile IDs by hand.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+                          disabled={!selectedMob.merchant_profile.trim()}
+                          onClick={() => updateSelectedMob((current) => ({ ...current, merchant_profile: "" }))}
+                        >
+                          Clear
+                        </button>
+                      </div>
+
                       <input
-                        className="input mt-1"
-                        value={selectedMob.merchant_profile}
-                        placeholder="utf_support_vendor"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, merchant_profile: event.target.value }))}
+                        className="input"
+                        value={merchantProfileSearch}
+                        placeholder="Search merchant profiles by name, ID, description, item, or mod..."
+                        onChange={(event) => setMerchantProfileSearch(event.target.value)}
                       />
+
+                      {selectedMob.merchant_profile.trim() && !selectedMerchantProfile ? (
+                        <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+                          Current profile "{selectedMob.merchant_profile}" was not found in the merchant profile catalog.
+                        </div>
+                      ) : null}
+
+                      {merchantProfileCatalogStatus ? (
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{merchantProfileCatalogStatus}</div>
+                      ) : null}
+
+                      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {filteredMerchantProfiles.length ? (
+                          filteredMerchantProfiles.map((profile) => {
+                            const isSelected = selectedMob.merchant_profile.trim() === profile.id.trim();
+                            return (
+                              <button
+                                key={profile.key}
+                                type="button"
+                                className={`w-full rounded-xl border p-3 text-left transition ${
+                                  isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                                }`}
+                                onClick={() => updateSelectedMob((current) => ({ ...current, merchant_profile: profile.id.trim(), is_vendor: true }))}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium text-white">{profile.name.trim() || profile.id}</div>
+                                    <div className="mt-1 font-mono text-xs text-white/45">{profile.id}</div>
+                                  </div>
+                                  <div className="shrink-0 rounded bg-white/5 px-2 py-1 text-xs text-white/55">
+                                    {profile.items.length} item{profile.items.length === 1 ? "" : "s"} · {profile.mods.length} mod
+                                    {profile.mods.length === 1 ? "" : "s"}
+                                  </div>
+                                </div>
+                                {profile.description.trim() ? (
+                                  <div className="mt-2 line-clamp-2 text-sm leading-5 text-white/60">{profile.description}</div>
+                                ) : null}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+                            No merchant profiles matched the current search.
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <div className="label">Repair Cost</div>
@@ -1046,32 +1313,175 @@ export default function MobLabApp() {
 
                 <Section title="Hail and Communication" description="Optional fields for hail windows, portraits, and flavor copy.">
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                    <div>
-                      <div className="label">Hail Name</div>
+                    <div className="space-y-3 lg:col-span-2 xl:col-span-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="label">Comms Contact</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            Choose a comms contact to fill the hail name and portrait from `Comms.json`.
+                          </div>
+                        </div>
+                        <div className="text-xs text-white/45">
+                          {selectedCommsContact ? `Selected: ${selectedCommsContact.name || selectedCommsContact.id}` : "No comms contact selected"}
+                        </div>
+                      </div>
+
                       <input
-                        className="input mt-1"
-                        value={selectedMob.hail_name}
-                        placeholder="Lieutenant Ray"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, hail_name: event.target.value }))}
+                        className="input"
+                        value={commsContactSearch}
+                        placeholder="Search comms contacts by name, ID, greeting, notes, or portrait..."
+                        onChange={(event) => setCommsContactSearch(event.target.value)}
                       />
+
+                      {commsCatalogStatus ? (
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{commsCatalogStatus}</div>
+                      ) : null}
+
+                      {selectedMob.hail_name.trim() && !selectedCommsContact ? (
+                        <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+                          Current hail identity is not matched to a comms contact yet.
+                        </div>
+                      ) : null}
+
+                      <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {filteredCommsContacts.length ? (
+                          filteredCommsContacts.map((contact) => {
+                            const isSelected = selectedCommsContact?.id.trim() === contact.id.trim();
+                            const contactPortraitPath = resolvedPortraitPath(contact.portrait);
+                            return (
+                              <button
+                                key={contact.key}
+                                type="button"
+                                className={`w-full rounded-xl border p-3 text-left transition ${
+                                  isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                                }`}
+                                onClick={() => applyCommsContactToSelectedMob(contact)}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                                    <img
+                                      src={buildIconSrc(contactPortraitPath, contact.id, contact.name || contact.id || "Comms contact", sharedDataVersion)}
+                                      alt={contact.name || contact.id || "Comms contact"}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="truncate text-sm font-medium text-white">{contact.name.trim() || contact.id}</div>
+                                        <div className="mt-1 font-mono text-xs text-white/45">{contact.id}</div>
+                                      </div>
+                                      {isSelected ? <div className="rounded bg-cyan-300/15 px-2 py-1 text-xs font-medium text-cyan-100">Selected</div> : null}
+                                    </div>
+                                    {contact.greeting.trim() ? (
+                                      <div className="mt-2 line-clamp-2 text-sm leading-5 text-white/60">{contact.greeting}</div>
+                                    ) : null}
+                                    {contact.notes.trim() ? <div className="mt-2 text-xs text-white/45">{contact.notes}</div> : null}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+                            No comms contacts matched the current search.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+                          <div className="label">Hail Name</div>
+                          <div className="mt-2 text-sm text-white/80">{selectedMob.hail_name || "Not set"}</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+                          <div className="label">Hail Portrait</div>
+                          <div className="mt-2 break-all font-mono text-xs text-white/60">{selectedMob.hail_portrait || "Not set"}</div>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="label">Hail Image</div>
-                      <input
-                        className="input mt-1"
-                        value={selectedMob.hail_image}
-                        placeholder="res://scenes/entities/Terran/Gavix/hail_image.png"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, hail_image: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="label">Hail Portrait</div>
-                      <input
-                        className="input mt-1"
-                        value={selectedMob.hail_portrait}
-                        placeholder="res://assets/comms/lt_ava.png"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, hail_portrait: event.target.value }))}
-                      />
+                    <div className="space-y-3 lg:col-span-2 xl:col-span-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="label">Hail Image</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            Choose a background image from `res://assets/hail_image/`, or edit the path directly if needed.
+                          </div>
+                        </div>
+                        <div className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/55">
+                          {hailImageOptions.length} image option{hailImageOptions.length === 1 ? "" : "s"}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 lg:grid-cols-[120px_minmax(0,1fr)]">
+                        <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                          {hailImagePreviewSrc ? (
+                            <img
+                              src={hailImagePreviewSrc}
+                              alt={selectedMob.hail_name || selectedMob.display_name || selectedMob.id || "Hail image"}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="px-3 text-center text-xs text-white/35">No hail image</div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <input
+                            className="input"
+                            value={selectedMob.hail_image}
+                            placeholder="res://assets/hail_image/example.png"
+                            onChange={(event) => updateSelectedMob((current) => ({ ...current, hail_image: event.target.value }))}
+                          />
+                          <input
+                            className="input"
+                            value={hailImageSearch}
+                            placeholder="Search hail images by file name or path..."
+                            onChange={(event) => setHailImageSearch(event.target.value)}
+                          />
+                          {hailImageCatalogStatus ? (
+                            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{hailImageCatalogStatus}</div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="max-h-80 overflow-y-auto pr-1">
+                        {filteredHailImageOptions.length ? (
+                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                            {filteredHailImageOptions.map((option) => {
+                              const isSelected = selectedMob.hail_image.trim() === option.resPath;
+                              return (
+                                <button
+                                  key={option.resPath}
+                                  type="button"
+                                  className={`rounded-xl border p-2 text-left transition ${
+                                    isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                                  }`}
+                                  onClick={() => updateSelectedMob((current) => ({ ...current, hail_image: option.resPath }))}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex h-16 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                                      <img
+                                        src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
+                                        alt={option.fileName}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                                      <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
+                                      {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+                            No hail images matched the current search.
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {hailPortraitPreviewSrc ? (
                       <div>
