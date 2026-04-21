@@ -9,6 +9,7 @@ import {
   type TimedStatusState,
 } from "@components/ability-manager/common";
 import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants";
+import { mergeGeneratedMobStats, MOB_STAT_RANK_OPTIONS } from "@lib/mob-lab/stat-scaling";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
@@ -21,6 +22,29 @@ type HailImageOption = {
   fileName: string;
   relativePath: string;
   resPath: string;
+};
+
+type FactionOption = {
+  name: string;
+  defaultPoints: number;
+  forcedPoints: number | null;
+};
+
+type LootTableOption = {
+  id: string;
+  rolls: number;
+  entryCount: number;
+  totalWeight: number;
+  entries: {
+    id: string;
+    weight: number;
+    name: string | null;
+  }[];
+};
+
+type LootTableCatalog = {
+  items: LootTableOption[];
+  mods: LootTableOption[];
 };
 import {
   cloneMobDraft,
@@ -155,6 +179,107 @@ function ArrayEditor({
   );
 }
 
+function LootTablePicker({
+  label,
+  value,
+  placeholder,
+  allOptions,
+  options,
+  search,
+  status,
+  onSearchChange,
+  onValueChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  allOptions: LootTableOption[];
+  options: LootTableOption[];
+  search: string;
+  status: string;
+  onSearchChange: (next: string) => void;
+  onValueChange: (next: string) => void;
+}) {
+  const selected = allOptions.find((option) => option.id === value.trim()) ?? null;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="label">{label}</div>
+          <div className="mt-1 text-xs text-white/45">
+            {selected
+              ? `${selected.rolls} roll${selected.rolls === 1 ? "" : "s"} · ${selected.entryCount} entr${selected.entryCount === 1 ? "y" : "ies"}`
+              : "Pick a table from the local loot catalog, or clear the field for no loot table."}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!value.trim()}
+          onClick={() => onValueChange("")}
+        >
+          Clear
+        </button>
+      </div>
+
+      <input className="input" value={value} placeholder={placeholder} onFocus={selectInputContents} onChange={(event) => onValueChange(event.target.value)} />
+      <input className="input" value={search} placeholder={`Search ${label.toLowerCase()} by table ID or entries...`} onChange={(event) => onSearchChange(event.target.value)} />
+
+      {value.trim() && !selected ? (
+        <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+          Current table "{value}" was not found in the loaded loot catalog.
+        </div>
+      ) : null}
+
+      {status ? <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{status}</div> : null}
+
+      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+        {options.length ? (
+          options.map((option) => {
+            const isSelected = value.trim() === option.id;
+            const sampleEntries = option.entries.slice(0, 4);
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`w-full rounded-xl border p-3 text-left transition ${
+                  isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                }`}
+                onClick={() => onValueChange(option.id)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-sm font-semibold text-white">{option.id}</div>
+                    <div className="mt-1 text-xs text-white/45">
+                      {option.rolls} roll{option.rolls === 1 ? "" : "s"} · {option.entryCount} entries · weight {option.totalWeight}
+                    </div>
+                  </div>
+                  {isSelected ? <div className="shrink-0 rounded bg-cyan-300/15 px-2 py-1 text-xs font-medium text-cyan-100">Selected</div> : null}
+                </div>
+                {sampleEntries.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {sampleEntries.map((entry) => (
+                      <span key={`${option.id}-${entry.id}`} className="badge">
+                        {entry.name || entry.id} · {entry.weight}
+                      </span>
+                    ))}
+                    {option.entries.length > sampleEntries.length ? <span className="badge">+{option.entries.length - sampleEntries.length} more</span> : null}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+            No loot tables matched the current search.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -195,6 +320,10 @@ function normalizeCatalogText(value: string | number | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function selectInputContents(event: { currentTarget: HTMLInputElement }) {
+  event.currentTarget.select();
+}
+
 export default function MobLabApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<MobLabWorkspace | null>(null);
@@ -207,15 +336,22 @@ export default function MobLabApp() {
   const [issueFilter, setIssueFilter] = useState<"all" | "error" | "warning">("all");
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [factionCatalog, setFactionCatalog] = useState<FactionOption[]>([]);
+  const [factionCatalogStatus, setFactionCatalogStatus] = useState("");
   const [merchantProfiles, setMerchantProfiles] = useState<MerchantProfileDraft[]>([]);
   const [merchantProfileSearch, setMerchantProfileSearch] = useState("");
   const [merchantProfileCatalogStatus, setMerchantProfileCatalogStatus] = useState("");
+  const [isCreatingMerchantProfile, setIsCreatingMerchantProfile] = useState(false);
   const [commsContacts, setCommsContacts] = useState<CommsContactDraft[]>([]);
   const [commsContactSearch, setCommsContactSearch] = useState("");
   const [commsCatalogStatus, setCommsCatalogStatus] = useState("");
   const [hailImageOptions, setHailImageOptions] = useState<HailImageOption[]>([]);
   const [hailImageSearch, setHailImageSearch] = useState("");
   const [hailImageCatalogStatus, setHailImageCatalogStatus] = useState("");
+  const [lootTables, setLootTables] = useState<LootTableCatalog>({ items: [], mods: [] });
+  const [itemLootTableSearch, setItemLootTableSearch] = useState("");
+  const [modLootTableSearch, setModLootTableSearch] = useState("");
+  const [lootTableCatalogStatus, setLootTableCatalogStatus] = useState("");
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
@@ -260,10 +396,16 @@ export default function MobLabApp() {
   }, [workspace]);
 
   const factionOptions = useMemo(() => {
-    return Array.from(new Set((workspace?.mobs ?? []).map((mob) => mob.faction.trim()).filter(Boolean))).sort((left, right) =>
-      left.localeCompare(right),
-    );
-  }, [workspace]);
+    const options = new Map<string, FactionOption | null>();
+    for (const faction of factionCatalog) {
+      options.set(faction.name, faction);
+    }
+    for (const mob of workspace?.mobs ?? []) {
+      const faction = mob.faction.trim();
+      if (faction && !options.has(faction)) options.set(faction, null);
+    }
+    return Array.from(options.entries()).sort(([left], [right]) => left.localeCompare(right));
+  }, [factionCatalog, workspace]);
   const aiOptions = useMemo(() => {
     return Array.from(new Set((workspace?.mobs ?? []).map((mob) => mob.ai_type.trim()).filter(Boolean))).sort((left, right) =>
       left.localeCompare(right),
@@ -353,6 +495,27 @@ export default function MobLabApp() {
   useEffect(() => {
     let cancelled = false;
 
+    async function loadFactions() {
+      try {
+        const response = await fetch("/api/factions");
+        const payload = await response.json().catch(() => ({}));
+        const data = Array.isArray(payload?.data) ? (payload.data as FactionOption[]) : [];
+        if (cancelled) return;
+        if (!response.ok || !payload?.ok) {
+          setFactionCatalog([]);
+          setFactionCatalogStatus(payload?.error || "No faction catalog was found under the active local game root.");
+          return;
+        }
+        setFactionCatalog(data);
+        setFactionCatalogStatus("");
+      } catch (error) {
+        if (!cancelled) {
+          setFactionCatalog([]);
+          setFactionCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
     async function loadMerchantProfiles() {
       try {
         const response = await fetch("/api/settings/data/source?kind=merchantProfiles");
@@ -437,9 +600,35 @@ export default function MobLabApp() {
       }
     }
 
+    async function loadLootTables() {
+      try {
+        const response = await fetch("/api/loot-tables");
+        const payload = await response.json().catch(() => ({}));
+        const data = payload?.data as Partial<LootTableCatalog> | undefined;
+        if (cancelled) return;
+        if (!response.ok || !payload?.ok) {
+          setLootTables({ items: [], mods: [] });
+          setLootTableCatalogStatus(payload?.error || "No loot table catalog was found under the active local game root.");
+          return;
+        }
+        setLootTables({
+          items: Array.isArray(data?.items) ? data.items : [],
+          mods: Array.isArray(data?.mods) ? data.mods : [],
+        });
+        setLootTableCatalogStatus("");
+      } catch (error) {
+        if (!cancelled) {
+          setLootTables({ items: [], mods: [] });
+          setLootTableCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    void loadFactions();
     void loadMerchantProfiles();
     void loadCommsContacts();
     void loadHailImages();
+    void loadLootTables();
 
     return () => {
       cancelled = true;
@@ -478,6 +667,11 @@ export default function MobLabApp() {
     if (!currentId) return null;
     return merchantProfiles.find((profile) => profile.id.trim() === currentId) ?? null;
   }, [merchantProfiles, selectedMob?.merchant_profile]);
+  const selectedFaction = useMemo(() => {
+    const currentFaction = selectedMob?.faction.trim();
+    if (!currentFaction) return null;
+    return factionCatalog.find((faction) => faction.name === currentFaction) ?? null;
+  }, [factionCatalog, selectedMob?.faction]);
   const filteredMerchantProfiles = useMemo(() => {
     const query = merchantProfileSearch.trim().toLowerCase();
     if (!query) return merchantProfiles;
@@ -533,10 +727,34 @@ export default function MobLabApp() {
       [option.fileName, option.relativePath, option.resPath].join(" ").toLowerCase().includes(query),
     );
   }, [hailImageOptions, hailImageSearch]);
+  const filteredItemLootTables = useMemo(() => {
+    const query = itemLootTableSearch.trim().toLowerCase();
+    if (!query) return lootTables.items;
+    return lootTables.items.filter((option) =>
+      [option.id, ...option.entries.map((entry) => `${entry.id} ${entry.name ?? ""}`)].join(" ").toLowerCase().includes(query),
+    );
+  }, [itemLootTableSearch, lootTables.items]);
+  const filteredModLootTables = useMemo(() => {
+    const query = modLootTableSearch.trim().toLowerCase();
+    if (!query) return lootTables.mods;
+    return lootTables.mods.filter((option) =>
+      [option.id, ...option.entries.map((entry) => `${entry.id} ${entry.name ?? ""}`)].join(" ").toLowerCase().includes(query),
+    );
+  }, [lootTables.mods, modLootTableSearch]);
 
   function updateSelectedMob(updater: (current: MobDraft) => MobDraft) {
     if (!workspace || !selectedMob) return;
     setWorkspace(updateMobDraftAt(workspace, selectedMob.key, updater));
+  }
+
+  function applyGeneratedStats(current: MobDraft, level = current.level, rank = current.stat_rank) {
+    if (!level.trim() || Number.isNaN(Number(level))) return current;
+    return {
+      ...current,
+      level,
+      stat_rank: rank,
+      stats: mergeGeneratedMobStats(current.stats, level, rank),
+    };
   }
 
   function applyCommsContactToSelectedMob(contact: CommsContactDraft) {
@@ -554,6 +772,69 @@ export default function MobLabApp() {
         hail_can_hail_target: true,
       };
     });
+  }
+
+  async function handleCreateMerchantProfileForSelectedMob() {
+    if (!selectedMob) return;
+    if (selectedMob.merchant_profile.trim()) {
+      const shouldReplace = window.confirm(
+        `This mob already points to merchant profile "${selectedMob.merchant_profile}". Create a new empty profile and replace that assignment?`,
+      );
+      if (!shouldReplace) return;
+    }
+
+    setIsCreatingMerchantProfile(true);
+    try {
+      const response = await fetch("/api/merchant-profiles/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mobId: selectedMob.id,
+          displayName: selectedMob.display_name || selectedMob.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok || !payload?.profile) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not create a merchant profile in the local game source.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      const profile = payload.profile as MerchantProfileDraft;
+      setMerchantProfiles((current) =>
+        [...current.filter((entry) => entry.id.trim() !== profile.id.trim()), profile].sort((left, right) => {
+          const leftLabel = (left.name || left.id).trim().toLowerCase();
+          const rightLabel = (right.name || right.id).trim().toLowerCase();
+          const byLabel = leftLabel.localeCompare(rightLabel);
+          if (byLabel !== 0) return byLabel;
+          return left.id.trim().localeCompare(right.id.trim(), undefined, { numeric: true, sensitivity: "base" });
+        }),
+      );
+      updateSelectedMob((current) => ({
+        ...current,
+        is_vendor: true,
+        merchant_profile: profile.id.trim(),
+      }));
+      setMerchantProfileSearch(profile.id.trim());
+      setStatus({
+        tone: "success",
+        message: `Created empty merchant profile "${profile.id}" and assigned it to ${selectedMob.id || selectedMob.display_name || "the selected mob"}.`,
+        dismissAfterMs: 7000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    } finally {
+      setIsCreatingMerchantProfile(false);
+    }
   }
 
   function importText(
@@ -910,7 +1191,7 @@ export default function MobLabApp() {
                 <div className="label">Faction</div>
                 <select className="select mt-1 w-full" value={factionFilter} onChange={(event) => setFactionFilter(event.target.value)}>
                   <option value="">All factions</option>
-                  {factionOptions.map((value) => (
+                  {factionOptions.map(([value]) => (
                     <option key={value} value={value}>
                       {value}
                     </option>
@@ -1098,17 +1379,36 @@ export default function MobLabApp() {
                         className="input mt-1"
                         value={selectedMob.level}
                         placeholder="1"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, level: event.target.value }))}
+                        onFocus={selectInputContents}
+                        onChange={(event) => updateSelectedMob((current) => applyGeneratedStats(current, event.target.value))}
                       />
+                      <div className="mt-1 text-xs text-white/45">Changing level regenerates the editable built-in stats below.</div>
                     </div>
                     <div>
                       <div className="label">Faction</div>
-                      <input
-                        className="input mt-1"
+                      <select
+                        className="select mt-1 w-full"
                         value={selectedMob.faction}
-                        placeholder="Mob"
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, faction: event.target.value }))}
-                      />
+                      >
+                        <option value="">No faction</option>
+                        {factionOptions.map(([name, faction]) => (
+                          <option key={name} value={name}>
+                            {name}
+                            {faction ? ` (${faction.forcedPoints ?? faction.defaultPoints})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedMob.faction.trim() && !selectedFaction ? (
+                        <div className="mt-1 text-xs text-yellow-100/80">This faction is used by mobs but was not found in PlayerReputation.gd.</div>
+                      ) : selectedFaction ? (
+                        <div className="mt-1 text-xs text-white/45">
+                          Default reputation: {selectedFaction.defaultPoints}
+                          {selectedFaction.forcedPoints !== null ? ` · forced: ${selectedFaction.forcedPoints}` : ""}
+                        </div>
+                      ) : factionCatalogStatus ? (
+                        <div className="mt-1 text-xs text-white/45">{factionCatalogStatus}</div>
+                      ) : null}
                     </div>
                     <div>
                       <div className="label">AI Type</div>
@@ -1195,9 +1495,18 @@ export default function MobLabApp() {
                       checked={selectedMob.hail_can_hail_target}
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, hail_can_hail_target: next }))}
                     />
+                    <div>
+                      <div className="label">Repair Cost</div>
+                      <input
+                        className="input mt-1"
+                        value={selectedMob.repair_cost}
+                        placeholder="0"
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, repair_cost: event.target.value }))}
+                      />
+                    </div>
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                  <div>
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1206,14 +1515,24 @@ export default function MobLabApp() {
                             Pick from the active merchant profile catalog instead of typing profile IDs by hand.
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-                          disabled={!selectedMob.merchant_profile.trim()}
-                          onClick={() => updateSelectedMob((current) => ({ ...current, merchant_profile: "" }))}
-                        >
-                          Clear
-                        </button>
+                        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                          <button
+                            type="button"
+                            className="rounded border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-300/15 disabled:cursor-default disabled:opacity-40"
+                            disabled={isCreatingMerchantProfile}
+                            onClick={() => void handleCreateMerchantProfileForSelectedMob()}
+                          >
+                            {isCreatingMerchantProfile ? "Creating..." : "Create + Assign"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-white/10 px-3 py-2 text-xs text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+                            disabled={!selectedMob.merchant_profile.trim()}
+                            onClick={() => updateSelectedMob((current) => ({ ...current, merchant_profile: "" }))}
+                          >
+                            Clear
+                          </button>
+                        </div>
                       </div>
 
                       <input
@@ -1268,15 +1587,6 @@ export default function MobLabApp() {
                           </div>
                         )}
                       </div>
-                    </div>
-                    <div>
-                      <div className="label">Repair Cost</div>
-                      <input
-                        className="input mt-1"
-                        value={selectedMob.repair_cost}
-                        placeholder="0"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, repair_cost: event.target.value }))}
-                      />
                     </div>
                   </div>
                 </Section>
@@ -1506,22 +1816,39 @@ export default function MobLabApp() {
                 </Section>
 
                 <Section title="Loot and Drop Tables" description="Item and mod drop configuration, rarity bounds, and duplicate rules.">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <LootTablePicker
+                      label="Item Loot Table"
+                      value={selectedMob.item_loot_table}
+                      placeholder="pirate_basic_items"
+                      allOptions={lootTables.items}
+                      options={filteredItemLootTables}
+                      search={itemLootTableSearch}
+                      status={lootTableCatalogStatus}
+                      onSearchChange={setItemLootTableSearch}
+                      onValueChange={(next) => updateSelectedMob((current) => ({ ...current, item_loot_table: next }))}
+                    />
+                    <LootTablePicker
+                      label="Mod Loot Table"
+                      value={selectedMob.mod_loot_table}
+                      placeholder="pirate_mods_t1"
+                      allOptions={lootTables.mods}
+                      options={filteredModLootTables}
+                      search={modLootTableSearch}
+                      status={lootTableCatalogStatus}
+                      onSearchChange={setModLootTableSearch}
+                      onValueChange={(next) => updateSelectedMob((current) => ({ ...current, mod_loot_table: next }))}
+                    />
+                  </div>
+
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                    <div>
-                      <div className="label">Item Loot Table</div>
-                      <input
-                        className="input mt-1"
-                        value={selectedMob.item_loot_table}
-                        placeholder="pirate_basic_items"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, item_loot_table: event.target.value }))}
-                      />
-                    </div>
                     <div>
                       <div className="label">Item Drop Chance</div>
                       <input
                         className="input mt-1"
                         value={selectedMob.item_drop_chance}
                         placeholder="0.5"
+                        onFocus={selectInputContents}
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, item_drop_chance: event.target.value }))}
                       />
                     </div>
@@ -1532,20 +1859,12 @@ export default function MobLabApp() {
                     />
 
                     <div>
-                      <div className="label">Mod Loot Table</div>
-                      <input
-                        className="input mt-1"
-                        value={selectedMob.mod_loot_table}
-                        placeholder="pirate_mods_t1"
-                        onChange={(event) => updateSelectedMob((current) => ({ ...current, mod_loot_table: event.target.value }))}
-                      />
-                    </div>
-                    <div>
                       <div className="label">Mod Drop Chance</div>
                       <input
                         className="input mt-1"
                         value={selectedMob.mod_drop_chance}
                         placeholder="1"
+                        onFocus={selectInputContents}
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, mod_drop_chance: event.target.value }))}
                       />
                     </div>
@@ -1561,6 +1880,7 @@ export default function MobLabApp() {
                         className="input mt-1"
                         value={selectedMob.min_mod_rarity}
                         placeholder="0"
+                        onFocus={selectInputContents}
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, min_mod_rarity: event.target.value }))}
                       />
                     </div>
@@ -1570,6 +1890,7 @@ export default function MobLabApp() {
                         className="input mt-1"
                         value={selectedMob.max_mod_rarity}
                         placeholder="2"
+                        onFocus={selectInputContents}
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, max_mod_rarity: event.target.value }))}
                       />
                     </div>
@@ -1577,6 +1898,33 @@ export default function MobLabApp() {
                 </Section>
 
                 <Section title="Stats" description="Built-in combat and utility stats stay in dedicated inputs. Custom stats can be added below.">
+                  <div className="grid gap-4 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                    <div>
+                      <div className="label">Stat Generation Rank</div>
+                      <select
+                        className="select mt-1 w-full"
+                        value={selectedMob.stat_rank || "normal"}
+                        onChange={(event) => updateSelectedMob((current) => applyGeneratedStats(current, current.level, event.target.value))}
+                      >
+                        {MOB_STAT_RANK_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-xs leading-5 text-white/50">
+                      Level and rank generate the editable defaults. Manual stat edits still work; use regenerate if you want to reapply the curve.
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded border border-cyan-300/30 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-300/10"
+                      onClick={() => updateSelectedMob((current) => applyGeneratedStats(current))}
+                    >
+                      Regenerate Stats
+                    </button>
+                  </div>
+
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {BUILT_IN_MOB_STAT_KEYS.map((statKey) => (
                       <div key={statKey}>
@@ -1585,6 +1933,7 @@ export default function MobLabApp() {
                           className="input mt-1"
                           value={selectedMob.stats[statKey] ?? ""}
                           placeholder="0"
+                          onFocus={selectInputContents}
                           onChange={(event) =>
                             updateSelectedMob((current) => ({
                               ...current,
@@ -1632,6 +1981,7 @@ export default function MobLabApp() {
                               className="input"
                               value={statKey}
                               placeholder="custom_key"
+                              onFocus={selectInputContents}
                               onChange={(event) =>
                                 updateSelectedMob((current) => {
                                   const nextKey = event.target.value.trim();
@@ -1651,6 +2001,7 @@ export default function MobLabApp() {
                               className="input"
                               value={selectedMob.stats[statKey] ?? ""}
                               placeholder="0"
+                              onFocus={selectInputContents}
                               onChange={(event) =>
                                 updateSelectedMob((current) => ({
                                   ...current,

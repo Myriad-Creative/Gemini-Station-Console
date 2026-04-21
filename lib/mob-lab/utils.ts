@@ -5,6 +5,7 @@ import {
   MOB_KNOWN_TOP_LEVEL_FIELDS,
   MOB_NUMERIC_FIELDS,
 } from "@lib/mob-lab/constants";
+import { generateMobStatsForLevel, normalizeMobStatRank } from "@lib/mob-lab/stat-scaling";
 import type {
   MobDraft,
   MobLabImportResult,
@@ -217,6 +218,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     sprite: stringOrEmpty(source.sprite).trim(),
     faction: stringOrEmpty(source.faction).trim(),
     level: formatDraftNumber(source.level),
+    stat_rank: normalizeMobStatRank(stringOrEmpty(source.rank).trim()),
     ai_type: stringOrEmpty(source.ai_type).trim(),
     abilities: stringListFromUnknown(source.abilities),
     stats,
@@ -283,7 +285,10 @@ export function nextGeneratedMobId(existingIds: string[], previousId?: string) {
 }
 
 export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
-  const stats = Object.fromEntries(BUILT_IN_MOB_STAT_KEYS.map((key) => [key, "0"])) as Record<string, string>;
+  const stats = {
+    ...Object.fromEntries(BUILT_IN_MOB_STAT_KEYS.map((key) => [key, "0"])),
+    ...generateMobStatsForLevel(1, "normal"),
+  } as Record<string, string>;
 
   return {
     key: createDraftKey(),
@@ -295,6 +300,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     sprite: "",
     faction: "Mob",
     level: "1",
+    stat_rank: "normal",
     ai_type: "BasicAI",
     abilities: [],
     stats,

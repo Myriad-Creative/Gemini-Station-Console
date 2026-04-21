@@ -20,6 +20,7 @@ export interface MobDraft {
   sprite: string;
   faction: string;
   level: string;
+  stat_rank: string;
   ai_type: string;
   abilities: string[];
   stats: Record<string, string>;
