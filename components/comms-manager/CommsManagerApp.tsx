@@ -496,7 +496,7 @@ export default function CommsManagerApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-3xl">
           <h1 className="page-title mb-1">Comms Manager</h1>
           <p className="text-sm text-white/70">
@@ -504,29 +504,30 @@ export default function CommsManagerApp() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button
-            className="btn-save-build disabled:cursor-default disabled:opacity-40"
-            disabled={!workspace || workspaceHasErrors}
-            onClick={() => void handleSaveAllCommsToBuild()}
-          >
-            Save All Comms To Build
-          </button>
-          <button
-            className="btn disabled:cursor-default disabled:opacity-40"
-            disabled={!workspace || workspaceHasErrors}
-            onClick={handleDownload}
-          >
-            Download Updated comms.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-            disabled={!workspace || workspaceHasErrors}
-            onClick={() => void handleUpdatedJsonCopy()}
-          >
-            Copy Updated JSON
-          </button>
-        </div>
+        <button
+          className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || workspaceHasErrors}
+          onClick={() => void handleSaveAllCommsToBuild()}
+        >
+          Save All Comms To Build
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          className="btn disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || workspaceHasErrors}
+          onClick={handleDownload}
+        >
+          Download Updated comms.json
+        </button>
+        <button
+          className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || workspaceHasErrors}
+          onClick={() => void handleUpdatedJsonCopy()}
+        >
+          Copy Updated JSON
+        </button>
       </div>
 
       {status.tone === "neutral" ? (
