@@ -30,6 +30,12 @@ import {
   validateCommsContacts,
 } from "@lib/comms-manager/utils";
 
+type CommsPortraitOption = {
+  fileName: string;
+  relativePath: string;
+  resPath: string;
+};
+
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -153,6 +159,9 @@ export default function CommsManagerApp() {
   const [workspace, setWorkspace] = useState<CommsLabWorkspace | null>(null);
   const [selectedContactKey, setSelectedContactKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [portraitOptions, setPortraitOptions] = useState<CommsPortraitOption[]>([]);
+  const [portraitSearch, setPortraitSearch] = useState("");
+  const [portraitCatalogStatus, setPortraitCatalogStatus] = useState("");
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
@@ -248,6 +257,31 @@ export default function CommsManagerApp() {
     };
   }, [sharedDataVersion]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCommsPortraits() {
+      try {
+        const response = await fetch("/api/comms-portraits");
+        const payload = await response.json().catch(() => ({}));
+        const data = Array.isArray(payload?.data) ? (payload.data as CommsPortraitOption[]) : [];
+        if (cancelled) return;
+        setPortraitOptions(data);
+        setPortraitCatalogStatus(typeof payload?.message === "string" ? payload.message : "");
+      } catch (error) {
+        if (!cancelled) {
+          setPortraitOptions([]);
+          setPortraitCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    void loadCommsPortraits();
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedDataVersion]);
+
   const selectedContact = useMemo(() => {
     const contacts = workspace?.contacts ?? [];
     return contacts.find((contact) => contact.key === selectedContactKey) ?? filteredContacts[0] ?? contacts[0] ?? null;
@@ -260,6 +294,13 @@ export default function CommsManagerApp() {
       ? (duplicateIds.get(selectedContact.id.trim()) ?? []).filter((key) => key !== selectedContact.key)
       : [];
   const workspaceHasErrors = summary.errorCount > 0;
+  const filteredPortraitOptions = useMemo(() => {
+    const query = portraitSearch.trim().toLowerCase();
+    if (!query) return portraitOptions;
+    return portraitOptions.filter((option) =>
+      [option.fileName, option.relativePath, option.resPath].join(" ").toLowerCase().includes(query),
+    );
+  }, [portraitOptions, portraitSearch]);
 
   const workspaceSourceLabel = useMemo(() => {
     if (!workspace) return "";
@@ -382,6 +423,52 @@ export default function CommsManagerApp() {
     });
   }
 
+  async function handleSaveAllCommsToBuild() {
+    if (!workspace) return;
+    if (workspaceHasErrors) {
+      setStatus({
+        tone: "error",
+        message: "Fix comms validation errors before saving Comms.json into the configured game build.",
+        dismissAfterMs: null,
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/comms/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspace,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save Comms.json into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "success",
+        message: `Saved all ${workspace.contacts.length} comms contacts into the live Comms.json file.`,
+        dismissAfterMs: 10000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
+  }
+
   async function handleCurrentContactCopy() {
     if (!selectedContact || selectedHasErrors) return;
     const copied = await copyToClipboard(stringifySingleCommsContact(selectedContact));
@@ -418,6 +505,13 @@ export default function CommsManagerApp() {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <button
+            className="btn-save-build disabled:cursor-default disabled:opacity-40"
+            disabled={!workspace || workspaceHasErrors}
+            onClick={() => void handleSaveAllCommsToBuild()}
+          >
+            Save All Comms To Build
+          </button>
           <button
             className="btn disabled:cursor-default disabled:opacity-40"
             disabled={!workspace || workspaceHasErrors}
@@ -636,15 +730,93 @@ export default function CommsManagerApp() {
                         </div>
                       </div>
                       <div className="lg:col-span-2">
-                        <div className="label">Portrait</div>
-                        <input
-                          className="input mt-1"
-                          value={selectedContact.portrait}
-                          placeholder={DEFAULT_COMMS_PORTRAIT}
-                          onChange={(event) => updateSelectedContact((current) => ({ ...current, portrait: event.target.value }))}
-                        />
-                        <div className="mt-2 text-xs text-white/50">
-                          If blank, Comms Manager exports and previews the default portrait: <code>{DEFAULT_COMMS_PORTRAIT}</code>
+                        <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="label">Portrait</div>
+                              <div className="mt-1 text-xs text-white/45">
+                                Choose from <code>res://assets/comms/</code>, or edit the path directly if needed.
+                              </div>
+                            </div>
+                            <div className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/55">
+                              {portraitOptions.length} portrait option{portraitOptions.length === 1 ? "" : "s"}
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 lg:grid-cols-[120px_minmax(0,1fr)]">
+                            <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                              {portraitSrc ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={portraitSrc}
+                                  alt={selectedContact.name || selectedContact.id || "Contact portrait"}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="px-3 text-center text-xs text-white/35">No portrait</div>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <input
+                                className="input"
+                                value={selectedContact.portrait}
+                                placeholder={DEFAULT_COMMS_PORTRAIT}
+                                onChange={(event) => updateSelectedContact((current) => ({ ...current, portrait: event.target.value }))}
+                              />
+                              <input
+                                className="input"
+                                value={portraitSearch}
+                                placeholder="Search comms portraits by file name or path..."
+                                onChange={(event) => setPortraitSearch(event.target.value)}
+                              />
+                              <div className="text-xs text-white/50">
+                                If blank, Comms Manager exports and previews the default portrait: <code>{DEFAULT_COMMS_PORTRAIT}</code>
+                              </div>
+                              {portraitCatalogStatus ? (
+                                <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{portraitCatalogStatus}</div>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="max-h-80 overflow-y-auto pr-1">
+                            {filteredPortraitOptions.length ? (
+                              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                {filteredPortraitOptions.map((option) => {
+                                  const isSelected = resolvedPortraitPath(selectedContact.portrait) === option.resPath;
+                                  return (
+                                    <button
+                                      key={option.resPath}
+                                      type="button"
+                                      className={`rounded-xl border p-2 text-left transition ${
+                                        isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                                      }`}
+                                      onClick={() => updateSelectedContact((current) => ({ ...current, portrait: option.resPath }))}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
+                                            alt={option.fileName}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                                          <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
+                                          {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+                                No comms portraits matched the current search.
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="lg:col-span-2">
