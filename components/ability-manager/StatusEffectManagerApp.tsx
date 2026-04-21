@@ -512,7 +512,7 @@ export default function StatusEffectManagerApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-4xl">
           <h1 className="page-title mb-1">Status Effects Manager</h1>
           <p className="text-sm text-white/70">
@@ -520,7 +520,7 @@ export default function StatusEffectManagerApp() {
             bundle.
           </p>
         </div>
-        <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllStatusEffectsToBuild()}>
+        <button className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40" disabled={!database || workspaceHasErrors} onClick={() => void handleSaveAllStatusEffectsToBuild()}>
           Save All Status Effects To Build
         </button>
       </div>

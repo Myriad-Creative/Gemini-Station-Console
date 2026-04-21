@@ -111,14 +111,14 @@ export default function ModManagerPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-4xl">
           <h1 className="page-title mb-1">Mod Manager</h1>
           <p className="text-sm text-white/70">
             Manage the full current mod list from the active local game root, auto-generate new mods into that list, then export runtime-ready JSON when the workspace is ready.
           </p>
         </div>
-        <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={isLoading || workspaceHasErrors} onClick={() => void handleSaveAllModsToBuild()}>
+        <button className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40" disabled={isLoading || workspaceHasErrors} onClick={() => void handleSaveAllModsToBuild()}>
           Save All Mods To Build
         </button>
       </div>

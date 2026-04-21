@@ -583,6 +583,52 @@ export default function MerchantLabApp() {
     }
   }
 
+  async function handleSaveAllMerchantProfilesToBuild() {
+    if (!workspace) return;
+    if (hasWorkspaceErrors) {
+      setStatus({
+        tone: "error",
+        message: "Fix merchant profile validation errors before saving merchant_profiles.json into the configured game build.",
+        dismissAfterMs: null,
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/merchant-profiles/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspace,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save merchant_profiles.json into the configured game build.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "success",
+        message: `Saved all ${workspace.profiles.length} merchant profiles into the live merchant_profiles.json file.`,
+        dismissAfterMs: 10000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+        dismissAfterMs: null,
+      });
+    }
+  }
+
   async function handleCurrentProfileCopy() {
     if (!selectedProfile) return;
     try {
@@ -642,27 +688,31 @@ export default function MerchantLabApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-3xl">
           <h1 className="page-title mb-1">Merchant Lab</h1>
-          <p className="max-w-3xl text-sm leading-6 text-white/65">
+          <p className="text-sm leading-6 text-white/65">
             Build and maintain vendor merchant profiles with a live storefront preview, click-to-add catalog browser,
             duplicate-ID validation, and export tooling for `merchant_profiles.json`.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
-            Download merchant_profiles.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-            disabled={!workspace || hasWorkspaceErrors}
-            onClick={() => handleWorkspaceExport("copy")}
-          >
-            Copy Updated JSON
-          </button>
-        </div>
+        <button className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllMerchantProfilesToBuild()}>
+          Save All Merchant Profiles To Build
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
+          Download merchant_profiles.json
+        </button>
+        <button
+          className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || hasWorkspaceErrors}
+          onClick={() => handleWorkspaceExport("copy")}
+        >
+          Copy Updated JSON
+        </button>
       </div>
 
       {status.tone === "neutral" ? (

@@ -542,7 +542,7 @@ export default function AbilityBulkEditorApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-4xl">
           <h1 className="page-title mb-1">Ability Bulk Edit</h1>
           <p className="text-sm text-white/70">
@@ -550,7 +550,7 @@ export default function AbilityBulkEditorApp() {
           </p>
         </div>
         <button
-          className="btn-save-build disabled:cursor-default disabled:opacity-40"
+          className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40"
           disabled={!database || workspaceHasErrors}
           onClick={() => void handleSaveAllAbilitiesToBuild()}
         >
@@ -726,7 +726,7 @@ export default function AbilityBulkEditorApp() {
                 <button className="btn" onClick={() => setBulkEdit(EMPTY_BULK_EDIT_STATE)}>
                   Reset Bulk Form
                 </button>
-                <button className="btn-save-build disabled:cursor-default disabled:opacity-40" onClick={applyBulkEditToSelection} disabled={!selectedCount || !enabledBulkFieldTotal}>
+                <button className="btn disabled:cursor-default disabled:opacity-40" onClick={applyBulkEditToSelection} disabled={!selectedCount || !enabledBulkFieldTotal}>
                   Apply To Selected
                 </button>
               </div>

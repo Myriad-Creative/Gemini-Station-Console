@@ -701,26 +701,27 @@ export default function ZonesManagerApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-4xl">
           <h1 className="page-title mb-1">Zones Manager</h1>
-          <p className="max-w-4xl text-sm leading-6 text-white/65">
+          <p className="text-sm leading-6 text-white/65">
             Manage runtime zones from the active local game root, create new encounter spaces, edit stage and mob placements, and preview zone
             contents on a live layout map before saving back into the game build.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllZonesToBuild()}>
-            Save All Zones To Build
-          </button>
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace} onClick={handleDownloadUpdatedJson}>
-            Download Updated Zones.json
-          </button>
-          <button className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40" disabled={!workspace} onClick={() => void handleCopyUpdatedJson()}>
-            Copy Updated JSON
-          </button>
-        </div>
+        <button className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllZonesToBuild()}>
+          Save All Zones To Build
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace} onClick={handleDownloadUpdatedJson}>
+          Download Updated Zones.json
+        </button>
+        <button className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40" disabled={!workspace} onClick={() => void handleCopyUpdatedJson()}>
+          Copy Updated JSON
+        </button>
       </div>
 
       {status.tone === "neutral" ? (

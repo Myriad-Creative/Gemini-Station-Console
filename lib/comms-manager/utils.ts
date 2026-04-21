@@ -58,14 +58,16 @@ function incrementTrailingNumber(value: string) {
   return `${trimmed}_001`;
 }
 
-function slugifyContactName(value: string) {
-  const slug = value
+export function normalizeCommsIdValue(value: string) {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_");
+}
 
-  return slug || "contact";
+function slugifyContactName(value: string) {
+  return normalizeCommsIdValue(value) || "contact";
 }
 
 function normalizeImportedContact(source: JsonObject, fallbackId: string, sourceIndex: number): CommsContactDraft {

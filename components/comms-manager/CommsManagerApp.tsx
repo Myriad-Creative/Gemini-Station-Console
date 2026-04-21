@@ -22,6 +22,7 @@ import {
   generateCommsIdFromName,
   importCommsWorkspace,
   insertCommsContactAfter,
+  normalizeCommsIdValue,
   resolvedPortraitPath,
   stringifyCommsWorkspace,
   stringifySingleCommsContact,
@@ -35,6 +36,8 @@ type CommsPortraitOption = {
   relativePath: string;
   resPath: string;
 };
+
+const GENERATED_CONTACT_ID_PATTERN = /^contact_\d+$/;
 
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
@@ -162,6 +165,7 @@ export default function CommsManagerApp() {
   const [portraitOptions, setPortraitOptions] = useState<CommsPortraitOption[]>([]);
   const [portraitSearch, setPortraitSearch] = useState("");
   const [portraitCatalogStatus, setPortraitCatalogStatus] = useState("");
+  const [manuallyEditedContactIds, setManuallyEditedContactIds] = useState<Set<string>>(() => new Set());
   const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
@@ -318,6 +322,7 @@ export default function CommsManagerApp() {
       const result = importCommsWorkspace(text, sourceLabel, sourceType);
       setWorkspace(result.workspace);
       setSelectedContactKey(result.workspace.contacts[0]?.key ?? null);
+      setManuallyEditedContactIds(new Set());
       setStatus({
         tone: "success",
         message: result.warnings.length
@@ -364,6 +369,7 @@ export default function CommsManagerApp() {
     const nextWorkspace = createBlankCommsWorkspace();
     setWorkspace(nextWorkspace);
     setSelectedContactKey(nextWorkspace.contacts[0]?.key ?? null);
+    setManuallyEditedContactIds(new Set());
     setStatus({
       tone: "success",
       message: "Started a blank Comms Manager workspace.",
@@ -406,6 +412,11 @@ export default function CommsManagerApp() {
     const nextWorkspace = deleteCommsContactAt(workspace, selectedContact.key);
     setWorkspace(nextWorkspace);
     setSelectedContactKey(nextWorkspace.contacts[0]?.key ?? null);
+    setManuallyEditedContactIds((current) => {
+      const next = new Set(current);
+      next.delete(selectedContact.key);
+      return next;
+    });
     setStatus({
       tone: "success",
       message: `Deleted contact "${selectedContact.id || selectedContact.name || "untitled"}".`,
@@ -699,8 +710,13 @@ export default function CommsManagerApp() {
                           className={`input mt-1 ${selectedDuplicateKeys.length ? "border-red-300/35" : ""}`}
                           value={selectedContact.id}
                           placeholder="ava_ray"
-                          onChange={(event) => updateSelectedContact((current) => ({ ...current, id: event.target.value }))}
+                          onChange={(event) => {
+                            const nextId = normalizeCommsIdValue(event.target.value);
+                            setManuallyEditedContactIds((current) => new Set(current).add(selectedContact.key));
+                            updateSelectedContact((current) => ({ ...current, id: nextId }));
+                          }}
                         />
+                        <div className="mt-2 text-xs text-white/50">Manual IDs are normalized to lowercase underscores.</div>
                       </div>
                       <div>
                         <div className="label">Name</div>
@@ -716,7 +732,12 @@ export default function CommsManagerApp() {
                                 .map((entry) => entry.id);
                               const currentAutoId = generateCommsIdFromName(current.name, otherIds);
                               const nextAutoId = generateCommsIdFromName(nextName, otherIds);
-                              const shouldAutoUpdateId = !current.id.trim() || current.id.trim() === currentAutoId;
+                              const currentId = current.id.trim();
+                              const idWasManuallyEdited = manuallyEditedContactIds.has(current.key);
+                              const isGeneratedPlaceholder =
+                                current.sourceIndex === -1 && GENERATED_CONTACT_ID_PATTERN.test(currentId);
+                              const shouldAutoUpdateId =
+                                !currentId || (!idWasManuallyEdited && (currentId === currentAutoId || isGeneratedPlaceholder));
 
                               return {
                                 ...current,

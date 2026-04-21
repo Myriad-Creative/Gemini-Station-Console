@@ -1059,30 +1059,31 @@ export default function MobLabApp() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-3xl">
           <h1 className="page-title mb-1">Mob Lab</h1>
-          <p className="max-w-3xl text-sm leading-6 text-white/65">
+          <p className="text-sm leading-6 text-white/65">
             Browse and manage the full mob roster from the active local game root, clone and edit existing mobs, create new mob IDs with
             collision alerts, and export the updated runtime file or copy JSON directly to the clipboard.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllMobsToBuild()}>
-            Save All Mobs To Build
-          </button>
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
-            Download Updated mobs.json
-          </button>
-          <button
-            className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
-            disabled={!workspace || hasWorkspaceErrors}
-            onClick={() => handleWorkspaceExport("copy")}
-          >
-            Copy Updated JSON
-          </button>
-        </div>
+        <button className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => void handleSaveAllMobsToBuild()}>
+          Save All Mobs To Build
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn disabled:cursor-default disabled:opacity-40" disabled={!workspace || hasWorkspaceErrors} onClick={() => handleWorkspaceExport("download")}>
+          Download Updated mobs.json
+        </button>
+        <button
+          className="rounded border border-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || hasWorkspaceErrors}
+          onClick={() => handleWorkspaceExport("copy")}
+        >
+          Copy Updated JSON
+        </button>
       </div>
 
       {status.tone === "neutral" ? (
