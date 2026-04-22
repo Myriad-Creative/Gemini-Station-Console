@@ -5,6 +5,7 @@ import { parseTolerantJsonText } from "@lib/data-tools/parse";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { DATA_FILE_PATHS, type UploadedDataFileKind } from "@lib/uploaded-data";
 import type {
+  SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
   SystemMapPoi,
@@ -248,6 +249,23 @@ function buildMobCatalog(mobsJson: unknown) {
   return catalog;
 }
 
+function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
+  return asArray(mobsJson)
+    .map((entry) => {
+      const mob = asRecord(entry);
+      const id = stringValue(mob.id).trim();
+      return {
+        id,
+        displayName: stringValue(mob.display_name ?? mob.name, id),
+        faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
+        sprite: stringValue(mob.sprite, ""),
+        scene: stringValue(mob.scene, ""),
+      };
+    })
+    .filter((entry) => entry.id)
+    .sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id));
+}
+
 function resolveResPath(gameRootPath: string, resPath: string) {
   const cleaned = resPath.trim().replace(/^res:\/\//, "").replace(/^\/+/, "");
   if (!cleaned) return null;
@@ -484,6 +502,7 @@ function buildMobSpawn(
   spawnEntry: unknown,
   zoneWorld: SystemMapVec,
   mobCatalog: Map<string, JsonRecord>,
+  index: number,
 ): SystemMapMobSpawn {
   const spawn = asRecord(spawnEntry);
   const mobId = stringValue(spawn.mob_id ?? spawn.id).trim();
@@ -494,6 +513,8 @@ function buildMobSpawn(
   const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog) : { mobSpawns: [], barriers: [] };
 
   return {
+    key: `zone-mob-${index}`,
+    originalIndex: index,
     mobId,
     displayName: stringValue(mob.display_name ?? mob.name, mobId),
     local,
@@ -544,7 +565,7 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
         height: numberValue(bounds.height),
       },
       stages: asArray(zone.stages).map((entry) => buildStagePlacement(entry, world, stages)),
-      mobs: asArray(zone.mobs).map((entry) => buildMobSpawn(gameRootPath, entry, world, mobCatalog)),
+      mobs: asArray(zone.mobs).map((entry, index) => buildMobSpawn(gameRootPath, entry, world, mobCatalog, index)),
     };
   });
 }
@@ -667,6 +688,7 @@ export async function GET() {
     sectors: buildSectors(),
     regions: buildRegions(regionsResult.value),
     zones,
+    mobCatalog: buildMobCatalogEntries(mobsResult.value),
     pois: buildPois(poiResult.value, zones),
     routes: buildRoutes(routesResult.value),
     warnings,

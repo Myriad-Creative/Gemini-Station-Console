@@ -77,6 +77,10 @@ export type SystemMapSceneBarrier = {
 };
 
 export type SystemMapMobSpawn = {
+  key: string;
+  originalIndex: number | null;
+  draft?: boolean;
+  modified?: boolean;
   mobId: string;
   displayName: string;
   local: SystemMapVec;
@@ -94,6 +98,14 @@ export type SystemMapMobSpawn = {
   missing: boolean;
   sceneSpawns: SystemMapSceneMobSpawn[];
   sceneBarriers: SystemMapSceneBarrier[];
+};
+
+export type SystemMapMobCatalogEntry = {
+  id: string;
+  displayName: string;
+  faction: string;
+  sprite: string;
+  scene: string;
 };
 
 export type SystemMapZone = {
@@ -155,6 +167,7 @@ export type SystemMapPayload = {
   sectors: SystemMapSector[];
   regions: SystemMapRegion[];
   zones: SystemMapZone[];
+  mobCatalog: SystemMapMobCatalogEntry[];
   pois: SystemMapPoi[];
   routes: SystemMapRoute[];
   warnings: string[];
