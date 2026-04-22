@@ -9,13 +9,14 @@ import type {
   SystemMapPoi,
   SystemMapRect,
   SystemMapRoute,
+  SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
   SystemMapStagePlacement,
   SystemMapVec,
   SystemMapZone,
 } from "@lib/system-map/types";
 
-type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "labels";
+type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "barriers" | "labels";
 type Viewport = {
   width: number;
   height: number;
@@ -41,6 +42,7 @@ const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   pois: true,
   stages: true,
   mobs: true,
+  barriers: true,
   labels: true,
 };
 
@@ -112,8 +114,15 @@ function computeWorldBounds(payload: SystemMapPayload): SystemMapRect {
     bounds = mergeRect(bounds, sector.rect);
   }
   for (const zone of payload.zones) {
-    const radius = Math.max(zone.activationRadius, zone.bounds.width / 2, zone.bounds.height / 2, 5000);
+    const radius = Math.max(zone.bounds.width / 2, zone.bounds.height / 2, 5000);
     bounds = mergeRect(bounds, { x: zone.world.x - radius, y: zone.world.y - radius, w: radius * 2, h: radius * 2 });
+    for (const mob of zone.mobs) {
+      for (const barrier of mob.sceneBarriers) {
+        for (const point of barrier.worldPoints) {
+          bounds = expandBounds(bounds, point);
+        }
+      }
+    }
   }
   for (const poi of payload.pois) {
     bounds = expandBounds(bounds, poi.world);
@@ -178,6 +187,11 @@ function routeMatches(route: SystemMapRoute, query: string) {
 function stageMatches(stage: SystemMapStagePlacement, query: string) {
   if (!query) return true;
   return [stage.stageId, stage.name, stage.shape].join(" ").toLowerCase().includes(query);
+}
+
+function barrierMatches(barrier: SystemMapSceneBarrier, query: string) {
+  if (!query) return true;
+  return [barrier.nodeName, barrier.profileId, barrier.sourceScene].join(" ").toLowerCase().includes(query);
 }
 
 function isMapUiTarget(target: EventTarget | null) {
@@ -448,11 +462,39 @@ export default function SystemMapViewer() {
       }
     }
 
+    if (toggles.barriers) {
+      for (const zone of payload.zones) {
+        if (!zoneMatches(zone, normalizedQuery)) continue;
+        for (const mob of zone.mobs) {
+          for (const barrier of mob.sceneBarriers) {
+            if (!barrierMatches(barrier, normalizedQuery)) continue;
+            for (let index = 1; index < barrier.worldPoints.length; index += 1) {
+              const hitDistance = Math.max(barrier.bandWidth * barrier.visualWidthMultiplier * 0.5, 10 / camera.zoom);
+              if (pointToSegmentDistance(world, barrier.worldPoints[index - 1], barrier.worldPoints[index]) <= hitDistance) {
+                return {
+                  x: screen.x,
+                  y: screen.y,
+                  title: barrier.nodeName || "Hazard Barrier",
+                  subtitle: `Scene barrier in ${mob.displayName || mob.mobId}`,
+                  lines: [
+                    `Profile: ${barrier.profileId || "not set"}`,
+                    `Band width: ${formatNumber(barrier.bandWidth)}`,
+                    `Visual width: ${barrier.visualWidthMultiplier}x`,
+                    `Points: ${barrier.worldPoints.length}`,
+                    `Scene: ${barrier.sourceScene}`,
+                  ],
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (toggles.zones) {
       for (const zone of payload.zones) {
         if (!zoneMatches(zone, normalizedQuery)) continue;
-        const inActivation = zone.activationRadius > 0 && distance(world, zone.world) <= zone.activationRadius;
-        if (pointInZoneBounds(world, zone) || inActivation || distance(world, zone.world) <= screenHitRadius) {
+        if (pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) {
           return {
             x: screen.x,
             y: screen.y,
@@ -579,6 +621,7 @@ export default function SystemMapViewer() {
   const filteredPois = payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [];
   const filteredRoutes = payload?.routes.filter((route) => routeMatches(route, normalizedQuery)) ?? [];
   const sceneMobCount = payload?.zones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0) ?? 0;
+  const sceneBarrierCount = payload?.zones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0) ?? 0;
   const zoneMobCount = payload?.zones.reduce((sum, zone) => sum + zone.mobs.length, 0) ?? 0;
 
   return (
@@ -668,17 +711,6 @@ export default function SystemMapViewer() {
                   const zoneColor = zone.active ? "rgba(34,211,238,0.55)" : "rgba(148,163,184,0.36)";
                   return (
                     <g key={zone.id}>
-                      {zone.activationRadius > 0 ? (
-                        <circle
-                          cx={zone.world.x}
-                          cy={zone.world.y}
-                          r={zone.activationRadius}
-                          fill={zone.active ? "rgba(34,211,238,0.035)" : "rgba(148,163,184,0.025)"}
-                          stroke={zoneColor}
-                          strokeDasharray={`${12 / camera.zoom} ${8 / camera.zoom}`}
-                          strokeWidth={2 / camera.zoom}
-                        />
-                      ) : null}
                       {zone.bounds.shape.toLowerCase() === "rect" || zone.bounds.shape.toLowerCase() === "rectangle" ? (
                         <rect
                           x={zone.world.x - zone.bounds.width / 2}
@@ -704,6 +736,24 @@ export default function SystemMapViewer() {
                     </g>
                   );
                 })
+              : null}
+
+            {toggles.barriers
+              ? filteredZones.flatMap((zone) =>
+                  zone.mobs.flatMap((mob) =>
+                    mob.sceneBarriers.filter((barrier) => barrierMatches(barrier, normalizedQuery)).map((barrier) => (
+                      <polyline
+                        key={`${zone.id}:${mob.mobId}:${barrier.nodeName}:${barrier.profileId}:${barrier.worldPoints.length}`}
+                        points={barrier.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                        fill="none"
+                        stroke="rgba(251,146,60,0.62)"
+                        strokeWidth={Math.max(500, barrier.bandWidth * Math.max(1, barrier.visualWidthMultiplier))}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )),
+                  ),
+                )
               : null}
 
             {toggles.stages
@@ -839,7 +889,7 @@ export default function SystemMapViewer() {
           <div>
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
-              {payload ? `${payload.zones.length} zones · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers` : "Loading local game source..."}
+              {payload ? `${payload.zones.length} zones · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers` : "Loading local game source..."}
             </div>
           </div>
           <div className="flex gap-2">

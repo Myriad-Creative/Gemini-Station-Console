@@ -11,6 +11,7 @@ import type {
   SystemMapRect,
   SystemMapRegion,
   SystemMapRoute,
+  SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
   SystemMapSector,
   SystemMapStagePlacement,
@@ -88,6 +89,15 @@ type JsonRecord = Record<string, unknown>;
 type LoadedJson = {
   value: unknown | null;
   warnings: string[];
+};
+type PendingSceneBarrier = {
+  nodeName: string;
+  position: SystemMapVec;
+  profileId: string;
+  bandWidth: number;
+  visualWidthMultiplier: number;
+  visualDensityMultiplier: number;
+  visualAlphaMultiplier: number;
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -253,29 +263,74 @@ function parseVector2Text(value: string): SystemMapVec | null {
   };
 }
 
-function parseSceneMobSpawns(
+function parsePackedVector2Array(value: string): SystemMapVec[] {
+  const match = value.match(/PackedVector2Array\(([^)]*)\)/s);
+  if (!match) return [];
+  const numbers = match[1]
+    .split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((entry) => Number.isFinite(entry));
+
+  const points: SystemMapVec[] = [];
+  for (let index = 0; index + 1 < numbers.length; index += 2) {
+    points.push({ x: numbers[index], y: numbers[index + 1] });
+  }
+  return points;
+}
+
+function extractCurvePointsById(text: string) {
+  const curves = new Map<string, SystemMapVec[]>();
+  const pattern = /\[sub_resource type="Curve2D" id="([^"]+)"\][\s\S]*?"points":\s*PackedVector2Array\(([^)]*)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    const rawPoints = parsePackedVector2Array(`PackedVector2Array(${match[2]})`);
+    const anchorPoints: SystemMapVec[] = [];
+    for (let index = 2; index < rawPoints.length; index += 3) {
+      anchorPoints.push(rawPoints[index]);
+    }
+    curves.set(match[1], anchorPoints);
+  }
+  return curves;
+}
+
+function parseSceneContents(
   gameRootPath: string,
   scenePath: string,
   parentWorld: SystemMapVec,
   mobCatalog: Map<string, JsonRecord>,
-): SystemMapSceneMobSpawn[] {
+): { mobSpawns: SystemMapSceneMobSpawn[]; barriers: SystemMapSceneBarrier[] } {
   const absolute = resolveResPath(gameRootPath, scenePath);
-  if (!absolute || !fs.existsSync(absolute)) return [];
+  if (!absolute || !fs.existsSync(absolute)) {
+    return {
+      mobSpawns: [],
+      barriers: [],
+    };
+  }
 
   const text = fs.readFileSync(absolute, "utf-8");
+  const curves = extractCurvePointsById(text);
   const lines = text.split(/\r?\n/);
-  const spawns: SystemMapSceneMobSpawn[] = [];
+  const mobSpawns: SystemMapSceneMobSpawn[] = [];
+  const barriers: SystemMapSceneBarrier[] = [];
   let nodeName = "";
+  let nodeType = "";
+  let parentName = "";
   let position: SystemMapVec = { x: 0, y: 0 };
   let mobId = "";
   let angleDeg: number | null = null;
   let respawnDelay: number | null = null;
   let routeId = "";
+  let barrierProfileId = "";
+  let bandWidth = 0;
+  let visualWidthMultiplier = 1;
+  let visualDensityMultiplier = 1;
+  let visualAlphaMultiplier = 1;
+  const pendingBarrierRef: { current: PendingSceneBarrier | null } = { current: null };
 
   function flush() {
     if (!mobId) return;
     const mob = mobCatalog.get(mobId) ?? {};
-    spawns.push({
+    mobSpawns.push({
       nodeName,
       mobId,
       displayName: stringValue(mob.display_name ?? mob.name, mobId),
@@ -291,15 +346,37 @@ function parseSceneMobSpawns(
     });
   }
 
+  function capturePendingBarrier() {
+    if (barrierProfileId || nodeName.toLowerCase().includes("hazardbarrier")) {
+      pendingBarrierRef.current = {
+        nodeName,
+        position,
+        profileId: barrierProfileId,
+        bandWidth,
+        visualWidthMultiplier,
+        visualDensityMultiplier,
+        visualAlphaMultiplier,
+      };
+    }
+  }
+
   for (const line of lines) {
     if (line.startsWith("[node ")) {
       flush();
+      capturePendingBarrier();
       nodeName = line.match(/name="([^"]+)"/)?.[1] ?? "";
+      nodeType = line.match(/type="([^"]+)"/)?.[1] ?? "";
+      parentName = line.match(/parent="([^"]+)"/)?.[1] ?? "";
       position = { x: 0, y: 0 };
       mobId = "";
       angleDeg = null;
       respawnDelay = null;
       routeId = "";
+      barrierProfileId = "";
+      bandWidth = 0;
+      visualWidthMultiplier = 1;
+      visualDensityMultiplier = 1;
+      visualAlphaMultiplier = 1;
       continue;
     }
 
@@ -325,11 +402,60 @@ function parseSceneMobSpawns(
 
     if (line.startsWith("metadata/route_id")) {
       routeId = line.match(/=\s*"([^"]+)"/)?.[1] ?? "";
+      continue;
+    }
+
+    if (line.startsWith("barrier_profile_id")) {
+      barrierProfileId = line.match(/=\s*"([^"]+)"/)?.[1] ?? "";
+      continue;
+    }
+
+    if (line.startsWith("band_width")) {
+      bandWidth = numberValue(line.split("=").slice(1).join("=").trim());
+      continue;
+    }
+
+    if (line.startsWith("visual_width_multiplier")) {
+      visualWidthMultiplier = numberValue(line.split("=").slice(1).join("=").trim(), 1);
+      continue;
+    }
+
+    if (line.startsWith("visual_density_multiplier")) {
+      visualDensityMultiplier = numberValue(line.split("=").slice(1).join("=").trim(), 1);
+      continue;
+    }
+
+    if (line.startsWith("visual_alpha_multiplier")) {
+      visualAlphaMultiplier = numberValue(line.split("=").slice(1).join("=").trim(), 1);
+      continue;
+    }
+
+    const pendingBarrier = pendingBarrierRef.current;
+    if ((nodeType === "Path2D" || nodeName === "Path2D") && parentName && pendingBarrier && parentName === pendingBarrier.nodeName && line.startsWith("curve = SubResource(")) {
+      const curveId = line.match(/SubResource\("([^"]+)"\)/)?.[1] ?? "";
+      const localCurvePoints = curves.get(curveId) ?? [];
+      const localPoints = localCurvePoints.map((point) => addVec(pendingBarrier.position, point));
+      barriers.push({
+        nodeName: pendingBarrier.nodeName,
+        profileId: pendingBarrier.profileId,
+        localPoints,
+        worldPoints: localPoints.map((point) => addVec(parentWorld, point)),
+        bandWidth: pendingBarrier.bandWidth,
+        visualWidthMultiplier: pendingBarrier.visualWidthMultiplier,
+        visualDensityMultiplier: pendingBarrier.visualDensityMultiplier,
+        visualAlphaMultiplier: pendingBarrier.visualAlphaMultiplier,
+        sourceScene: scenePath,
+      });
+      pendingBarrierRef.current = null;
     }
   }
 
   flush();
-  return spawns;
+  capturePendingBarrier();
+  return {
+    mobSpawns,
+    barriers,
+  };
 }
 
 function buildStagePlacement(stageEntry: unknown, zoneWorld: SystemMapVec, stagesJson: JsonRecord): SystemMapStagePlacement {
@@ -365,6 +491,7 @@ function buildMobSpawn(
   const local = vecValue(spawn.pos);
   const world = addVec(zoneWorld, local);
   const scene = stringValue(mob.scene, "");
+  const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog) : { mobSpawns: [], barriers: [] };
 
   return {
     mobId,
@@ -382,7 +509,8 @@ function buildMobSpawn(
     sprite: stringValue(mob.sprite, ""),
     scene,
     missing: !mobCatalog.has(mobId),
-    sceneSpawns: scene ? parseSceneMobSpawns(gameRootPath, scene, world, mobCatalog) : [],
+    sceneSpawns: sceneContents.mobSpawns,
+    sceneBarriers: sceneContents.barriers,
   };
 }
 
@@ -546,4 +674,3 @@ export async function GET() {
 
   return NextResponse.json(payload);
 }
-

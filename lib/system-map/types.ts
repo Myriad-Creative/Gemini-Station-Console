@@ -64,6 +64,18 @@ export type SystemMapSceneMobSpawn = {
   sourceScene: string;
 };
 
+export type SystemMapSceneBarrier = {
+  nodeName: string;
+  profileId: string;
+  localPoints: SystemMapVec[];
+  worldPoints: SystemMapVec[];
+  bandWidth: number;
+  visualWidthMultiplier: number;
+  visualDensityMultiplier: number;
+  visualAlphaMultiplier: number;
+  sourceScene: string;
+};
+
 export type SystemMapMobSpawn = {
   mobId: string;
   displayName: string;
@@ -81,6 +93,7 @@ export type SystemMapMobSpawn = {
   scene: string;
   missing: boolean;
   sceneSpawns: SystemMapSceneMobSpawn[];
+  sceneBarriers: SystemMapSceneBarrier[];
 };
 
 export type SystemMapZone = {
@@ -143,4 +156,3 @@ export type SystemMapPayload = {
   routes: SystemMapRoute[];
   warnings: string[];
 };
-
