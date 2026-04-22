@@ -710,6 +710,41 @@ function withRoutePointAppended(route: SystemMapRoute, world: SystemMapVec): Sys
   };
 }
 
+function findNearestRouteSegment(route: SystemMapRoute, world: SystemMapVec): { index: number; distance: number } | null {
+  if (route.points.length < 2) return null;
+  let best: { index: number; distance: number } | null = null;
+  for (let index = 1; index < route.points.length; index += 1) {
+    const segmentDistance = pointToSegmentDistance(world, route.points[index - 1], route.points[index]);
+    if (!best || segmentDistance < best.distance) {
+      best = {
+        index: index - 1,
+        distance: segmentDistance,
+      };
+    }
+  }
+  return best;
+}
+
+function withRoutePointInserted(route: SystemMapRoute, world: SystemMapVec): SystemMapRoute {
+  if (route.points.length < 2) return withRoutePointAppended(route, world);
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const nearestSegment = findNearestRouteSegment(route, roundedWorld);
+  const insertIndex = nearestSegment ? nearestSegment.index + 1 : route.points.length - 1;
+  const nextPoints = [...route.points.slice(0, insertIndex), roundedWorld, ...route.points.slice(insertIndex)];
+  return {
+    ...route,
+    modified: route.draft ? route.modified : true,
+    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
+    endpointA: nextPoints[0],
+    endpointB: nextPoints[nextPoints.length - 1],
+    viaPoints: nextPoints.slice(1, -1),
+    points: nextPoints,
+  };
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -1035,8 +1070,22 @@ export default function SystemMapViewer() {
     updateRouteInMap(routeId, (route) => withRoutePoint(route, pointIndex, world));
   }
 
-  function appendRoutePoint(routeId: string, world: SystemMapVec) {
-    updateRouteInMap(routeId, (route) => withRoutePointAppended(route, world));
+  function insertRoutePoint(routeId: string, world: SystemMapVec) {
+    const route = mapRoutes.find((entry) => routeIdentity(entry) === routeId);
+    if (!route) {
+      setStatus({ tone: "error", message: "Could not find the active trade route." });
+      return;
+    }
+    if (route.points.length >= 2) {
+      const nearestSegment = findNearestRouteSegment(route, world);
+      const hitDistance = Math.max(route.width / 2, 12 / camera.zoom);
+      if (!nearestSegment || nearestSegment.distance > hitDistance) {
+        setStatus({ tone: "neutral", message: "Click on or near the active route line to insert a point between existing route handles." });
+        return;
+      }
+    }
+    updateRouteInMap(routeId, (currentRoute) => withRoutePointInserted(currentRoute, world));
+    setStatus({ tone: "neutral", message: "Inserted route point. Drag the new handle to reshape the curve, or keep clicking the route line to add more points." });
   }
 
   function updateZonePosition(zoneId: string, world: SystemMapVec) {
@@ -1179,8 +1228,7 @@ export default function SystemMapViewer() {
       return;
     }
     if (activeRouteAddId) {
-      appendRoutePoint(activeRouteAddId, world);
-      setStatus({ tone: "neutral", message: "Added route point. Keep clicking to add points, or stop point mode in the route editor." });
+      insertRoutePoint(activeRouteAddId, world);
       clearHover();
       return;
     }
@@ -2561,7 +2609,7 @@ export default function SystemMapViewer() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xl font-semibold text-white">{routeForm.mode === "create" ? "New Trade Route" : "Edit Trade Route"}</div>
-                    <div className="mt-1 text-sm text-white/55">Click the map to add route points. Drag the visible handles to adjust the path.</div>
+                    <div className="mt-1 text-sm text-white/55">Turn on Insert Points, click the route line to add handles between existing points, then drag handles to reshape the curve.</div>
                   </div>
                   <button
                     type="button"
@@ -2647,9 +2695,10 @@ export default function SystemMapViewer() {
                         setActiveRouteAddId((current) => (current === routeForm.originalId ? null : routeForm.originalId));
                       }}
                     >
-                      {isAddingPoints ? "Stop Adding Points" : "Add Points"}
+                      {isAddingPoints ? "Stop Inserting Points" : "Insert Points"}
                     </button>
                   </div>
+                  <div className="mt-3 text-xs leading-5 text-white/45">Insertion mode adds the new point into the closest route segment, preserving the start and end points. Click-drag any visible handle to fine-tune the curve.</div>
                   <div className="mt-3 max-h-40 space-y-1 overflow-auto text-xs text-white/60">
                     {route?.points.map((point, index) => (
                       <div key={`${routeIdentity(route)}:${index}:point-row`} className="flex justify-between gap-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
