@@ -101,6 +101,7 @@ export type SystemMapZone = {
   name: string;
   draft?: boolean;
   modified?: boolean;
+  originalId?: string;
   active: boolean;
   showHudOnEnter: boolean;
   poiMap: boolean;

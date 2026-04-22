@@ -46,6 +46,8 @@ type ContextMenuState = {
   world: SystemMapVec;
 };
 type ZoneDraftForm = {
+  mode: "create" | "edit";
+  originalId: string | null;
   name: string;
   id: string;
   worldX: string;
@@ -58,12 +60,8 @@ type ZoneDraftForm = {
   showHudOnEnter: boolean;
   poiMap: boolean;
   poiHidden: boolean;
-};
-type ZonePositionForm = {
-  id: string;
-  name: string;
-  worldX: string;
-  worldY: string;
+  poiLabel: string;
+  activationRadiusBorder: boolean;
 };
 type ZoneDragState = {
   zoneId: string;
@@ -119,6 +117,11 @@ function sanitizeZoneId(value: string) {
 
 function numberInputValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function normalizeBoundsShape(value: string): ZoneDraftForm["boundsShape"] {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "rect" || normalized === "rectangle" ? "rectangle" : "ellipse";
 }
 
 function worldToSectorLocal(world: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZE, sectorHalfExtent = DEFAULT_SECTOR_HALF_EXTENT): { sector: SystemMapVec; local: SystemMapVec } {
@@ -255,12 +258,12 @@ function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: s
     showHudOnEnter: form.showHudOnEnter,
     poiMap: form.poiMap,
     poiHidden: form.poiHidden,
-    poiLabel: "",
+    poiLabel: form.poiLabel.trim(),
     sector,
     local,
     world,
     activationRadius: Number(form.activationRadius),
-    activationRadiusBorder: false,
+    activationRadiusBorder: form.activationRadiusBorder,
     bounds: {
       shape: form.boundsShape,
       width: Number(form.boundsWidth),
@@ -268,6 +271,34 @@ function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: s
     },
     stages: [],
     mobs: [],
+  };
+}
+
+function applyZoneFormToZone(form: ZoneDraftForm, baseZone: SystemMapZone, payload: SystemMapPayload, id: string): SystemMapZone {
+  const world = {
+    x: Number(form.worldX),
+    y: Number(form.worldY),
+  };
+  const movedZone = moveZoneToWorld(baseZone, world, payload);
+  return {
+    ...movedZone,
+    id,
+    name: form.name.trim() || id,
+    draft: baseZone.draft,
+    modified: baseZone.draft ? baseZone.modified : true,
+    originalId: baseZone.draft ? baseZone.originalId : baseZone.originalId ?? baseZone.id,
+    active: form.active,
+    showHudOnEnter: form.showHudOnEnter,
+    poiMap: form.poiMap,
+    poiHidden: form.poiHidden,
+    poiLabel: form.poiLabel.trim(),
+    activationRadius: Number(form.activationRadius),
+    activationRadiusBorder: form.activationRadiusBorder,
+    bounds: {
+      shape: form.boundsShape,
+      width: Number(form.boundsWidth),
+      height: Number(form.boundsHeight),
+    },
   };
 }
 
@@ -296,13 +327,25 @@ function zoneToManagerDraft(zone: SystemMapZone, existingIds: string[]): ZoneDra
   };
 }
 
-function applyZonePositionToManagerDraft(draft: ZoneDraft, zone: SystemMapZone): ZoneDraft {
+function applyZoneDetailsToManagerDraft(draft: ZoneDraft, zone: SystemMapZone): ZoneDraft {
   return {
     ...draft,
+    id: zone.id,
+    name: zone.name,
+    active: zone.active,
+    showHudOnEnter: zone.showHudOnEnter,
+    poiMap: zone.poiMap,
+    poiHidden: zone.poiHidden,
+    poiLabel: zone.poiLabel,
     sectorX: numberInputValue(zone.sector.x),
     sectorY: numberInputValue(zone.sector.y),
     posX: numberInputValue(zone.local.x),
     posY: numberInputValue(zone.local.y),
+    activationRadius: numberInputValue(zone.activationRadius),
+    activationRadiusBorder: zone.activationRadiusBorder,
+    boundsShape: zone.bounds.shape,
+    boundsWidth: numberInputValue(zone.bounds.width),
+    boundsHeight: numberInputValue(zone.bounds.height),
   };
 }
 
@@ -315,6 +358,7 @@ function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: Syst
   return {
     ...zone,
     modified: zone.draft ? zone.modified : true,
+    originalId: zone.draft ? zone.originalId : zone.originalId ?? zone.id,
     sector,
     local,
     world,
@@ -345,6 +389,26 @@ function zoneMatches(zone: SystemMapZone, query: string) {
 function poiMatches(poi: SystemMapPoi, query: string) {
   if (!query) return true;
   return [poi.id, poi.name, poi.type, poi.source].join(" ").toLowerCase().includes(query);
+}
+
+function updateZonePois(pois: SystemMapPoi[], originalZoneId: string, zone: SystemMapZone): SystemMapPoi[] {
+  const withoutZonePoi = pois.filter((poi) => !(poi.source === "zone" && poi.zoneId === originalZoneId));
+  if (!zone.poiMap) return withoutZonePoi;
+  return [
+    ...withoutZonePoi,
+    {
+      id: zone.id,
+      name: zone.poiLabel || zone.name,
+      type: "zone",
+      source: "zone" as const,
+      zoneId: zone.id,
+      sector: zone.sector,
+      local: zone.local,
+      world: zone.world,
+      map: true,
+      hidden: zone.poiHidden,
+    },
+  ];
 }
 
 function mobMatches(mob: SystemMapMobSpawn | SystemMapSceneMobSpawn, query: string) {
@@ -388,7 +452,6 @@ export default function SystemMapViewer() {
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
-  const [zonePositionForm, setZonePositionForm] = useState<ZonePositionForm | null>(null);
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
   const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
@@ -489,37 +552,42 @@ export default function SystemMapViewer() {
       return;
     }
 
-    const existingZone = payload.zones.find((zone) => zone.id === zoneId);
+    const existingZone = payload.zones.find((zone) => (zone.originalId ?? zone.id) === zoneId || zone.id === zoneId);
     if (!existingZone) return;
     const movedZone = moveZoneToWorld(existingZone, roundedWorld, payload);
+    const originalId = movedZone.originalId ?? existingZone.id;
     setPayload((current) =>
       current
         ? {
             ...current,
-            zones: current.zones.map((zone) => (zone.id === zoneId ? movedZone : zone)),
-            pois: current.pois.map((poi) =>
-              poi.source === "zone" && poi.zoneId === zoneId
-                ? {
-                    ...poi,
-                    sector: movedZone.sector,
-                    local: movedZone.local,
-                    world: movedZone.world,
-                  }
-                : poi,
-            ),
+            zones: current.zones.map((zone) => ((zone.originalId ?? zone.id) === originalId ? movedZone : zone)),
+            pois: updateZonePois(current.pois, originalId, movedZone),
           }
         : current,
     );
-    setEditedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
+    setEditedZoneIds((current) => (current.includes(originalId) ? current : [...current, originalId]));
   }
 
-  function openZonePositionEditor(zone: SystemMapZone) {
-    setZonePositionForm({
+  function openZoneEditor(zone: SystemMapZone) {
+    setZoneForm({
+      mode: "edit",
+      originalId: zone.originalId ?? zone.id,
       id: zone.id,
       name: zone.name || zone.id,
       worldX: numberInputValue(zone.world.x),
       worldY: numberInputValue(zone.world.y),
+      activationRadius: numberInputValue(zone.activationRadius),
+      boundsShape: normalizeBoundsShape(zone.bounds.shape),
+      boundsWidth: numberInputValue(zone.bounds.width),
+      boundsHeight: numberInputValue(zone.bounds.height),
+      active: zone.active,
+      showHudOnEnter: zone.showHudOnEnter,
+      poiMap: zone.poiMap,
+      poiHidden: zone.poiHidden,
+      poiLabel: zone.poiLabel,
+      activationRadiusBorder: zone.activationRadiusBorder,
     });
+    setZoneIdManuallyEdited(true);
     setContextMenu(null);
     setStatus(null);
   }
@@ -585,7 +653,7 @@ export default function SystemMapViewer() {
       return;
     }
     if (targetZone) {
-      openZonePositionEditor(targetZone);
+      openZoneEditor(targetZone);
       clearHover();
       return;
     }
@@ -930,6 +998,8 @@ export default function SystemMapViewer() {
   function openCreateZoneForm(world: SystemMapVec) {
     const defaultName = "New Zone";
     setZoneForm({
+      mode: "create",
+      originalId: null,
       name: defaultName,
       id: createUniqueId(sanitizeZoneId(defaultName), existingZoneIds),
       worldX: numberInputValue(Math.round(world.x)),
@@ -942,6 +1012,8 @@ export default function SystemMapViewer() {
       showHudOnEnter: true,
       poiMap: false,
       poiHidden: false,
+      poiLabel: "",
+      activationRadiusBorder: false,
     });
     setZoneIdManuallyEdited(false);
     setContextMenu(null);
@@ -954,7 +1026,7 @@ export default function SystemMapViewer() {
       return {
         ...current,
         name,
-        id: zoneIdManuallyEdited ? current.id : createUniqueId(sanitizeZoneId(name), existingZoneIds),
+        id: current.mode === "create" && !zoneIdManuallyEdited ? createUniqueId(sanitizeZoneId(name), existingZoneIds) : current.id,
       };
     });
   }
@@ -964,7 +1036,7 @@ export default function SystemMapViewer() {
     setZoneForm((current) => (current ? { ...current, id: sanitizeZoneId(id) } : current));
   }
 
-  function saveZoneDraftFromForm() {
+  function saveZoneForm() {
     if (!payload || !zoneForm) return;
     const id = sanitizeZoneId(zoneForm.id);
     const worldX = Number(zoneForm.worldX);
@@ -984,30 +1056,61 @@ export default function SystemMapViewer() {
       setStatus({ tone: "error", message: "Zone activation radius and bounds must be valid positive numbers." });
       return;
     }
-    if (existingZoneIds.includes(id)) {
-      setStatus({ tone: "error", message: `Zone ID "${id}" already exists. Change the ID before adding this draft.` });
+    const originalId = zoneForm.originalId;
+    const idTaken = mapZones.some((zone) => (zone.originalId ?? zone.id) !== originalId && zone.id === id);
+    if (idTaken) {
+      setStatus({ tone: "error", message: `Zone ID "${id}" already exists. Change the ID before applying this zone.` });
       return;
     }
 
-    const zone = zoneFromDraftForm({ ...zoneForm, id, worldX: numberInputValue(worldX), worldY: numberInputValue(worldY) }, payload, id);
-    setDraftZones((current) => [...current, zone]);
-    setZoneForm(null);
-    setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Zone Changes To Build to write it into Zones.json.` });
-  }
-
-  function saveZonePositionForm() {
-    if (!zonePositionForm) return;
-    const world = {
-      x: Number(zonePositionForm.worldX),
-      y: Number(zonePositionForm.worldY),
+    const normalizedForm = {
+      ...zoneForm,
+      id,
+      worldX: numberInputValue(worldX),
+      worldY: numberInputValue(worldY),
+      activationRadius: numberInputValue(activationRadius),
+      boundsWidth: numberInputValue(boundsWidth),
+      boundsHeight: numberInputValue(boundsHeight),
     };
-    if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) {
-      setStatus({ tone: "error", message: "Zone X and Y coordinates must be valid numbers." });
+
+    if (zoneForm.mode === "create") {
+      const zone = zoneFromDraftForm(normalizedForm, payload, id);
+      setDraftZones((current) => [...current, zone]);
+      setZoneForm(null);
+      setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Zone Changes To Build to write it into Zones.json.` });
       return;
     }
-    updateZonePosition(zonePositionForm.id, world);
-    setZonePositionForm(null);
-    setStatus({ tone: "success", message: `Updated "${zonePositionForm.name}" coordinates. Use Save Zone Changes To Build to write them into Zones.json.` });
+
+    if (!originalId) {
+      setStatus({ tone: "error", message: "Could not identify the zone being edited." });
+      return;
+    }
+    const baseZone = mapZones.find((zone) => (zone.originalId ?? zone.id) === originalId);
+    if (!baseZone) {
+      setStatus({ tone: "error", message: `Could not find zone "${originalId}" on the map.` });
+      return;
+    }
+
+    const nextZone = {
+      ...applyZoneFormToZone(normalizedForm, baseZone, payload, id),
+      originalId,
+    };
+    if (baseZone.draft) {
+      setDraftZones((current) => current.map((zone) => ((zone.originalId ?? zone.id) === originalId ? nextZone : zone)));
+    } else {
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              zones: current.zones.map((zone) => ((zone.originalId ?? zone.id) === originalId ? nextZone : zone)),
+              pois: updateZonePois(current.pois, originalId, nextZone),
+            }
+          : current,
+      );
+      setEditedZoneIds((current) => (current.includes(originalId) ? current : [...current, originalId]));
+    }
+    setZoneForm(null);
+    setStatus({ tone: "success", message: `Updated "${nextZone.name}". Use Save Zone Changes To Build to write changes into Zones.json.` });
   }
 
   async function handleSaveZoneChangesToBuild() {
@@ -1023,12 +1126,12 @@ export default function SystemMapViewer() {
       }
 
       const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
-      const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.id));
+      const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.originalId ?? zone.id));
       const updatedExistingZones = workspace.zones.map((draft) => {
-        const editedZone = editedZones.find((zone) => zone.id === draft.id);
-        return editedZone ? applyZonePositionToManagerDraft(draft, editedZone) : draft;
+        const editedZone = editedZones.find((zone) => (zone.originalId ?? zone.id) === draft.id);
+        return editedZone ? applyZoneDetailsToManagerDraft(draft, editedZone) : draft;
       });
-      const existingIds = workspace.zones.map((zone) => zone.id);
+      const existingIds = updatedExistingZones.map((zone) => zone.id);
       const managerDrafts: ZoneDraft[] = [];
       for (const zone of draftZones) {
         const managerDraft = zoneToManagerDraft(zone, [...existingIds, ...managerDrafts.map((entry) => entry.id)]);
@@ -1056,12 +1159,15 @@ export default function SystemMapViewer() {
         ...zone,
         id: managerDrafts[index]?.id ?? zone.id,
         draft: false,
+        modified: false,
+        originalId: undefined,
       }));
       setPayload((current) =>
         current
           ? {
               ...current,
-              zones: [...current.zones.map((zone) => ({ ...zone, modified: false })), ...savedZones],
+              zones: [...current.zones.map((zone) => ({ ...zone, modified: false, originalId: undefined })), ...savedZones],
+              pois: savedZones.reduce((pois, zone) => updateZonePois(pois, zone.id, zone), current.pois),
             }
           : current,
       );
@@ -1444,7 +1550,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone to edit coordinates. Hold Command and drag a zone to move it. Right-click the map to add a zone draft.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone to edit its details. Hold Command and drag a zone to move it. Right-click the map to add a zone draft.</div>
       </div>
 
       {contextMenu ? (
@@ -1462,73 +1568,6 @@ export default function SystemMapViewer() {
         </div>
       ) : null}
 
-      {zonePositionForm ? (
-        <div
-          data-system-map-ui="true"
-          className="absolute inset-0 z-[130] flex cursor-default items-center justify-center bg-black/45 p-5 backdrop-blur-sm"
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerMove={(event) => event.stopPropagation()}
-          onPointerUp={(event) => event.stopPropagation()}
-          onWheel={(event) => event.stopPropagation()}
-        >
-          <div className="w-[min(520px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-xl font-semibold text-white">Edit Zone Coordinates</div>
-                <div className="mt-1 text-sm text-white/55">{zonePositionForm.name}</div>
-              </div>
-              <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZonePositionForm(null)}>
-                Cancel
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm text-white/65">
-                World X
-                <input
-                  className="input mt-1"
-                  type="number"
-                  value={zonePositionForm.worldX}
-                  onChange={(event) => setZonePositionForm((current) => (current ? { ...current, worldX: event.target.value } : current))}
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-              </label>
-              <label className="text-sm text-white/65">
-                World Y
-                <input
-                  className="input mt-1"
-                  type="number"
-                  value={zonePositionForm.worldY}
-                  onChange={(event) => setZonePositionForm((current) => (current ? { ...current, worldY: event.target.value } : current))}
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-              </label>
-            </div>
-
-            {payload ? (
-              <div className="mt-4 rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/55">
-                Will save as sector/local:{" "}
-                {(() => {
-                  const world = { x: Number(zonePositionForm.worldX), y: Number(zonePositionForm.worldY) };
-                  if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) return "invalid coordinates";
-                  const { sector, local } = worldToSectorLocal(world, payload.config.sectorSize, payload.config.sectorHalfExtent);
-                  return `sector [${numberInputValue(sector.x)}, ${numberInputValue(sector.y)}], pos [${numberInputValue(local.x)}, ${numberInputValue(local.y)}]`;
-                })()}
-              </div>
-            ) : null}
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZonePositionForm(null)}>
-                Cancel
-              </button>
-              <button type="button" className="btn-save-build" onClick={saveZonePositionForm}>
-                Apply Coordinates
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {zoneForm ? (
         <div
           data-system-map-ui="true"
@@ -1538,11 +1577,11 @@ export default function SystemMapViewer() {
           onPointerUp={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
-          <div className="w-[min(620px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
+          <div className="max-h-[calc(100vh-2rem)] w-[min(720px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xl font-semibold text-white">Add Zone Draft</div>
-                <div className="mt-1 text-sm text-white/55">This adds a draft to the map. Use the green save button to write it into Zones.json.</div>
+                <div className="text-xl font-semibold text-white">{zoneForm.mode === "create" ? "Add Zone Draft" : "Edit Zone Details"}</div>
+                <div className="mt-1 text-sm text-white/55">{zoneForm.mode === "create" ? "This adds a draft to the map. Use the green save button to write it into Zones.json." : "Edit top-level zone details. Stages and mob placements stay unchanged."}</div>
               </div>
               <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
                 Cancel
@@ -1576,6 +1615,10 @@ export default function SystemMapViewer() {
               <label className="text-sm text-white/65">
                 Activation Radius
                 <input className="input mt-1" type="number" value={zoneForm.activationRadius} onChange={(event) => setZoneForm((current) => (current ? { ...current, activationRadius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+              </label>
+              <label className="text-sm text-white/65 sm:col-span-2">
+                POI Label
+                <input className="input mt-1" value={zoneForm.poiLabel} placeholder="Optional map label override" onChange={(event) => setZoneForm((current) => (current ? { ...current, poiLabel: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
               </label>
               <label className="text-sm text-white/65">
                 Bounds Width
@@ -1630,14 +1673,18 @@ export default function SystemMapViewer() {
                 <input type="checkbox" checked={zoneForm.poiHidden} onChange={(event) => setZoneForm((current) => (current ? { ...current, poiHidden: event.target.checked } : current))} />
                 Hidden
               </label>
+              <label className="flex items-center gap-2 rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/70">
+                <input type="checkbox" checked={zoneForm.activationRadiusBorder} onChange={(event) => setZoneForm((current) => (current ? { ...current, activationRadiusBorder: event.target.checked } : current))} />
+                Radius Border
+              </label>
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
                 Cancel
               </button>
-              <button type="button" className="btn-save-build" onClick={saveZoneDraftFromForm}>
-                Add Draft To Map
+              <button type="button" className="btn-save-build" onClick={saveZoneForm}>
+                {zoneForm.mode === "create" ? "Add Draft To Map" : "Apply Zone Changes"}
               </button>
             </div>
           </div>
