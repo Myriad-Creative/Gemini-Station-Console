@@ -612,6 +612,30 @@ function routePointToWorld(routeSector: SystemMapVec, value: unknown): SystemMap
   return worldFromSectorLocal(routeSector, vecValue(value));
 }
 
+function defaultRouteControlPoints(endpointA: SystemMapVec, endpointB: SystemMapVec, amplitudeFactor: number): SystemMapVec[] {
+  const dx = endpointB.x - endpointA.x;
+  const dy = endpointB.y - endpointA.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) {
+    return [endpointA, endpointB];
+  }
+  const normal = {
+    x: -dy / length,
+    y: dx / length,
+  };
+  const amplitude = amplitudeFactor * length;
+  return [
+    {
+      x: endpointA.x + dx * 0.33 + normal.x * amplitude,
+      y: endpointA.y + dy * 0.33 + normal.y * amplitude,
+    },
+    {
+      x: endpointA.x + dx * 0.66 - normal.x * amplitude,
+      y: endpointA.y + dy * 0.66 - normal.y * amplitude,
+    },
+  ];
+}
+
 function buildRoutes(routesJson: unknown): SystemMapRoute[] {
   return asArray(asRecord(routesJson).routes).map((entry, index) => {
     const route = asRecord(entry);
@@ -623,7 +647,10 @@ function buildRoutes(routesJson: unknown): SystemMapRoute[] {
     const endpointAWorld = routePointToWorld(sector, endpointA);
     const endpointBWorld = routePointToWorld(sector, endpointB);
     const viaPoints = asArray(route.points).map((point) => routePointToWorld(sector, point));
+    const explicitControlPoints = asArray(route.control_points).map((point) => routePointToWorld(sector, point));
     const smoothing = asRecord(route.smoothing);
+    const sCurve = asRecord(route.s_curve);
+    const controlPoints = explicitControlPoints.length >= 2 ? explicitControlPoints.slice(0, 2) : defaultRouteControlPoints(endpointAWorld, endpointBWorld, numberValue(sCurve.amplitude_factor, 0.3));
     const points = [endpointAWorld, ...viaPoints, endpointBWorld];
 
     return {
@@ -641,6 +668,8 @@ function buildRoutes(routesJson: unknown): SystemMapRoute[] {
       endpointBName: stringValue(endpointB.name, "Endpoint B"),
       endpointA: endpointAWorld,
       endpointB: endpointBWorld,
+      controlPoints,
+      usesControlPoints: viaPoints.length === 0,
       viaPoints,
       points,
     };

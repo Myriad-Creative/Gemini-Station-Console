@@ -164,6 +164,8 @@ export type SystemMapRoute = {
   endpointBName: string;
   endpointA: SystemMapVec;
   endpointB: SystemMapVec;
+  controlPoints: SystemMapVec[];
+  usesControlPoints: boolean;
   viaPoints: SystemMapVec[];
   points: SystemMapVec[];
 };

@@ -114,12 +114,13 @@ type MobDragState = {
   mobStartWorld: SystemMapVec;
   moved: boolean;
 };
+type RouteHandleKey = "endpointA" | "endpointB" | "controlA" | "controlB";
 type RouteDragState = {
   routeId: string;
-  pointIndex: number;
+  handleKey: RouteHandleKey;
   startScreen: SystemMapVec;
   startWorld: SystemMapVec;
-  pointStartWorld: SystemMapVec;
+  handleStartWorld: SystemMapVec;
   moved: boolean;
 };
 
@@ -283,7 +284,7 @@ function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = 
     bounds = expandBounds(bounds, poi.world);
   }
   for (const route of routes) {
-    for (const point of route.points) {
+    for (const point of routeRenderPoints(route)) {
       bounds = expandBounds(bounds, point);
     }
   }
@@ -333,6 +334,73 @@ function routePathD(points: SystemMapVec[], smoothingTension: number) {
     path += ` C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${next.x} ${next.y}`;
   }
   return path;
+}
+
+function defaultRouteControlPoints(endpointA: SystemMapVec, endpointB: SystemMapVec, amplitudeFactor = 0.3): SystemMapVec[] {
+  const dx = endpointB.x - endpointA.x;
+  const dy = endpointB.y - endpointA.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return [endpointA, endpointB];
+  const normal = {
+    x: -dy / length,
+    y: dx / length,
+  };
+  const amplitude = amplitudeFactor * length;
+  return [
+    {
+      x: endpointA.x + dx * 0.33 + normal.x * amplitude,
+      y: endpointA.y + dy * 0.33 + normal.y * amplitude,
+    },
+    {
+      x: endpointA.x + dx * 0.66 - normal.x * amplitude,
+      y: endpointA.y + dy * 0.66 - normal.y * amplitude,
+    },
+  ];
+}
+
+function routeEndpoints(route: SystemMapRoute): [SystemMapVec, SystemMapVec] {
+  const endpointA = route.points[0] ?? route.endpointA;
+  const endpointB = route.points[route.points.length - 1] ?? route.endpointB ?? endpointA;
+  return [endpointA, endpointB];
+}
+
+function routeControlPoints(route: SystemMapRoute): [SystemMapVec, SystemMapVec] {
+  const [endpointA, endpointB] = routeEndpoints(route);
+  const controlA = route.controlPoints[0];
+  const controlB = route.controlPoints[1];
+  if (controlA && controlB) return [controlA, controlB];
+  if (route.viaPoints.length >= 2) return [route.viaPoints[0], route.viaPoints[route.viaPoints.length - 1]];
+  if (route.viaPoints.length === 1) return [route.viaPoints[0], route.viaPoints[0]];
+  return defaultRouteControlPoints(endpointA, endpointB) as [SystemMapVec, SystemMapVec];
+}
+
+function cubicPoint(endpointA: SystemMapVec, controlA: SystemMapVec, controlB: SystemMapVec, endpointB: SystemMapVec, t: number): SystemMapVec {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * mt * endpointA.x + 3 * mt * mt * t * controlA.x + 3 * mt * t * t * controlB.x + t * t * t * endpointB.x,
+    y: mt * mt * mt * endpointA.y + 3 * mt * mt * t * controlA.y + 3 * mt * t * t * controlB.y + t * t * t * endpointB.y,
+  };
+}
+
+function routeRenderPoints(route: SystemMapRoute): SystemMapVec[] {
+  if (!route.usesControlPoints || route.points.length < 2) return route.points;
+  const [endpointA, endpointB] = routeEndpoints(route);
+  const [controlA, controlB] = routeControlPoints(route);
+  const samples: SystemMapVec[] = [];
+  for (let index = 0; index <= 32; index += 1) {
+    samples.push(cubicPoint(endpointA, controlA, controlB, endpointB, index / 32));
+  }
+  return samples;
+}
+
+function routeSvgPathD(route: SystemMapRoute) {
+  if (!route.points.length) return "";
+  if (route.usesControlPoints && route.points.length >= 2) {
+    const [endpointA, endpointB] = routeEndpoints(route);
+    const [controlA, controlB] = routeControlPoints(route);
+    return `M ${endpointA.x} ${endpointA.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${endpointB.x} ${endpointB.y}`;
+  }
+  return routePathD(route.points, route.smoothingTension);
 }
 
 function cameraForBounds(bounds: SystemMapRect, viewport: Viewport): Camera {
@@ -529,6 +597,8 @@ function createRouteDraftFromPoint(world: SystemMapVec, payload: SystemMapPayloa
     endpointBName: "Endpoint B",
     endpointA: roundedWorld,
     endpointB: roundedWorld,
+    controlPoints: [roundedWorld, roundedWorld],
+    usesControlPoints: true,
     viaPoints: [],
     points: [roundedWorld],
   };
@@ -675,73 +745,60 @@ function moveMobSpawnToWorld(mob: SystemMapMobSpawn, world: SystemMapVec, zone: 
   };
 }
 
-function withRoutePoint(route: SystemMapRoute, pointIndex: number, world: SystemMapVec): SystemMapRoute {
+function withRouteEndpointB(route: SystemMapRoute, world: SystemMapVec): SystemMapRoute {
   const roundedWorld = {
     x: Math.round(world.x),
     y: Math.round(world.y),
   };
-  const nextPoints = route.points.map((point, index) => (index === pointIndex ? roundedWorld : point));
-  const fallbackPoint = nextPoints[0] ?? roundedWorld;
+  const endpointA = route.points[0] ?? route.endpointA;
+  const controlPoints = defaultRouteControlPoints(endpointA, roundedWorld);
   return {
     ...route,
     modified: route.draft ? route.modified : true,
     originalId: route.draft ? route.originalId : route.originalId ?? route.id,
-    endpointA: nextPoints[0] ?? fallbackPoint,
-    endpointB: nextPoints[nextPoints.length - 1] ?? fallbackPoint,
-    viaPoints: nextPoints.slice(1, -1),
-    points: nextPoints,
+    endpointA,
+    endpointB: roundedWorld,
+    controlPoints,
+    usesControlPoints: true,
+    viaPoints: [],
+    points: [endpointA, roundedWorld],
   };
 }
 
-function withRoutePointAppended(route: SystemMapRoute, world: SystemMapVec): SystemMapRoute {
+function withRouteControlMode(route: SystemMapRoute): SystemMapRoute {
+  const [endpointA, endpointB] = routeEndpoints(route);
+  const controlPoints = routeControlPoints(route);
+  return {
+    ...route,
+    modified: route.draft ? route.modified : true,
+    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
+    endpointA,
+    endpointB,
+    controlPoints,
+    usesControlPoints: true,
+    viaPoints: [],
+    points: [endpointA, endpointB],
+  };
+}
+
+function withRouteHandle(route: SystemMapRoute, handleKey: RouteHandleKey, world: SystemMapVec): SystemMapRoute {
   const roundedWorld = {
     x: Math.round(world.x),
     y: Math.round(world.y),
   };
-  const nextPoints = [...route.points, roundedWorld];
+  const controlRoute = withRouteControlMode(route);
+  const [endpointA, endpointB] = routeEndpoints(controlRoute);
+  const [controlA, controlB] = routeControlPoints(controlRoute);
+  const nextEndpointA = handleKey === "endpointA" ? roundedWorld : endpointA;
+  const nextEndpointB = handleKey === "endpointB" ? roundedWorld : endpointB;
+  const nextControlA = handleKey === "controlA" ? roundedWorld : controlA;
+  const nextControlB = handleKey === "controlB" ? roundedWorld : controlB;
   return {
-    ...route,
-    modified: route.draft ? route.modified : true,
-    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
-    endpointA: nextPoints[0],
-    endpointB: nextPoints[nextPoints.length - 1],
-    viaPoints: nextPoints.slice(1, -1),
-    points: nextPoints,
-  };
-}
-
-function findNearestRouteSegment(route: SystemMapRoute, world: SystemMapVec): { index: number; distance: number } | null {
-  if (route.points.length < 2) return null;
-  let best: { index: number; distance: number } | null = null;
-  for (let index = 1; index < route.points.length; index += 1) {
-    const segmentDistance = pointToSegmentDistance(world, route.points[index - 1], route.points[index]);
-    if (!best || segmentDistance < best.distance) {
-      best = {
-        index: index - 1,
-        distance: segmentDistance,
-      };
-    }
-  }
-  return best;
-}
-
-function withRoutePointInserted(route: SystemMapRoute, world: SystemMapVec): SystemMapRoute {
-  if (route.points.length < 2) return withRoutePointAppended(route, world);
-  const roundedWorld = {
-    x: Math.round(world.x),
-    y: Math.round(world.y),
-  };
-  const nearestSegment = findNearestRouteSegment(route, roundedWorld);
-  const insertIndex = nearestSegment ? nearestSegment.index + 1 : route.points.length - 1;
-  const nextPoints = [...route.points.slice(0, insertIndex), roundedWorld, ...route.points.slice(insertIndex)];
-  return {
-    ...route,
-    modified: route.draft ? route.modified : true,
-    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
-    endpointA: nextPoints[0],
-    endpointB: nextPoints[nextPoints.length - 1],
-    viaPoints: nextPoints.slice(1, -1),
-    points: nextPoints,
+    ...controlRoute,
+    endpointA: nextEndpointA,
+    endpointB: nextEndpointB,
+    controlPoints: [nextControlA, nextControlB],
+    points: [nextEndpointA, nextEndpointB],
   };
 }
 
@@ -767,11 +824,10 @@ function routeToTradeRouteJson(route: SystemMapRoute, sectorSize: number, baseRo
     x: Math.round(route.sector.x),
     y: Math.round(route.sector.y),
   };
-  const endpointA = route.points[0] ?? route.endpointA;
-  const endpointB = route.points[route.points.length - 1] ?? route.endpointB;
-  const viaPoints = route.points.length > 2 ? route.points.slice(1, -1) : [];
-
-  return {
+  const [endpointA, endpointB] = routeEndpoints(route);
+  const viaPoints = route.usesControlPoints ? [] : route.viaPoints.length ? route.viaPoints : route.points.slice(1, -1);
+  const [controlA, controlB] = routeControlPoints(route);
+  const nextRoute: Record<string, unknown> = {
     ...base,
     id: route.id,
     name: route.name || route.id,
@@ -800,8 +856,17 @@ function routeToTradeRouteJson(route: SystemMapRoute, sectorSize: number, baseRo
       ...baseSmoothing,
       tension: route.smoothingTension,
     },
-    s_curve: viaPoints.length ? base.s_curve : { ...baseSCurve, amplitude_factor: Number(baseSCurve.amplitude_factor ?? 0.3) },
   };
+
+  if (route.usesControlPoints) {
+    nextRoute.control_points = [routePointToLocal(controlA, sector, sectorSize), routePointToLocal(controlB, sector, sectorSize)];
+    nextRoute.s_curve = base.s_curve;
+  } else {
+    nextRoute.control_points = base.control_points;
+    nextRoute.s_curve = viaPoints.length ? base.s_curve : { ...baseSCurve, amplitude_factor: Number(baseSCurve.amplitude_factor ?? 0.3) };
+  }
+
+  return nextRoute;
 }
 
 function zoneMatches(zone: SystemMapZone, query: string) {
@@ -978,14 +1043,26 @@ export default function SystemMapViewer() {
     return null;
   }
 
-  function findRoutePointAtWorld(world: SystemMapVec) {
+  function routeEditHandles(route: SystemMapRoute): Array<{ key: RouteHandleKey; point: SystemMapVec; label: string; kind: "endpoint" | "control" }> {
+    const [endpointA, endpointB] = routeEndpoints(route);
+    const handles: Array<{ key: RouteHandleKey; point: SystemMapVec; label: string; kind: "endpoint" | "control" }> = [{ key: "endpointA", point: endpointA, label: "A", kind: "endpoint" }];
+    if (route.points.length >= 2) {
+      const [controlA, controlB] = routeControlPoints(route);
+      handles.push({ key: "controlA", point: controlA, label: "Curve A", kind: "control" });
+      handles.push({ key: "controlB", point: controlB, label: "Curve B", kind: "control" });
+      handles.push({ key: "endpointB", point: endpointB, label: "B", kind: "endpoint" });
+    }
+    return handles;
+  }
+
+  function findRouteHandleAtWorld(world: SystemMapVec) {
+    if (!routeForm) return null;
+    const activeRoute = mapRoutes.find((route) => routeIdentity(route) === routeForm.originalId);
+    if (!activeRoute) return null;
     const screenHitRadius = 11 / camera.zoom;
-    for (let routeIndex = filteredRoutes.length - 1; routeIndex >= 0; routeIndex -= 1) {
-      const route = filteredRoutes[routeIndex];
-      for (let pointIndex = route.points.length - 1; pointIndex >= 0; pointIndex -= 1) {
-        if (distance(world, route.points[pointIndex]) <= screenHitRadius) {
-          return { route, pointIndex };
-        }
+    for (const handle of routeEditHandles(activeRoute).slice().reverse()) {
+      if (distance(world, handle.point) <= screenHitRadius) {
+        return { route: activeRoute, handleKey: handle.key, point: handle.point };
       }
     }
     return null;
@@ -994,8 +1071,9 @@ export default function SystemMapViewer() {
   function findRouteAtWorld(world: SystemMapVec) {
     for (let routeIndex = filteredRoutes.length - 1; routeIndex >= 0; routeIndex -= 1) {
       const route = filteredRoutes[routeIndex];
-      for (let index = 1; index < route.points.length; index += 1) {
-        if (pointToSegmentDistance(world, route.points[index - 1], route.points[index]) <= Math.max(route.width / 2, 10 / camera.zoom)) {
+      const routePoints = routeRenderPoints(route);
+      for (let index = 1; index < routePoints.length; index += 1) {
+        if (pointToSegmentDistance(world, routePoints[index - 1], routePoints[index]) <= Math.max(route.width / 2, 10 / camera.zoom)) {
           return route;
         }
       }
@@ -1066,26 +1144,28 @@ export default function SystemMapViewer() {
     }));
   }
 
-  function updateRoutePointPosition(routeId: string, pointIndex: number, world: SystemMapVec) {
-    updateRouteInMap(routeId, (route) => withRoutePoint(route, pointIndex, world));
+  function updateRouteHandlePosition(routeId: string, handleKey: RouteHandleKey, world: SystemMapVec) {
+    updateRouteInMap(routeId, (route) => withRouteHandle(route, handleKey, world));
   }
 
-  function insertRoutePoint(routeId: string, world: SystemMapVec) {
+  function setRouteEndpointB(routeId: string, world: SystemMapVec) {
     const route = mapRoutes.find((entry) => routeIdentity(entry) === routeId);
     if (!route) {
       setStatus({ tone: "error", message: "Could not find the active trade route." });
       return;
     }
     if (route.points.length >= 2) {
-      const nearestSegment = findNearestRouteSegment(route, world);
-      const hitDistance = Math.max(route.width / 2, 12 / camera.zoom);
-      if (!nearestSegment || nearestSegment.distance > hitDistance) {
-        setStatus({ tone: "neutral", message: "Click on or near the active route line to insert a point between existing route handles." });
-        return;
-      }
+      setActiveRouteAddId(null);
+      return;
     }
-    updateRouteInMap(routeId, (currentRoute) => withRoutePointInserted(currentRoute, world));
-    setStatus({ tone: "neutral", message: "Inserted route point. Drag the new handle to reshape the curve, or keep clicking the route line to add more points." });
+    updateRouteInMap(routeId, (currentRoute) => withRouteEndpointB(currentRoute, world));
+    setActiveRouteAddId(null);
+    setStatus({ tone: "neutral", message: "Set endpoint B. Drag the curve handles to shape the route without adding extra route anchors." });
+  }
+
+  function convertRouteToControlHandles(routeId: string) {
+    updateRouteInMap(routeId, (route) => withRouteControlMode(route));
+    setStatus({ tone: "neutral", message: "Converted this trade route to endpoint + control-handle editing. Saving will write control_points and clear extra route points." });
   }
 
   function updateZonePosition(zoneId: string, world: SystemMapVec) {
@@ -1158,7 +1238,7 @@ export default function SystemMapViewer() {
     setPendingRouteStart(false);
     setActiveRouteAddId(routeIdentity(route));
     setContextMenu(null);
-    setStatus({ tone: "neutral", message: "Route draft started. Click the map to add each route point, drag any route handle to adjust it, then save route changes to build." });
+    setStatus({ tone: "neutral", message: "Route draft started. Click the map to set endpoint B, then drag the curve handles to shape the route." });
   }
 
   function fitAll() {
@@ -1207,18 +1287,18 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
-    const targetRoutePoint = toggles.routes ? findRoutePointAtWorld(world) : null;
-    if (targetRoutePoint) {
+    const targetRouteHandle = toggles.routes ? findRouteHandleAtWorld(world) : null;
+    if (targetRouteHandle) {
       event.currentTarget.setPointerCapture(event.pointerId);
       routeDragRef.current = {
-        routeId: routeIdentity(targetRoutePoint.route),
-        pointIndex: targetRoutePoint.pointIndex,
+        routeId: routeIdentity(targetRouteHandle.route),
+        handleKey: targetRouteHandle.handleKey,
         startScreen: screen,
         startWorld: world,
-        pointStartWorld: targetRoutePoint.route.points[targetRoutePoint.pointIndex],
+        handleStartWorld: targetRouteHandle.point,
         moved: false,
       };
-      setDraggingRouteHandle(`${routeIdentity(targetRoutePoint.route)}:${targetRoutePoint.pointIndex}`);
+      setDraggingRouteHandle(`${routeIdentity(targetRouteHandle.route)}:${targetRouteHandle.handleKey}`);
       clearHover();
       return;
     }
@@ -1228,7 +1308,7 @@ export default function SystemMapViewer() {
       return;
     }
     if (activeRouteAddId) {
-      insertRoutePoint(activeRouteAddId, world);
+      setRouteEndpointB(activeRouteAddId, world);
       clearHover();
       return;
     }
@@ -1288,7 +1368,7 @@ export default function SystemMapViewer() {
     if (routeDrag) {
       const route = mapRoutes.find((entry) => routeIdentity(entry) === routeDrag.routeId);
       if (routeDrag.moved) {
-        setStatus({ tone: "success", message: `Moved point ${routeDrag.pointIndex + 1} on "${route?.name || routeDrag.routeId}". Use Save Route Changes To Build to write it into trade_routes.json.` });
+        setStatus({ tone: "success", message: `Moved ${routeDrag.handleKey} on "${route?.name || routeDrag.routeId}". Use Save Route Changes To Build to write it into trade_routes.json.` });
       } else if (route) {
         openRouteEditor(route);
       }
@@ -1519,8 +1599,9 @@ export default function SystemMapViewer() {
     if (toggles.routes) {
       for (const route of mapRoutes) {
         if (!routeMatches(route, normalizedQuery)) continue;
-        for (let index = 1; index < route.points.length; index += 1) {
-          if (pointToSegmentDistance(world, route.points[index - 1], route.points[index]) <= Math.max(2500, 8 / camera.zoom)) {
+        const routePoints = routeRenderPoints(route);
+        for (let index = 1; index < routePoints.length; index += 1) {
+          if (pointToSegmentDistance(world, routePoints[index - 1], routePoints[index]) <= Math.max(2500, 8 / camera.zoom)) {
             return {
               x: screen.x,
               y: screen.y,
@@ -1532,7 +1613,7 @@ export default function SystemMapViewer() {
                 `To: ${route.endpointBName}`,
                 `Width: ${formatNumber(route.width)}`,
                 `Speed multiplier: ${route.speedMultiplier}`,
-                `Points: ${route.points.length}`,
+                route.usesControlPoints ? "Shape: control handles" : `Shape anchors: ${route.points.length}`,
               ],
             };
           }
@@ -1601,13 +1682,13 @@ export default function SystemMapViewer() {
       };
       const world = screenToWorld(screen);
       const nextWorld = {
-        x: routeDrag.pointStartWorld.x + world.x - routeDrag.startWorld.x,
-        y: routeDrag.pointStartWorld.y + world.y - routeDrag.startWorld.y,
+        x: routeDrag.handleStartWorld.x + world.x - routeDrag.startWorld.x,
+        y: routeDrag.handleStartWorld.y + world.y - routeDrag.startWorld.y,
       };
       if (!routeDrag.moved && distance(screen, routeDrag.startScreen) > 4) {
         routeDrag.moved = true;
       }
-      updateRoutePointPosition(routeDrag.routeId, routeDrag.pointIndex, nextWorld);
+      updateRouteHandlePosition(routeDrag.routeId, routeDrag.handleKey, nextWorld);
       clearHover();
       return;
     }
@@ -2207,7 +2288,10 @@ export default function SystemMapViewer() {
               ? filteredRoutes.map((route) => {
                   const isChanged = route.draft || route.modified;
                   const routeKey = routeIdentity(route);
-                  const pathD = routePathD(route.points, route.smoothingTension);
+                  const pathD = routeSvgPathD(route);
+                  const isActiveRoute = routeForm?.originalId === routeKey;
+                  const [endpointA, endpointB] = routeEndpoints(route);
+                  const [controlA, controlB] = routeControlPoints(route);
                   return (
                     <g key={routeKey}>
                       {route.borderPx > 0 && route.points.length > 1 ? (
@@ -2233,21 +2317,32 @@ export default function SystemMapViewer() {
                           strokeLinejoin="round"
                         />
                       ) : null}
-                      {route.points.map((point, pointIndex) => {
-                        const handleKey = `${routeKey}:${pointIndex}`;
-                        const isEndpoint = pointIndex === 0 || pointIndex === route.points.length - 1;
-                        return (
-                          <circle
-                            key={handleKey}
-                            cx={point.x}
-                            cy={point.y}
-                            r={(draggingRouteHandle === handleKey ? 9 : isEndpoint ? 7 : 5) / camera.zoom}
-                            fill={route.draft ? "#34d399" : route.modified ? "#facc15" : isEndpoint ? "#38bdf8" : "#a78bfa"}
-                            stroke="rgba(255,255,255,0.78)"
-                            strokeWidth={(draggingRouteHandle === handleKey ? 2 : 1) / camera.zoom}
-                          />
-                        );
-                      })}
+                      {isActiveRoute && route.points.length >= 2 ? (
+                        <>
+                          <line x1={endpointA.x} y1={endpointA.y} x2={controlA.x} y2={controlA.y} stroke="rgba(250,204,21,0.45)" strokeWidth={1.5 / camera.zoom} strokeDasharray={`${7 / camera.zoom} ${7 / camera.zoom}`} />
+                          <line x1={endpointB.x} y1={endpointB.y} x2={controlB.x} y2={controlB.y} stroke="rgba(250,204,21,0.45)" strokeWidth={1.5 / camera.zoom} strokeDasharray={`${7 / camera.zoom} ${7 / camera.zoom}`} />
+                        </>
+                      ) : null}
+                      {isActiveRoute
+                        ? routeEditHandles(route).map((handle) => {
+                            const handleKey = `${routeKey}:${handle.key}`;
+                            return (
+                              <g key={handleKey}>
+                                <circle
+                                  cx={handle.point.x}
+                                  cy={handle.point.y}
+                                  r={(draggingRouteHandle === handleKey ? 9 : handle.kind === "endpoint" ? 7 : 6) / camera.zoom}
+                                  fill={handle.kind === "endpoint" ? (route.draft ? "#34d399" : "#38bdf8") : "#facc15"}
+                                  stroke="rgba(255,255,255,0.78)"
+                                  strokeWidth={(draggingRouteHandle === handleKey ? 2 : 1) / camera.zoom}
+                                />
+                                <text x={handle.point.x + 10 / camera.zoom} y={handle.point.y - 10 / camera.zoom} fill="rgba(255,255,255,0.72)" fontSize={12 / camera.zoom}>
+                                  {handle.label}
+                                </text>
+                              </g>
+                            );
+                          })
+                        : null}
                     </g>
                   );
                 })
@@ -2546,7 +2641,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone or route to edit details. Hold Command and drag a zone to move it. Drag trade route handles to adjust route points. Right-click the map to add zones, mob spawns, or trade routes.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone or route to edit details. Hold Command and drag a zone to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
       </div>
 
       {contextMenu ? (
@@ -2594,7 +2689,9 @@ export default function SystemMapViewer() {
       {routeForm
         ? (() => {
             const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
-            const isAddingPoints = activeRouteAddId === routeForm.originalId;
+            const isSettingEndpoint = activeRouteAddId === routeForm.originalId;
+            const needsEndpointB = !!route && route.points.length < 2;
+            const routeHandles = route ? routeEditHandles(route) : [];
             return (
               <div
                 data-system-map-ui="true"
@@ -2609,7 +2706,7 @@ export default function SystemMapViewer() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xl font-semibold text-white">{routeForm.mode === "create" ? "New Trade Route" : "Edit Trade Route"}</div>
-                    <div className="mt-1 text-sm text-white/55">Turn on Insert Points, click the route line to add handles between existing points, then drag handles to reshape the curve.</div>
+                    <div className="mt-1 text-sm text-white/55">Use endpoints for the real route anchors, then drag Curve A and Curve B to shape the path without adding extra route points.</div>
                   </div>
                   <button
                     type="button"
@@ -2682,28 +2779,46 @@ export default function SystemMapViewer() {
                 <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold text-white">Route Points</div>
-                      <div className="text-xs text-white/45">{route?.points.length ?? 0} point{route?.points.length === 1 ? "" : "s"} placed</div>
+                      <div className="font-semibold text-white">Curve Handles</div>
+                      <div className="text-xs text-white/45">
+                        {route
+                          ? route.usesControlPoints
+                            ? "Saving uses control_points with no extra route anchors."
+                            : `${route.viaPoints.length} legacy via point${route.viaPoints.length === 1 ? "" : "s"} currently drive this route.`
+                          : "Route not found."}
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      className={`rounded border px-3 py-2 text-sm ${
-                        isAddingPoints ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
-                      }`}
-                      onClick={() => {
-                        setPendingRouteStart(false);
-                        setActiveRouteAddId((current) => (current === routeForm.originalId ? null : routeForm.originalId));
-                      }}
-                    >
-                      {isAddingPoints ? "Stop Inserting Points" : "Insert Points"}
-                    </button>
+                    {needsEndpointB ? (
+                      <button
+                        type="button"
+                        className={`rounded border px-3 py-2 text-sm ${
+                          isSettingEndpoint ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
+                        }`}
+                        onClick={() => {
+                          setPendingRouteStart(false);
+                          setActiveRouteAddId((current) => (current === routeForm.originalId ? null : routeForm.originalId));
+                        }}
+                      >
+                        {isSettingEndpoint ? "Click Map For B" : "Set Endpoint B"}
+                      </button>
+                    ) : route && !route.usesControlPoints ? (
+                      <button type="button" className="rounded border border-yellow-300/35 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100 hover:bg-yellow-300/15" onClick={() => convertRouteToControlHandles(routeForm.originalId)}>
+                        Convert To Handles
+                      </button>
+                    ) : null}
                   </div>
-                  <div className="mt-3 text-xs leading-5 text-white/45">Insertion mode adds the new point into the closest route segment, preserving the start and end points. Click-drag any visible handle to fine-tune the curve.</div>
+                  <div className="mt-3 text-xs leading-5 text-white/45">
+                    {needsEndpointB
+                      ? "Place endpoint B before shaping the curve."
+                      : route?.usesControlPoints
+                        ? "Drag endpoint A or B to move the real route ends. Drag Curve A or Curve B to reshape the curve without adding route anchors."
+                        : "Convert this route if automated ships are having trouble with multiple route points. Conversion keeps the endpoints and replaces via points with two control handles."}
+                  </div>
                   <div className="mt-3 max-h-40 space-y-1 overflow-auto text-xs text-white/60">
-                    {route?.points.map((point, index) => (
-                      <div key={`${routeIdentity(route)}:${index}:point-row`} className="flex justify-between gap-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
-                        <span>{index === 0 ? "A" : index === route.points.length - 1 ? "B" : `Via ${index}`}</span>
-                        <span className="font-mono">{formatVec(point)}</span>
+                    {routeHandles.map((handle) => (
+                      <div key={`${routeForm.originalId}:${handle.key}:handle-row`} className="flex justify-between gap-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                        <span>{handle.label}</span>
+                        <span className="font-mono">{formatVec(handle.point)}</span>
                       </div>
                     ))}
                     {!route ? <div className="text-white/45">Route not found on the map.</div> : null}
