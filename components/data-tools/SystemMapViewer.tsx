@@ -59,6 +59,19 @@ type ZoneDraftForm = {
   poiMap: boolean;
   poiHidden: boolean;
 };
+type ZonePositionForm = {
+  id: string;
+  name: string;
+  worldX: string;
+  worldY: string;
+};
+type ZoneDragState = {
+  zoneId: string;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  zoneStartWorld: SystemMapVec;
+  moved: boolean;
+};
 
 const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   regions: true,
@@ -119,6 +132,13 @@ function worldToSectorLocal(world: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZ
       x: world.x - sector.x * sectorSize,
       y: world.y - sector.y * sectorSize,
     },
+  };
+}
+
+function translateVec(value: SystemMapVec, delta: SystemMapVec): SystemMapVec {
+  return {
+    x: value.x + delta.x,
+    y: value.y + delta.y,
   };
 }
 
@@ -276,6 +296,47 @@ function zoneToManagerDraft(zone: SystemMapZone, existingIds: string[]): ZoneDra
   };
 }
 
+function applyZonePositionToManagerDraft(draft: ZoneDraft, zone: SystemMapZone): ZoneDraft {
+  return {
+    ...draft,
+    sectorX: numberInputValue(zone.sector.x),
+    sectorY: numberInputValue(zone.sector.y),
+    posX: numberInputValue(zone.local.x),
+    posY: numberInputValue(zone.local.y),
+  };
+}
+
+function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: SystemMapPayload): SystemMapZone {
+  const { sector, local } = worldToSectorLocal(world, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  const delta = {
+    x: world.x - zone.world.x,
+    y: world.y - zone.world.y,
+  };
+  return {
+    ...zone,
+    modified: zone.draft ? zone.modified : true,
+    sector,
+    local,
+    world,
+    stages: zone.stages.map((stage) => ({
+      ...stage,
+      world: translateVec(stage.world, delta),
+    })),
+    mobs: zone.mobs.map((mob) => ({
+      ...mob,
+      world: translateVec(mob.world, delta),
+      sceneSpawns: mob.sceneSpawns.map((sceneMob) => ({
+        ...sceneMob,
+        world: translateVec(sceneMob.world, delta),
+      })),
+      sceneBarriers: mob.sceneBarriers.map((barrier) => ({
+        ...barrier,
+        worldPoints: barrier.worldPoints.map((point) => translateVec(point, delta)),
+      })),
+    })),
+  };
+}
+
 function zoneMatches(zone: SystemMapZone, query: string) {
   if (!query) return true;
   return [zone.id, zone.name, zone.poiLabel, zone.sector.x, zone.sector.y].join(" ").toLowerCase().includes(query);
@@ -313,6 +374,7 @@ function isMapUiTarget(target: EventTarget | null) {
 export default function SystemMapViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; center: SystemMapVec } | null>(null);
+  const zoneDragRef = useRef<ZoneDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -326,7 +388,10 @@ export default function SystemMapViewer() {
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
+  const [zonePositionForm, setZonePositionForm] = useState<ZonePositionForm | null>(null);
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
+  const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
+  const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
@@ -403,6 +468,62 @@ export default function SystemMapViewer() {
     };
   }
 
+  function findZoneAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let index = filteredZones.length - 1; index >= 0; index -= 1) {
+      const zone = filteredZones[index];
+      if (pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) return zone;
+    }
+    return null;
+  }
+
+  function updateZonePosition(zoneId: string, world: SystemMapVec) {
+    if (!payload) return;
+    const roundedWorld = {
+      x: Math.round(world.x),
+      y: Math.round(world.y),
+    };
+    const draftZone = draftZones.find((zone) => zone.id === zoneId);
+    if (draftZone) {
+      setDraftZones((current) => current.map((zone) => (zone.id === zoneId ? moveZoneToWorld(zone, roundedWorld, payload) : zone)));
+      return;
+    }
+
+    const existingZone = payload.zones.find((zone) => zone.id === zoneId);
+    if (!existingZone) return;
+    const movedZone = moveZoneToWorld(existingZone, roundedWorld, payload);
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            zones: current.zones.map((zone) => (zone.id === zoneId ? movedZone : zone)),
+            pois: current.pois.map((poi) =>
+              poi.source === "zone" && poi.zoneId === zoneId
+                ? {
+                    ...poi,
+                    sector: movedZone.sector,
+                    local: movedZone.local,
+                    world: movedZone.world,
+                  }
+                : poi,
+            ),
+          }
+        : current,
+    );
+    setEditedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
+  }
+
+  function openZonePositionEditor(zone: SystemMapZone) {
+    setZonePositionForm({
+      id: zone.id,
+      name: zone.name || zone.id,
+      worldX: numberInputValue(zone.world.x),
+      worldY: numberInputValue(zone.world.y),
+    });
+    setContextMenu(null);
+    setStatus(null);
+  }
+
   function fitAll() {
     if (!bounds) return;
     setCamera(cameraForBounds(bounds, viewport));
@@ -443,6 +564,31 @@ export default function SystemMapViewer() {
     if (isMapUiTarget(event.target)) return;
     setContextMenu(null);
     if (event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const screen = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+    const world = screenToWorld(screen);
+    const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
+    if (targetZone && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      zoneDragRef.current = {
+        zoneId: targetZone.id,
+        startScreen: screen,
+        startWorld: world,
+        zoneStartWorld: targetZone.world,
+        moved: false,
+      };
+      setDraggingZoneId(targetZone.id);
+      clearHover();
+      return;
+    }
+    if (targetZone) {
+      openZonePositionEditor(targetZone);
+      clearHover();
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       startX: event.clientX,
@@ -455,6 +601,13 @@ export default function SystemMapViewer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    const zoneDrag = zoneDragRef.current;
+    if (zoneDrag?.moved) {
+      const zone = mapZones.find((entry) => entry.id === zoneDrag.zoneId);
+      setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Zone Changes To Build to write the new coordinates into Zones.json.` });
+    }
+    zoneDragRef.current = null;
+    setDraggingZoneId(null);
     dragRef.current = null;
   }
 
@@ -636,7 +789,7 @@ export default function SystemMapViewer() {
             x: screen.x,
               y: screen.y,
               title: zone.name || zone.id,
-              subtitle: `${zone.draft ? "Unsaved draft" : zone.active ? "Active" : "Inactive"} zone · sector ${zone.sector.x}, ${zone.sector.y}`,
+              subtitle: `${zone.draft ? "Unsaved draft" : zone.modified ? "Unsaved coordinate edit" : zone.active ? "Active" : "Inactive"} zone · sector ${zone.sector.x}, ${zone.sector.y}`,
               lines: [
                 `Zone ID: ${zone.id}`,
               `POI: ${zone.poiMap ? zone.poiLabel || zone.name : "not shown on map"}`,
@@ -722,6 +875,26 @@ export default function SystemMapViewer() {
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (isMapUiTarget(event.target)) {
+      clearHover();
+      return;
+    }
+
+    const zoneDrag = zoneDragRef.current;
+    if (zoneDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: zoneDrag.zoneStartWorld.x + world.x - zoneDrag.startWorld.x,
+        y: zoneDrag.zoneStartWorld.y + world.y - zoneDrag.startWorld.y,
+      };
+      if (!zoneDrag.moved && distance(screen, zoneDrag.startScreen) > 4) {
+        zoneDrag.moved = true;
+      }
+      updateZonePosition(zoneDrag.zoneId, nextWorld);
       clearHover();
       return;
     }
@@ -819,11 +992,26 @@ export default function SystemMapViewer() {
     const zone = zoneFromDraftForm({ ...zoneForm, id, worldX: numberInputValue(worldX), worldY: numberInputValue(worldY) }, payload, id);
     setDraftZones((current) => [...current, zone]);
     setZoneForm(null);
-    setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Zone Drafts To Build to write it into Zones.json.` });
+    setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Zone Changes To Build to write it into Zones.json.` });
   }
 
-  async function handleSaveZoneDraftsToBuild() {
-    if (!draftZones.length || savingZones) return;
+  function saveZonePositionForm() {
+    if (!zonePositionForm) return;
+    const world = {
+      x: Number(zonePositionForm.worldX),
+      y: Number(zonePositionForm.worldY),
+    };
+    if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) {
+      setStatus({ tone: "error", message: "Zone X and Y coordinates must be valid numbers." });
+      return;
+    }
+    updateZonePosition(zonePositionForm.id, world);
+    setZonePositionForm(null);
+    setStatus({ tone: "success", message: `Updated "${zonePositionForm.name}" coordinates. Use Save Zone Changes To Build to write them into Zones.json.` });
+  }
+
+  async function handleSaveZoneChangesToBuild() {
+    if ((!draftZones.length && !editedZoneIds.length) || savingZones) return;
     setSavingZones(true);
     setStatus(null);
     try {
@@ -835,6 +1023,11 @@ export default function SystemMapViewer() {
       }
 
       const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
+      const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.id));
+      const updatedExistingZones = workspace.zones.map((draft) => {
+        const editedZone = editedZones.find((zone) => zone.id === draft.id);
+        return editedZone ? applyZonePositionToManagerDraft(draft, editedZone) : draft;
+      });
       const existingIds = workspace.zones.map((zone) => zone.id);
       const managerDrafts: ZoneDraft[] = [];
       for (const zone of draftZones) {
@@ -843,7 +1036,7 @@ export default function SystemMapViewer() {
       }
       const nextWorkspace: ZonesManagerWorkspace = {
         ...workspace,
-        zones: [...workspace.zones, ...managerDrafts],
+        zones: [...updatedExistingZones, ...managerDrafts],
       };
 
       const saveResponse = await fetch("/api/zones/save", {
@@ -864,9 +1057,18 @@ export default function SystemMapViewer() {
         id: managerDrafts[index]?.id ?? zone.id,
         draft: false,
       }));
-      setPayload((current) => (current ? { ...current, zones: [...current.zones, ...savedZones] } : current));
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              zones: [...current.zones.map((zone) => ({ ...zone, modified: false })), ...savedZones],
+            }
+          : current,
+      );
       setDraftZones([]);
-      setStatus({ tone: "success", message: `Saved ${savedZones.length} new zone${savedZones.length === 1 ? "" : "s"} into the live Zones.json file.` });
+      setEditedZoneIds([]);
+      const savedCount = savedZones.length + editedZones.length;
+      setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into the live Zones.json file.` });
     } catch (saveError) {
       setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
     } finally {
@@ -880,6 +1082,7 @@ export default function SystemMapViewer() {
   const sceneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0);
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
+  const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
 
   return (
     <div
@@ -966,8 +1169,9 @@ export default function SystemMapViewer() {
 
             {toggles.zones
               ? filteredZones.map((zone) => {
-                  const zoneColor = zone.draft ? "rgba(52,211,153,0.82)" : zone.active ? "rgba(34,211,238,0.55)" : "rgba(148,163,184,0.36)";
-                  const zoneFill = zone.draft ? "rgba(52,211,153,0.09)" : zone.active ? "rgba(34,211,238,0.055)" : "rgba(148,163,184,0.035)";
+                  const isChanged = zone.draft || zone.modified;
+                  const zoneColor = zone.draft ? "rgba(52,211,153,0.82)" : zone.modified ? "rgba(250,204,21,0.78)" : zone.active ? "rgba(34,211,238,0.55)" : "rgba(148,163,184,0.36)";
+                  const zoneFill = zone.draft ? "rgba(52,211,153,0.09)" : zone.modified ? "rgba(250,204,21,0.075)" : zone.active ? "rgba(34,211,238,0.055)" : "rgba(148,163,184,0.035)";
                   return (
                     <g key={zone.id}>
                       {zone.bounds.shape.toLowerCase() === "rect" || zone.bounds.shape.toLowerCase() === "rectangle" ? (
@@ -978,8 +1182,8 @@ export default function SystemMapViewer() {
                           height={zone.bounds.height}
                           fill={zoneFill}
                           stroke={zoneColor}
-                          strokeDasharray={zone.draft ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={2 / camera.zoom}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={(draggingZoneId === zone.id ? 4 : 2) / camera.zoom}
                         />
                       ) : (
                         <ellipse
@@ -989,11 +1193,11 @@ export default function SystemMapViewer() {
                           ry={zone.bounds.height / 2}
                           fill={zoneFill}
                           stroke={zoneColor}
-                          strokeDasharray={zone.draft ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={2 / camera.zoom}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={(draggingZoneId === zone.id ? 4 : 2) / camera.zoom}
                         />
                       )}
-                      <circle cx={zone.world.x} cy={zone.world.y} r={6 / camera.zoom} fill={zone.draft ? "#34d399" : zone.active ? "#22d3ee" : "#94a3b8"} />
+                      <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zone.id ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
                     </g>
                   );
                 })
@@ -1117,9 +1321,19 @@ export default function SystemMapViewer() {
               ? filteredZones.map((zone) => {
                 const point = worldToScreen(zone.world);
                 return (
-                  <div key={`${zone.id}:label`} className={`absolute translate-x-3 -translate-y-1/2 whitespace-nowrap rounded border px-2 py-1 text-xs shadow-lg ${zone.draft ? "border-emerald-300/35 bg-emerald-950/85 text-emerald-100" : "border-cyan-300/20 bg-[#061524]/80 text-cyan-100"}`} style={{ left: point.x, top: point.y }}>
+                  <div
+                    key={`${zone.id}:label`}
+                    className={`absolute translate-x-3 -translate-y-1/2 whitespace-nowrap rounded border px-2 py-1 text-xs shadow-lg ${
+                      zone.draft
+                        ? "border-emerald-300/35 bg-emerald-950/85 text-emerald-100"
+                        : zone.modified
+                          ? "border-yellow-300/35 bg-yellow-950/80 text-yellow-100"
+                          : "border-cyan-300/20 bg-[#061524]/80 text-cyan-100"
+                    }`}
+                    style={{ left: point.x, top: point.y }}
+                  >
                     {zone.name}
-                    {zone.draft ? " (draft)" : ""}
+                    {zone.draft ? " (draft)" : zone.modified ? " (edited)" : ""}
                   </div>
                 );
               })
@@ -1157,8 +1371,8 @@ export default function SystemMapViewer() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!draftZones.length || savingZones} onClick={() => void handleSaveZoneDraftsToBuild()}>
-              {savingZones ? "Saving..." : "Save Zone Drafts To Build"}
+            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasZoneChanges || savingZones} onClick={() => void handleSaveZoneChangesToBuild()}>
+              {savingZones ? "Saving..." : "Save Zone Changes To Build"}
             </button>
             <button type="button" className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10" onClick={fitAll}>
               Fit All
@@ -1230,7 +1444,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Hover any marker, zone, stage, route, sector, or environment band for details. Right-click the map to add a zone draft.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone to edit coordinates. Hold Command and drag a zone to move it. Right-click the map to add a zone draft.</div>
       </div>
 
       {contextMenu ? (
@@ -1245,6 +1459,73 @@ export default function SystemMapViewer() {
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
             Add Zone Here
           </button>
+        </div>
+      ) : null}
+
+      {zonePositionForm ? (
+        <div
+          data-system-map-ui="true"
+          className="absolute inset-0 z-[130] flex cursor-default items-center justify-center bg-black/45 p-5 backdrop-blur-sm"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerMove={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          <div className="w-[min(520px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xl font-semibold text-white">Edit Zone Coordinates</div>
+                <div className="mt-1 text-sm text-white/55">{zonePositionForm.name}</div>
+              </div>
+              <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZonePositionForm(null)}>
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm text-white/65">
+                World X
+                <input
+                  className="input mt-1"
+                  type="number"
+                  value={zonePositionForm.worldX}
+                  onChange={(event) => setZonePositionForm((current) => (current ? { ...current, worldX: event.target.value } : current))}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+              <label className="text-sm text-white/65">
+                World Y
+                <input
+                  className="input mt-1"
+                  type="number"
+                  value={zonePositionForm.worldY}
+                  onChange={(event) => setZonePositionForm((current) => (current ? { ...current, worldY: event.target.value } : current))}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+            </div>
+
+            {payload ? (
+              <div className="mt-4 rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/55">
+                Will save as sector/local:{" "}
+                {(() => {
+                  const world = { x: Number(zonePositionForm.worldX), y: Number(zonePositionForm.worldY) };
+                  if (!Number.isFinite(world.x) || !Number.isFinite(world.y)) return "invalid coordinates";
+                  const { sector, local } = worldToSectorLocal(world, payload.config.sectorSize, payload.config.sectorHalfExtent);
+                  return `sector [${numberInputValue(sector.x)}, ${numberInputValue(sector.y)}], pos [${numberInputValue(local.x)}, ${numberInputValue(local.y)}]`;
+                })()}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZonePositionForm(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn-save-build" onClick={saveZonePositionForm}>
+                Apply Coordinates
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

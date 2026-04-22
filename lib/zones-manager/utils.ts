@@ -128,8 +128,8 @@ function exportZoneMobSpawnDraft(draft: ZoneMobSpawnDraft) {
 }
 
 function createZoneDraft(id: string, record?: JsonObject): ZoneDraft {
-  const sector = Array.isArray(record?.sector_id) ? record.sector_id : [];
-  const pos = Array.isArray(record?.pos) ? record.pos : [];
+  const sector = Array.isArray(record?.sector_id) ? record.sector_id : [0, 0];
+  const pos = Array.isArray(record?.pos) ? record.pos : [0, 0];
   const bounds = asObject(record?.bounds);
   const stages = Array.isArray(record?.stages) ? record.stages : [];
   const mobs = Array.isArray(record?.mobs) ? record.mobs : [];
