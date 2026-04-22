@@ -180,10 +180,16 @@ function stageMatches(stage: SystemMapStagePlacement, query: string) {
   return [stage.stageId, stage.name, stage.shape].join(" ").toLowerCase().includes(query);
 }
 
+function isMapUiTarget(target: EventTarget | null) {
+  return target instanceof Element && !!target.closest("[data-system-map-ui]");
+}
+
 export default function SystemMapViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; center: SystemMapVec } | null>(null);
   const fittedRef = useRef(false);
+  const hoverFrameRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
   const [payload, setPayload] = useState<SystemMapPayload | null>(null);
   const [error, setError] = useState("");
   const [viewport, setViewport] = useState<Viewport>({ width: 1200, height: 800 });
@@ -231,6 +237,14 @@ export default function SystemMapViewer() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (hoverFrameRef.current !== null) {
+        window.cancelAnimationFrame(hoverFrameRef.current);
+      }
+    };
+  }, []);
+
   const bounds = useMemo(() => (payload ? computeWorldBounds(payload) : null), [payload]);
 
   useEffect(() => {
@@ -268,24 +282,31 @@ export default function SystemMapViewer() {
   }
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (isMapUiTarget(event.target)) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const screen = {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     };
-    const before = screenToWorld(screen);
-    const nextZoom = clamp(camera.zoom * (event.deltaY < 0 ? 1.16 : 1 / 1.16), MIN_ZOOM, MAX_ZOOM);
-    setCamera({
-      zoom: nextZoom,
-      center: {
-        x: before.x - (screen.x - viewport.width / 2) / nextZoom,
-        y: before.y - (screen.y - viewport.height / 2) / nextZoom,
-      },
+    setCamera((current) => {
+      const before = {
+        x: (screen.x - viewport.width / 2) / current.zoom + current.center.x,
+        y: (screen.y - viewport.height / 2) / current.zoom + current.center.y,
+      };
+      const nextZoom = clamp(current.zoom * (event.deltaY < 0 ? 1.2 : 1 / 1.2), MIN_ZOOM, MAX_ZOOM);
+      return {
+        zoom: nextZoom,
+        center: {
+          x: before.x - (screen.x - viewport.width / 2) / nextZoom,
+          y: before.y - (screen.y - viewport.height / 2) / nextZoom,
+        },
+      };
     });
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (isMapUiTarget(event.target)) return;
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
@@ -300,6 +321,26 @@ export default function SystemMapViewer() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     dragRef.current = null;
+  }
+
+  function clearHover() {
+    pendingHoverRef.current = null;
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    setHover((current) => (current ? null : current));
+  }
+
+  function scheduleHover(screen: SystemMapVec, world: SystemMapVec) {
+    pendingHoverRef.current = { screen, world };
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const pending = pendingHoverRef.current;
+      if (!pending) return;
+      setHover(buildHover(pending.screen, pending.world));
+    });
   }
 
   function buildHover(screen: SystemMapVec, world: SystemMapVec): HoverInfo | null {
@@ -501,6 +542,11 @@ export default function SystemMapViewer() {
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (isMapUiTarget(event.target)) {
+      clearHover();
+      return;
+    }
+
     const drag = dragRef.current;
     if (drag) {
       setCamera((current) => ({
@@ -510,7 +556,7 @@ export default function SystemMapViewer() {
           y: drag.center.y - (event.clientY - drag.startY) / current.zoom,
         },
       }));
-      setHover(null);
+      clearHover();
       return;
     }
 
@@ -519,7 +565,7 @@ export default function SystemMapViewer() {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     };
-    setHover(buildHover(screen, screenToWorld(screen)));
+    scheduleHover(screen, screenToWorld(screen));
   }
 
   function toggleLayer(key: ToggleKey) {
@@ -544,13 +590,13 @@ export default function SystemMapViewer() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={clearHover}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(35,116,161,0.16),rgba(3,8,18,0.15)_28%,rgba(3,8,18,0.82)_72%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-35 [background-image:radial-gradient(circle,rgba(255,255,255,0.5)_1px,transparent_1px)] [background-size:38px_38px]" />
 
       {payload ? (
-        <svg className="absolute inset-0 h-full w-full" width={viewport.width} height={viewport.height} role="img" aria-label="Interactive system map">
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" width={viewport.width} height={viewport.height} role="img" aria-label="Interactive system map">
           <defs>
             <radialGradient id="system-map-sun" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#fff7a8" stopOpacity="1" />
@@ -779,7 +825,16 @@ export default function SystemMapViewer() {
         </div>
       ) : null}
 
-      <div className="absolute left-5 top-5 w-[min(520px,calc(100vw-2.5rem))] rounded-2xl border border-white/10 bg-[#07111d]/92 p-4 shadow-2xl backdrop-blur">
+      <div
+        data-system-map-ui="true"
+        className="absolute left-5 top-5 w-[min(520px,calc(100vw-2.5rem))] cursor-default rounded-2xl border border-white/10 bg-[#07111d]/92 p-4 shadow-2xl backdrop-blur"
+        onPointerEnter={clearHover}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onPointerCancel={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-2xl font-semibold text-white">System Map</div>
