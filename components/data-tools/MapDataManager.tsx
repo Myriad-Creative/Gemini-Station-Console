@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   copySinglePoiWithRoot,
@@ -199,12 +200,17 @@ export default function MapDataManager() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title mb-2">Map</h1>
-        <p className="max-w-4xl text-white/65">
-          Edit the map POIs and region rectangles used by the Godot map systems. This tool reads from the active local game root and exports back to the
-          original runtime JSON shapes.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title mb-2">Map</h1>
+          <p className="max-w-4xl text-white/65">
+            Edit the map POIs and region rectangles used by the Godot map systems. This tool reads from the active local game root and exports back to the
+            original runtime JSON shapes.
+          </p>
+        </div>
+        <Link href="/data/system-map" target="_blank" rel="noreferrer" className="btn">
+          Open Fullscreen System Map
+        </Link>
       </div>
 
       <StatusBanner tone={status.tone} message={status.message} />

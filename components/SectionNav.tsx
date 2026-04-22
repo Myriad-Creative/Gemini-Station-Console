@@ -54,6 +54,8 @@ export default function SectionNav() {
           <Link
             key={link.href}
             href={link.href}
+            target={link.newTab ? "_blank" : undefined}
+            rel={link.newTab ? "noreferrer" : undefined}
             className={`text-sm ${
               isSectionLinkActive(pathname, link) ? "text-accent" : "text-white/60 hover:text-white"
             }`}

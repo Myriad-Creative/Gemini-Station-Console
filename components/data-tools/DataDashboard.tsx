@@ -35,6 +35,13 @@ const EMPTY_LOCAL_STATUS: LocalGameSourceStatus = {
 
 const DATA_SECTIONS = [
   {
+    href: "/data/system-map",
+    title: "System Map",
+    description: "Open a full-screen visual map of sectors, zones, stage placements, POIs, routes, the Sun, asteroid belt, and known mob spawns.",
+    keys: ["zones", "stages", "mobs", "poi", "routes"],
+    newTab: true,
+  },
+  {
     href: "/data/map",
     title: "Map",
     description: "Edit points of interest and region rectangles from the active local game root.",
@@ -136,7 +143,7 @@ export default function DataDashboard() {
 
               <div className="flex items-center justify-between gap-4">
                 <div className="text-sm text-white/60">{localStatus.available.data ? "Reading from the local game root." : "Set the local game root in Settings first."}</div>
-                <Link href={section.href} className="btn">
+                <Link href={section.href} target={section.newTab ? "_blank" : undefined} rel={section.newTab ? "noreferrer" : undefined} className="btn">
                   Open {section.title}
                 </Link>
               </div>

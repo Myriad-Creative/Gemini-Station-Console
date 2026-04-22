@@ -2,6 +2,7 @@ export type NavLink = {
   href: string;
   label: string;
   aliases?: string[];
+  newTab?: boolean;
 };
 
 export const MAIN_NAV_LINKS: NavLink[] = [
@@ -48,6 +49,7 @@ const ITEM_SECTION_LINKS: NavLink[] = [
 const DATA_SECTION_LINKS: NavLink[] = [
   { href: "/data", label: "Data Dashboard" },
   { href: "/data/map", label: "Map" },
+  { href: "/data/system-map", label: "System Map", newTab: true },
   { href: "/data/routes", label: "Routes" },
   { href: "/data/tutorial", label: "Tutorial" },
   { href: "/data/zones", label: "Zones" },
