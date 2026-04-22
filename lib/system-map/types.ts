@@ -149,13 +149,22 @@ export type SystemMapPoi = {
 export type SystemMapRoute = {
   id: string;
   name: string;
+  draft?: boolean;
+  modified?: boolean;
+  originalId?: string;
   sector: SystemMapVec;
   width: number;
+  speedMultiplier: number;
   color: string;
   borderColor: string;
   opacity: number;
+  borderPx: number;
+  smoothingTension: number;
   endpointAName: string;
   endpointBName: string;
+  endpointA: SystemMapVec;
+  endpointB: SystemMapVec;
+  viaPoints: SystemMapVec[];
   points: SystemMapVec[];
 };
 

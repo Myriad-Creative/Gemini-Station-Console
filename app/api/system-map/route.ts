@@ -620,18 +620,28 @@ function buildRoutes(routesJson: unknown): SystemMapRoute[] {
     const endpoints = asRecord(route.endpoints);
     const endpointA = asRecord(endpoints.a);
     const endpointB = asRecord(endpoints.b);
-    const points = [routePointToWorld(sector, endpointA), ...asArray(route.points).map((point) => routePointToWorld(sector, point)), routePointToWorld(sector, endpointB)];
+    const endpointAWorld = routePointToWorld(sector, endpointA);
+    const endpointBWorld = routePointToWorld(sector, endpointB);
+    const viaPoints = asArray(route.points).map((point) => routePointToWorld(sector, point));
+    const smoothing = asRecord(route.smoothing);
+    const points = [endpointAWorld, ...viaPoints, endpointBWorld];
 
     return {
       id,
       name: stringValue(route.name, id),
       sector,
       width: numberValue(route.width, 750),
+      speedMultiplier: numberValue(route.speed_multiplier, 2),
       color: stringValue(route.color, "#2F4558"),
       borderColor: stringValue(route.border_color, "#B0ECFE"),
       opacity: numberValue(route.opacity, 0.2),
+      borderPx: numberValue(route.border_px, 0),
+      smoothingTension: numberValue(smoothing.tension, 0.5),
       endpointAName: stringValue(endpointA.name, "Endpoint A"),
       endpointBName: stringValue(endpointB.name, "Endpoint B"),
+      endpointA: endpointAWorld,
+      endpointB: endpointBWorld,
+      viaPoints,
       points,
     };
   });

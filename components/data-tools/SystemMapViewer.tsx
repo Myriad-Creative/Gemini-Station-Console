@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { buildIconSrc } from "@lib/icon-src";
 import { createDraftKey, createUniqueId } from "@lib/data-tools/common";
+import { parseTolerantJsonText } from "@lib/data-tools/parse";
 import type {
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
@@ -46,6 +47,24 @@ type ContextMenuState = {
   y: number;
   world: SystemMapVec;
   zoneId: string | null;
+  routeId: string | null;
+};
+type RouteDraftForm = {
+  mode: "create" | "edit";
+  originalId: string;
+  name: string;
+  id: string;
+  sectorX: string;
+  sectorY: string;
+  endpointAName: string;
+  endpointBName: string;
+  width: string;
+  speedMultiplier: string;
+  color: string;
+  borderColor: string;
+  opacity: string;
+  borderPx: string;
+  smoothingTension: string;
 };
 type ZoneDraftForm = {
   mode: "create" | "edit";
@@ -95,6 +114,14 @@ type MobDragState = {
   mobStartWorld: SystemMapVec;
   moved: boolean;
 };
+type RouteDragState = {
+  routeId: string;
+  pointIndex: number;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  pointStartWorld: SystemMapVec;
+  moved: boolean;
+};
 
 const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   regions: true,
@@ -140,6 +167,17 @@ function sanitizeZoneId(value: string) {
   );
 }
 
+function sanitizeRouteId(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/['"]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "new_trade_route"
+  );
+}
+
 function numberInputValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
 }
@@ -176,6 +214,10 @@ function zoneIdentity(zone: SystemMapZone) {
 
 function mobIdentity(mob: SystemMapMobSpawn) {
   return mob.key || `zone-mob-${mob.originalIndex ?? "new"}`;
+}
+
+function routeIdentity(route: SystemMapRoute) {
+  return route.originalId ?? route.id;
 }
 
 function rectCenter(rect: SystemMapRect): SystemMapVec {
@@ -221,7 +263,7 @@ function mergeRect(bounds: SystemMapRect | null, rect: SystemMapRect): SystemMap
   return expandBounds(a, { x: rect.x + rect.w, y: rect.y + rect.h });
 }
 
-function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = payload.zones): SystemMapRect {
+function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = payload.zones, routes: SystemMapRoute[] = payload.routes): SystemMapRect {
   let bounds: SystemMapRect | null = null;
   for (const sector of payload.sectors) {
     bounds = mergeRect(bounds, sector.rect);
@@ -240,7 +282,7 @@ function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = 
   for (const poi of payload.pois) {
     bounds = expandBounds(bounds, poi.world);
   }
-  for (const route of payload.routes) {
+  for (const route of routes) {
     for (const point of route.points) {
       bounds = expandBounds(bounds, point);
     }
@@ -263,6 +305,34 @@ function pointToSegmentDistance(point: SystemMapVec, start: SystemMapVec, end: S
     x: start.x + dx * t,
     y: start.y + dy * t,
   });
+}
+
+function routePathD(points: SystemMapVec[], smoothingTension: number) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+
+  const tangentScale = (1 - clamp(smoothingTension, 0, 1)) * 0.5;
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const previous = points[index - 1] ?? current;
+    const afterNext = points[index + 2] ?? next;
+    const currentTangent = index === 0 ? { x: (next.x - current.x) * tangentScale, y: (next.y - current.y) * tangentScale } : { x: (next.x - previous.x) * tangentScale, y: (next.y - previous.y) * tangentScale };
+    const nextTangent =
+      index + 1 === points.length - 1 ? { x: (next.x - current.x) * tangentScale, y: (next.y - current.y) * tangentScale } : { x: (afterNext.x - current.x) * tangentScale, y: (afterNext.y - current.y) * tangentScale };
+    const controlA = {
+      x: current.x + currentTangent.x / 3,
+      y: current.y + currentTangent.y / 3,
+    };
+    const controlB = {
+      x: next.x - nextTangent.x / 3,
+      y: next.y - nextTangent.y / 3,
+    };
+    path += ` C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${next.x} ${next.y}`;
+  }
+  return path;
 }
 
 function cameraForBounds(bounds: SystemMapRect, viewport: Viewport): Camera {
@@ -435,6 +505,117 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
   };
 }
 
+function createRouteDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapRoute {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeRouteId("New Trade Route"), existingIds);
+  const { sector } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    id,
+    name: "New Trade Route",
+    draft: true,
+    originalId: id,
+    sector,
+    width: 2500,
+    speedMultiplier: 2,
+    color: "#9b2b00",
+    borderColor: "#B0ECFE",
+    opacity: 0.05,
+    borderPx: 0,
+    smoothingTension: 0.4,
+    endpointAName: "Endpoint A",
+    endpointBName: "Endpoint B",
+    endpointA: roundedWorld,
+    endpointB: roundedWorld,
+    viaPoints: [],
+    points: [roundedWorld],
+  };
+}
+
+function routeToForm(route: SystemMapRoute, mode: RouteDraftForm["mode"]): RouteDraftForm {
+  return {
+    mode,
+    originalId: routeIdentity(route),
+    name: route.name || route.id,
+    id: route.id,
+    sectorX: numberInputValue(route.sector.x),
+    sectorY: numberInputValue(route.sector.y),
+    endpointAName: route.endpointAName,
+    endpointBName: route.endpointBName,
+    width: numberInputValue(route.width),
+    speedMultiplier: numberInputValue(route.speedMultiplier),
+    color: route.color,
+    borderColor: route.borderColor,
+    opacity: numberInputValue(route.opacity),
+    borderPx: numberInputValue(route.borderPx),
+    smoothingTension: numberInputValue(route.smoothingTension),
+  };
+}
+
+function applyRouteFormToRouteValue(form: RouteDraftForm, route: SystemMapRoute, routes: SystemMapRoute[]): { error: string; route: null; form: null } | { error: ""; route: SystemMapRoute; form: RouteDraftForm } {
+  const id = sanitizeRouteId(form.id);
+  const sectorX = Number(form.sectorX);
+  const sectorY = Number(form.sectorY);
+  const width = Number(form.width);
+  const speedMultiplier = Number(form.speedMultiplier);
+  const opacity = Number(form.opacity);
+  const borderPx = Number(form.borderPx);
+  const smoothingTension = Number(form.smoothingTension);
+  if (!form.name.trim()) {
+    return { error: "Route name is required.", route: null, form: null };
+  }
+  if (!id) {
+    return { error: "Route ID is required.", route: null, form: null };
+  }
+  if ([sectorX, sectorY, width, speedMultiplier, opacity, borderPx, smoothingTension].some((value) => !Number.isFinite(value))) {
+    return { error: "Route sector, width, speed, opacity, border, and smoothing fields must be valid numbers.", route: null, form: null };
+  }
+  if (width <= 0 || speedMultiplier <= 0 || opacity < 0 || opacity > 1 || borderPx < 0 || smoothingTension < 0 || smoothingTension > 1) {
+    return { error: "Route width and speed must be positive. Opacity and smoothing must be between 0 and 1.", route: null, form: null };
+  }
+  const idTaken = routes.some((entry) => routeIdentity(entry) !== form.originalId && entry.id === id);
+  if (idTaken) {
+    return { error: `Trade route ID "${id}" already exists.`, route: null, form: null };
+  }
+
+  return {
+    error: "",
+    form: {
+      ...form,
+      id,
+      sectorX: numberInputValue(Math.round(sectorX)),
+      sectorY: numberInputValue(Math.round(sectorY)),
+      width: numberInputValue(width),
+      speedMultiplier: numberInputValue(speedMultiplier),
+      opacity: numberInputValue(opacity),
+      borderPx: numberInputValue(borderPx),
+      smoothingTension: numberInputValue(smoothingTension),
+    },
+    route: {
+      ...route,
+      id,
+      name: form.name.trim(),
+      modified: route.draft ? route.modified : true,
+      originalId: route.draft ? route.originalId : route.originalId ?? route.id,
+      sector: {
+        x: Math.round(sectorX),
+        y: Math.round(sectorY),
+      },
+      width,
+      speedMultiplier,
+      color: form.color.trim() || "#9b2b00",
+      borderColor: form.borderColor.trim() || "#B0ECFE",
+      opacity,
+      borderPx,
+      smoothingTension,
+      endpointAName: form.endpointAName.trim() || "Endpoint A",
+      endpointBName: form.endpointBName.trim() || "Endpoint B",
+    },
+  };
+}
+
 function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: SystemMapPayload): SystemMapZone {
   const { sector, local } = worldToSectorLocal(world, payload.config.sectorSize, payload.config.sectorHalfExtent);
   const delta = {
@@ -491,6 +672,100 @@ function moveMobSpawnToWorld(mob: SystemMapMobSpawn, world: SystemMapVec, zone: 
       ...barrier,
       worldPoints: barrier.worldPoints.map((point) => translateVec(point, delta)),
     })),
+  };
+}
+
+function withRoutePoint(route: SystemMapRoute, pointIndex: number, world: SystemMapVec): SystemMapRoute {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const nextPoints = route.points.map((point, index) => (index === pointIndex ? roundedWorld : point));
+  const fallbackPoint = nextPoints[0] ?? roundedWorld;
+  return {
+    ...route,
+    modified: route.draft ? route.modified : true,
+    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
+    endpointA: nextPoints[0] ?? fallbackPoint,
+    endpointB: nextPoints[nextPoints.length - 1] ?? fallbackPoint,
+    viaPoints: nextPoints.slice(1, -1),
+    points: nextPoints,
+  };
+}
+
+function withRoutePointAppended(route: SystemMapRoute, world: SystemMapVec): SystemMapRoute {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const nextPoints = [...route.points, roundedWorld];
+  return {
+    ...route,
+    modified: route.draft ? route.modified : true,
+    originalId: route.draft ? route.originalId : route.originalId ?? route.id,
+    endpointA: nextPoints[0],
+    endpointB: nextPoints[nextPoints.length - 1],
+    viaPoints: nextPoints.slice(1, -1),
+    points: nextPoints,
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function routePointToLocal(point: SystemMapVec, sector: SystemMapVec, sectorSize: number): Record<string, number> {
+  return {
+    x: Math.round(point.x - sector.x * sectorSize),
+    y: Math.round(point.y - sector.y * sectorSize),
+  };
+}
+
+function routeToTradeRouteJson(route: SystemMapRoute, sectorSize: number, baseRoute?: unknown): Record<string, unknown> {
+  const base = isPlainRecord(baseRoute) ? baseRoute : {};
+  const baseEndpoints = isPlainRecord(base.endpoints) ? base.endpoints : {};
+  const baseEndpointA = isPlainRecord(baseEndpoints.a) ? baseEndpoints.a : {};
+  const baseEndpointB = isPlainRecord(baseEndpoints.b) ? baseEndpoints.b : {};
+  const baseSmoothing = isPlainRecord(base.smoothing) ? base.smoothing : {};
+  const baseSCurve = isPlainRecord(base.s_curve) ? base.s_curve : {};
+  const sector = {
+    x: Math.round(route.sector.x),
+    y: Math.round(route.sector.y),
+  };
+  const endpointA = route.points[0] ?? route.endpointA;
+  const endpointB = route.points[route.points.length - 1] ?? route.endpointB;
+  const viaPoints = route.points.length > 2 ? route.points.slice(1, -1) : [];
+
+  return {
+    ...base,
+    id: route.id,
+    name: route.name || route.id,
+    sector,
+    width: route.width,
+    speed_multiplier: route.speedMultiplier,
+    color: route.color || "#9b2b00",
+    border_color: route.borderColor || "#B0ECFE",
+    opacity: route.opacity,
+    border_px: route.borderPx,
+    endpoints: {
+      ...baseEndpoints,
+      a: {
+        ...baseEndpointA,
+        ...routePointToLocal(endpointA, sector, sectorSize),
+        name: route.endpointAName || "Endpoint A",
+      },
+      b: {
+        ...baseEndpointB,
+        ...routePointToLocal(endpointB, sector, sectorSize),
+        name: route.endpointBName || "Endpoint B",
+      },
+    },
+    points: viaPoints.map((point) => routePointToLocal(point, sector, sectorSize)),
+    smoothing: {
+      ...baseSmoothing,
+      tension: route.smoothingTension,
+    },
+    s_curve: viaPoints.length ? base.s_curve : { ...baseSCurve, amplitude_factor: Number(baseSCurve.amplitude_factor ?? 0.3) },
   };
 }
 
@@ -553,6 +828,7 @@ export default function SystemMapViewer() {
   const dragRef = useRef<{ startX: number; startY: number; center: SystemMapVec } | null>(null);
   const zoneDragRef = useRef<ZoneDragState | null>(null);
   const mobDragRef = useRef<MobDragState | null>(null);
+  const routeDragRef = useRef<RouteDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -564,16 +840,24 @@ export default function SystemMapViewer() {
   const [query, setQuery] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
+  const [draftRoutes, setDraftRoutes] = useState<SystemMapRoute[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
+  const [routeForm, setRouteForm] = useState<RouteDraftForm | null>(null);
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
+  const [routeIdManuallyEdited, setRouteIdManuallyEdited] = useState(false);
   const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
+  const [editedRouteIds, setEditedRouteIds] = useState<string[]>([]);
+  const [pendingRouteStart, setPendingRouteStart] = useState(false);
+  const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
+  const [draggingRouteHandle, setDraggingRouteHandle] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
+  const [savingRoutes, setSavingRoutes] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
 
   useEffect(() => {
@@ -623,8 +907,10 @@ export default function SystemMapViewer() {
   }, []);
 
   const mapZones = useMemo(() => (payload ? [...payload.zones, ...draftZones] : []), [draftZones, payload]);
+  const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
   const existingZoneIds = useMemo(() => mapZones.map((zone) => zone.id).filter(Boolean), [mapZones]);
-  const bounds = useMemo(() => (payload ? computeWorldBounds(payload, mapZones) : null), [mapZones, payload]);
+  const existingRouteIds = useMemo(() => mapRoutes.map((route) => route.id).filter(Boolean), [mapRoutes]);
+  const bounds = useMemo(() => (payload ? computeWorldBounds(payload, mapZones, mapRoutes) : null), [mapRoutes, mapZones, payload]);
 
   useEffect(() => {
     if (!payload || !bounds || fittedRef.current) return;
@@ -653,6 +939,31 @@ export default function SystemMapViewer() {
     for (let index = filteredZones.length - 1; index >= 0; index -= 1) {
       const zone = filteredZones[index];
       if (pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) return zone;
+    }
+    return null;
+  }
+
+  function findRoutePointAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 11 / camera.zoom;
+    for (let routeIndex = filteredRoutes.length - 1; routeIndex >= 0; routeIndex -= 1) {
+      const route = filteredRoutes[routeIndex];
+      for (let pointIndex = route.points.length - 1; pointIndex >= 0; pointIndex -= 1) {
+        if (distance(world, route.points[pointIndex]) <= screenHitRadius) {
+          return { route, pointIndex };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findRouteAtWorld(world: SystemMapVec) {
+    for (let routeIndex = filteredRoutes.length - 1; routeIndex >= 0; routeIndex -= 1) {
+      const route = filteredRoutes[routeIndex];
+      for (let index = 1; index < route.points.length; index += 1) {
+        if (pointToSegmentDistance(world, route.points[index - 1], route.points[index]) <= Math.max(route.width / 2, 10 / camera.zoom)) {
+          return route;
+        }
+      }
     }
     return null;
   }
@@ -692,12 +1003,40 @@ export default function SystemMapViewer() {
     setEditedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
   }
 
+  function updateRouteInMap(routeId: string, updater: (route: SystemMapRoute) => SystemMapRoute) {
+    const draftRoute = draftRoutes.find((route) => routeIdentity(route) === routeId);
+    if (draftRoute) {
+      setDraftRoutes((current) => current.map((route) => (routeIdentity(route) === routeId ? updater(route) : route)));
+      return;
+    }
+
+    setPayload((current) => {
+      if (!current) return current;
+      const existing = current.routes.find((route) => routeIdentity(route) === routeId);
+      if (!existing) return current;
+      const nextRoute = updater(existing);
+      return {
+        ...current,
+        routes: current.routes.map((route) => (routeIdentity(route) === routeId ? nextRoute : route)),
+      };
+    });
+    setEditedRouteIds((current) => (current.includes(routeId) ? current : [...current, routeId]));
+  }
+
   function updateMobSpawnPosition(zoneId: string, mobKey: string, world: SystemMapVec) {
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
       modified: zone.draft ? zone.modified : true,
       mobs: zone.mobs.map((mob) => (mobIdentity(mob) === mobKey ? moveMobSpawnToWorld(mob, world, zone) : mob)),
     }));
+  }
+
+  function updateRoutePointPosition(routeId: string, pointIndex: number, world: SystemMapVec) {
+    updateRouteInMap(routeId, (route) => withRoutePoint(route, pointIndex, world));
+  }
+
+  function appendRoutePoint(routeId: string, world: SystemMapVec) {
+    updateRouteInMap(routeId, (route) => withRoutePointAppended(route, world));
   }
 
   function updateZonePosition(zoneId: string, world: SystemMapVec) {
@@ -752,6 +1091,27 @@ export default function SystemMapViewer() {
     setStatus(null);
   }
 
+  function openRouteEditor(route: SystemMapRoute) {
+    setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
+    setRouteIdManuallyEdited(true);
+    setActiveRouteAddId(null);
+    setPendingRouteStart(false);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function startRouteDraft(world: SystemMapVec) {
+    if (!payload) return;
+    const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
+    setDraftRoutes((current) => [...current, route]);
+    setRouteForm(routeToForm(route, "create"));
+    setRouteIdManuallyEdited(false);
+    setPendingRouteStart(false);
+    setActiveRouteAddId(routeIdentity(route));
+    setContextMenu(null);
+    setStatus({ tone: "neutral", message: "Route draft started. Click the map to add each route point, drag any route handle to adjust it, then save route changes to build." });
+  }
+
   function fitAll() {
     if (!bounds) return;
     setCamera(cameraForBounds(bounds, viewport));
@@ -798,6 +1158,32 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    const targetRoutePoint = toggles.routes ? findRoutePointAtWorld(world) : null;
+    if (targetRoutePoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      routeDragRef.current = {
+        routeId: routeIdentity(targetRoutePoint.route),
+        pointIndex: targetRoutePoint.pointIndex,
+        startScreen: screen,
+        startWorld: world,
+        pointStartWorld: targetRoutePoint.route.points[targetRoutePoint.pointIndex],
+        moved: false,
+      };
+      setDraggingRouteHandle(`${routeIdentity(targetRoutePoint.route)}:${targetRoutePoint.pointIndex}`);
+      clearHover();
+      return;
+    }
+    if (pendingRouteStart) {
+      startRouteDraft(world);
+      clearHover();
+      return;
+    }
+    if (activeRouteAddId) {
+      appendRoutePoint(activeRouteAddId, world);
+      setStatus({ tone: "neutral", message: "Added route point. Keep clicking to add points, or stop point mode in the route editor." });
+      clearHover();
+      return;
+    }
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -832,6 +1218,12 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
+    const targetRoute = toggles.routes ? findRouteAtWorld(world) : null;
+    if (targetRoute) {
+      openRouteEditor(targetRoute);
+      clearHover();
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       startX: event.clientX,
@@ -843,6 +1235,15 @@ export default function SystemMapViewer() {
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const routeDrag = routeDragRef.current;
+    if (routeDrag) {
+      const route = mapRoutes.find((entry) => routeIdentity(entry) === routeDrag.routeId);
+      if (routeDrag.moved) {
+        setStatus({ tone: "success", message: `Moved point ${routeDrag.pointIndex + 1} on "${route?.name || routeDrag.routeId}". Use Save Route Changes To Build to write it into trade_routes.json.` });
+      } else if (route) {
+        openRouteEditor(route);
+      }
     }
     const mobDrag = mobDragRef.current;
     if (mobDrag) {
@@ -861,6 +1262,8 @@ export default function SystemMapViewer() {
     }
     mobDragRef.current = null;
     setDraggingMobKey(null);
+    routeDragRef.current = null;
+    setDraggingRouteHandle(null);
     zoneDragRef.current = null;
     setDraggingZoneId(null);
     dragRef.current = null;
@@ -876,11 +1279,13 @@ export default function SystemMapViewer() {
     };
     const world = screenToWorld(screen);
     const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
+    const targetRoute = toggles.routes ? findRouteAtWorld(world) : null;
     setContextMenu({
       x: screen.x,
       y: screen.y,
       world,
       zoneId: targetZone ? zoneIdentity(targetZone) : null,
+      routeId: targetRoute ? routeIdentity(targetRoute) : null,
     });
     clearHover();
   }
@@ -1064,7 +1469,7 @@ export default function SystemMapViewer() {
     }
 
     if (toggles.routes) {
-      for (const route of payload.routes) {
+      for (const route of mapRoutes) {
         if (!routeMatches(route, normalizedQuery)) continue;
         for (let index = 1; index < route.points.length; index += 1) {
           if (pointToSegmentDistance(world, route.points[index - 1], route.points[index]) <= Math.max(2500, 8 / camera.zoom)) {
@@ -1072,12 +1477,13 @@ export default function SystemMapViewer() {
               x: screen.x,
               y: screen.y,
               title: route.name || route.id,
-              subtitle: `Trade route · sector ${route.sector.x}, ${route.sector.y}`,
+              subtitle: `${route.draft ? "Unsaved draft" : route.modified ? "Unsaved route edit" : "Trade route"} · sector ${route.sector.x}, ${route.sector.y}`,
               lines: [
                 `Route ID: ${route.id}`,
                 `From: ${route.endpointAName}`,
                 `To: ${route.endpointBName}`,
                 `Width: ${formatNumber(route.width)}`,
+                `Speed multiplier: ${route.speedMultiplier}`,
                 `Points: ${route.points.length}`,
               ],
             };
@@ -1138,6 +1544,26 @@ export default function SystemMapViewer() {
     }
 
     const mobDrag = mobDragRef.current;
+    const routeDrag = routeDragRef.current;
+    if (routeDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: routeDrag.pointStartWorld.x + world.x - routeDrag.startWorld.x,
+        y: routeDrag.pointStartWorld.y + world.y - routeDrag.startWorld.y,
+      };
+      if (!routeDrag.moved && distance(screen, routeDrag.startScreen) > 4) {
+        routeDrag.moved = true;
+      }
+      updateRoutePointPosition(routeDrag.routeId, routeDrag.pointIndex, nextWorld);
+      clearHover();
+      return;
+    }
+
     if (mobDrag) {
       const rect = event.currentTarget.getBoundingClientRect();
       const screen = {
@@ -1290,6 +1716,48 @@ export default function SystemMapViewer() {
   function handleZoneIdChange(id: string) {
     setZoneIdManuallyEdited(true);
     setZoneForm((current) => (current ? { ...current, id: sanitizeZoneId(id) } : current));
+  }
+
+  function handleRouteNameChange(name: string) {
+    setRouteForm((current) => {
+      if (!current) return current;
+      const reservedIds = existingRouteIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        name,
+        id: current.mode === "create" && !routeIdManuallyEdited ? createUniqueId(sanitizeRouteId(name), reservedIds) : current.id,
+      };
+    });
+  }
+
+  function handleRouteIdChange(id: string) {
+    setRouteIdManuallyEdited(true);
+    setRouteForm((current) => (current ? { ...current, id: sanitizeRouteId(id) } : current));
+  }
+
+  function applyRouteForm() {
+    if (!routeForm) return;
+    const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
+    if (!route) {
+      setStatus({ tone: "error", message: "Could not find the route being edited." });
+      return;
+    }
+    const applied = applyRouteFormToRouteValue(routeForm, route, mapRoutes);
+    if (applied.error || !applied.route || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+
+    updateRouteInMap(routeForm.originalId, () => applied.route);
+    setRouteForm(applied.form);
+    setStatus({ tone: "success", message: `Applied route details for "${routeForm.name.trim()}". Use Save Route Changes To Build to write trade_routes.json.` });
+  }
+
+  function removeDraftRoute(routeId: string) {
+    setDraftRoutes((current) => current.filter((route) => routeIdentity(route) !== routeId));
+    setRouteForm((current) => (current?.originalId === routeId ? null : current));
+    setActiveRouteAddId((current) => (current === routeId ? null : current));
+    setStatus({ tone: "neutral", message: "Removed the unsaved trade route draft." });
   }
 
   function saveZoneForm() {
@@ -1488,13 +1956,130 @@ export default function SystemMapViewer() {
     }
   }
 
+  async function handleSaveRouteChangesToBuild() {
+    if ((!draftRoutes.length && !editedRouteIds.length) || savingRoutes || !payload) return;
+    setSavingRoutes(true);
+    setStatus(null);
+    try {
+      let routesForSave = mapRoutes;
+      let draftRoutesForSave = draftRoutes;
+      let editedRouteIdsForSave = editedRouteIds;
+      if (routeForm) {
+        const route = routesForSave.find((entry) => routeIdentity(entry) === routeForm.originalId);
+        if (route) {
+          const applied = applyRouteFormToRouteValue(routeForm, route, routesForSave);
+          if (applied.error || !applied.route || !applied.form) {
+            setStatus({ tone: "error", message: applied.error });
+            return;
+          }
+          routesForSave = routesForSave.map((entry) => (routeIdentity(entry) === routeForm.originalId ? applied.route : entry));
+          draftRoutesForSave = draftRoutesForSave.map((entry) => (routeIdentity(entry) === routeForm.originalId ? applied.route : entry));
+          if (!applied.route.draft && !editedRouteIdsForSave.includes(routeForm.originalId)) {
+            editedRouteIdsForSave = [...editedRouteIdsForSave, routeForm.originalId];
+          }
+          setRouteForm(applied.form);
+        }
+      }
+
+      const incompleteRoute = [...draftRoutesForSave, ...routesForSave.filter((route) => !route.draft && editedRouteIdsForSave.includes(route.originalId ?? route.id))].find((route) => route.points.length < 2);
+      if (incompleteRoute) {
+        setStatus({ tone: "error", message: `Trade route "${incompleteRoute.name || incompleteRoute.id}" needs at least two points before saving.` });
+        return;
+      }
+
+      const sourceResponse = await fetch("/api/settings/data/source?kind=tradeRoutes", { cache: "no-store" });
+      const sourcePayload = await sourceResponse.json().catch(() => ({}));
+      if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
+        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current trade_routes.json before saving." });
+        return;
+      }
+
+      const parsed = parseTolerantJsonText(sourcePayload.text);
+      if (!parsed.value || !isPlainRecord(parsed.value)) {
+        setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse trade_routes.json before saving." });
+        return;
+      }
+      const sourceRoutes = Array.isArray(parsed.value.routes) ? parsed.value.routes : [];
+      const editedRoutes = routesForSave.filter((route) => !route.draft && editedRouteIdsForSave.includes(route.originalId ?? route.id));
+      const updatedRoutes = sourceRoutes.map((routeValue) => {
+        const routeRecord = isPlainRecord(routeValue) ? routeValue : {};
+        const routeId = typeof routeRecord.id === "string" ? routeRecord.id : "";
+        const editedRoute = editedRoutes.find((route) => (route.originalId ?? route.id) === routeId);
+        return editedRoute ? routeToTradeRouteJson(editedRoute, payload.config.sectorSize, routeRecord) : routeValue;
+      });
+      const existingSourceIds = new Set(
+        sourceRoutes
+          .map((routeValue) => (isPlainRecord(routeValue) && typeof routeValue.id === "string" ? routeValue.id : ""))
+          .filter(Boolean),
+      );
+      for (const route of draftRoutesForSave) {
+        if (existingSourceIds.has(route.id)) {
+          setStatus({ tone: "error", message: `Trade route ID "${route.id}" already exists in the live trade_routes.json file.` });
+          return;
+        }
+        updatedRoutes.push(routeToTradeRouteJson(route, payload.config.sectorSize));
+      }
+
+      const tradeRoutes = {
+        ...parsed.value,
+        version: typeof parsed.value.version === "number" ? parsed.value.version : 1,
+        routes: updatedRoutes,
+      };
+      const saveResponse = await fetch("/api/trade-routes/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ tradeRoutes }),
+      });
+      const savePayload = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok || !savePayload?.ok) {
+        setStatus({ tone: "error", message: savePayload?.error || "Could not save trade route changes into trade_routes.json." });
+        return;
+      }
+
+      const savedExistingRoutes = routesForSave
+        .filter((route) => !route.draft)
+        .map((route) => ({
+          ...route,
+          modified: false,
+          originalId: undefined,
+        }));
+      const savedDraftRoutes = draftRoutesForSave.map((route) => ({
+        ...route,
+        draft: false,
+        modified: false,
+        originalId: undefined,
+      }));
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              routes: [...savedExistingRoutes, ...savedDraftRoutes],
+            }
+          : current,
+      );
+      setDraftRoutes([]);
+      setEditedRouteIds([]);
+      setActiveRouteAddId(null);
+      setPendingRouteStart(false);
+      const savedCount = savedDraftRoutes.length + editedRoutes.length;
+      setStatus({ tone: "success", message: `Saved ${savedCount} trade route change${savedCount === 1 ? "" : "s"} into the live trade_routes.json file.` });
+    } catch (saveError) {
+      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+    } finally {
+      setSavingRoutes(false);
+    }
+  }
+
   const filteredZones = mapZones.filter((zone) => zoneMatches(zone, normalizedQuery));
   const filteredPois = payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [];
-  const filteredRoutes = payload?.routes.filter((route) => routeMatches(route, normalizedQuery)) ?? [];
+  const filteredRoutes = mapRoutes.filter((route) => routeMatches(route, normalizedQuery));
   const sceneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0);
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
+  const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
@@ -1571,18 +2156,53 @@ export default function SystemMapViewer() {
               : null}
 
             {toggles.routes
-              ? filteredRoutes.map((route) => (
-                  <polyline
-                    key={route.id}
-                    points={route.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                    fill="none"
-                    stroke={route.color || "#38bdf8"}
-                    strokeOpacity={Math.max(0.18, route.opacity)}
-                    strokeWidth={Math.max(route.width, 700)}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                ))
+              ? filteredRoutes.map((route) => {
+                  const isChanged = route.draft || route.modified;
+                  const routeKey = routeIdentity(route);
+                  const pathD = routePathD(route.points, route.smoothingTension);
+                  return (
+                    <g key={routeKey}>
+                      {route.borderPx > 0 && route.points.length > 1 ? (
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke={route.borderColor || "#B0ECFE"}
+                          strokeOpacity={Math.max(0.18, route.opacity)}
+                          strokeWidth={Math.max(route.width + route.borderPx * 2, 900)}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ) : null}
+                      {route.points.length > 1 ? (
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke={route.color || "#38bdf8"}
+                          strokeOpacity={Math.max(0.18, route.opacity)}
+                          strokeWidth={Math.max(route.width, 700)}
+                          strokeDasharray={isChanged ? `${18 / camera.zoom} ${12 / camera.zoom}` : undefined}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ) : null}
+                      {route.points.map((point, pointIndex) => {
+                        const handleKey = `${routeKey}:${pointIndex}`;
+                        const isEndpoint = pointIndex === 0 || pointIndex === route.points.length - 1;
+                        return (
+                          <circle
+                            key={handleKey}
+                            cx={point.x}
+                            cy={point.y}
+                            r={(draggingRouteHandle === handleKey ? 9 : isEndpoint ? 7 : 5) / camera.zoom}
+                            fill={route.draft ? "#34d399" : route.modified ? "#facc15" : isEndpoint ? "#38bdf8" : "#a78bfa"}
+                            stroke="rgba(255,255,255,0.78)"
+                            strokeWidth={(draggingRouteHandle === handleKey ? 2 : 1) / camera.zoom}
+                          />
+                        );
+                      })}
+                    </g>
+                  );
+                })
               : null}
 
             {toggles.zones
@@ -1786,13 +2406,27 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers`
                 : "Loading local game source..."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasZoneChanges || savingZones} onClick={() => void handleSaveZoneChangesToBuild()}>
               {savingZones ? "Saving..." : "Save Zone Changes To Build"}
+            </button>
+            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasRouteChanges || savingRoutes} onClick={() => void handleSaveRouteChangesToBuild()}>
+              {savingRoutes ? "Saving..." : "Save Route Changes To Build"}
+            </button>
+            <button
+              type="button"
+              className={`rounded border px-3 py-2 text-sm ${pendingRouteStart ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"}`}
+              onClick={() => {
+                setPendingRouteStart((current) => !current);
+                setActiveRouteAddId(null);
+                setStatus({ tone: "neutral", message: "Click the map to place the first point for a new trade route." });
+              }}
+            >
+              New Trade Route
             </button>
             <button type="button" className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10" onClick={fitAll}>
               Fit All
@@ -1834,7 +2468,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes` : "0 zones"}</div>
           </div>
         </div>
 
@@ -1864,7 +2498,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone to edit its details. Hold Command and drag a zone to move it. Right-click the map to add a zone draft.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone or route to edit details. Hold Command and drag a zone to move it. Drag trade route handles to adjust route points. Right-click the map to add zones, mob spawns, or trade routes.</div>
       </div>
 
       {contextMenu ? (
@@ -1876,6 +2510,18 @@ export default function SystemMapViewer() {
           onWheel={(event) => event.stopPropagation()}
         >
           <div className="px-3 py-2 text-xs text-white/50">World {formatVec(contextMenu.world)}</div>
+          {contextMenu.routeId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+              onClick={() => {
+                const route = mapRoutes.find((entry) => routeIdentity(entry) === contextMenu.routeId);
+                if (route) openRouteEditor(route);
+              }}
+            >
+              Edit Trade Route
+            </button>
+          ) : null}
           {contextMenu.zoneId ? (
             <button
               type="button"
@@ -1891,8 +2537,147 @@ export default function SystemMapViewer() {
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
             Add Zone Here
           </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
+            Start Trade Route Here
+          </button>
         </div>
       ) : null}
+
+      {routeForm
+        ? (() => {
+            const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
+            const isAddingPoints = activeRouteAddId === routeForm.originalId;
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(460px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">{routeForm.mode === "create" ? "New Trade Route" : "Edit Trade Route"}</div>
+                    <div className="mt-1 text-sm text-white/55">Click the map to add route points. Drag the visible handles to adjust the path.</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5"
+                    onClick={() => {
+                      setRouteForm(null);
+                      setActiveRouteAddId(null);
+                      setPendingRouteStart(false);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Route Name
+                    <input className="input mt-1" value={routeForm.name} onChange={(event) => handleRouteNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Route ID
+                    <input className="input mt-1 font-mono" value={routeForm.id} onChange={(event) => handleRouteIdChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector X
+                    <input className="input mt-1" type="number" value={routeForm.sectorX} onChange={(event) => setRouteForm((current) => (current ? { ...current, sectorX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector Y
+                    <input className="input mt-1" type="number" value={routeForm.sectorY} onChange={(event) => setRouteForm((current) => (current ? { ...current, sectorY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Endpoint A Name
+                    <input className="input mt-1" value={routeForm.endpointAName} onChange={(event) => setRouteForm((current) => (current ? { ...current, endpointAName: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Endpoint B Name
+                    <input className="input mt-1" value={routeForm.endpointBName} onChange={(event) => setRouteForm((current) => (current ? { ...current, endpointBName: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Width
+                    <input className="input mt-1" type="number" value={routeForm.width} onChange={(event) => setRouteForm((current) => (current ? { ...current, width: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Speed Multiplier
+                    <input className="input mt-1" type="number" step="0.1" value={routeForm.speedMultiplier} onChange={(event) => setRouteForm((current) => (current ? { ...current, speedMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Fill Color
+                    <input className="input mt-1 font-mono" value={routeForm.color} onChange={(event) => setRouteForm((current) => (current ? { ...current, color: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Border Color
+                    <input className="input mt-1 font-mono" value={routeForm.borderColor} onChange={(event) => setRouteForm((current) => (current ? { ...current, borderColor: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Opacity
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={routeForm.opacity} onChange={(event) => setRouteForm((current) => (current ? { ...current, opacity: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Border Pixels
+                    <input className="input mt-1" type="number" min="0" value={routeForm.borderPx} onChange={(event) => setRouteForm((current) => (current ? { ...current, borderPx: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Smoothing Tension
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={routeForm.smoothingTension} onChange={(event) => setRouteForm((current) => (current ? { ...current, smoothingTension: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-white">Route Points</div>
+                      <div className="text-xs text-white/45">{route?.points.length ?? 0} point{route?.points.length === 1 ? "" : "s"} placed</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`rounded border px-3 py-2 text-sm ${
+                        isAddingPoints ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"
+                      }`}
+                      onClick={() => {
+                        setPendingRouteStart(false);
+                        setActiveRouteAddId((current) => (current === routeForm.originalId ? null : routeForm.originalId));
+                      }}
+                    >
+                      {isAddingPoints ? "Stop Adding Points" : "Add Points"}
+                    </button>
+                  </div>
+                  <div className="mt-3 max-h-40 space-y-1 overflow-auto text-xs text-white/60">
+                    {route?.points.map((point, index) => (
+                      <div key={`${routeIdentity(route)}:${index}:point-row`} className="flex justify-between gap-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                        <span>{index === 0 ? "A" : index === route.points.length - 1 ? "B" : `Via ${index}`}</span>
+                        <span className="font-mono">{formatVec(point)}</span>
+                      </div>
+                    ))}
+                    {!route ? <div className="text-white/45">Route not found on the map.</div> : null}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  {route?.draft ? (
+                    <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeDraftRoute(routeForm.originalId)}>
+                      Remove Draft
+                    </button>
+                  ) : null}
+                  <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setRouteForm(null)}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applyRouteForm}>
+                    Apply Route Details
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
 
       {mobSpawnForm ? (
         <div
