@@ -99,6 +99,7 @@ export type SystemMapMobSpawn = {
 export type SystemMapZone = {
   id: string;
   name: string;
+  draft?: boolean;
   active: boolean;
   showHudOnEnter: boolean;
   poiMap: boolean;

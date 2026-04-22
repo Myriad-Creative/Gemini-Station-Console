@@ -201,7 +201,7 @@ async function loadDataFile(gameRootPath: string, kind: UploadedDataFileKind, la
   const parsed = parseTolerantJsonText(text);
   return {
     value: parsed.value,
-    warnings: [...parsed.warnings.map((warning) => `${label}: ${warning}`), ...parsed.errors.map((error) => `${label}: ${error}`)],
+    warnings: parsed.errors.map((error) => `${label}: ${error}`),
   };
 }
 
