@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { buildIconSrc } from "@lib/icon-src";
 import { createDraftKey, createUniqueId } from "@lib/data-tools/common";
 import { parseTolerantJsonText } from "@lib/data-tools/parse";
@@ -145,6 +145,16 @@ type AsteroidVisual = {
   y: number;
   size: number;
   rotation: number;
+  spriteIndex: number;
+  sprite: string;
+  opacity: number;
+};
+type BarrierVisual = {
+  key: string;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
   sprite: string;
   opacity: number;
 };
@@ -165,6 +175,9 @@ const MIN_ZOOM = 0.00018;
 const MAX_ZOOM = 0.12;
 const DEFAULT_SECTOR_SIZE = 250000;
 const DEFAULT_SECTOR_HALF_EXTENT = 125000;
+const ASTEROID_LOW_DETAIL_ZOOM = 0.0007;
+const ASTEROID_MEDIUM_DETAIL_ZOOM = 0.0015;
+const ASTEROID_VIEW_PADDING = 90000;
 const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_1.png",
   "res://assets/environment/asteroids/ast_2.png",
@@ -172,6 +185,22 @@ const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_4.png",
   "res://assets/environment/asteroids/ast_5.png",
   "res://assets/environment/asteroids/ast_6.png",
+];
+const BARRIER_DEBRIS_SPRITES = [
+  "res://assets/environment/debris/debris_1.png",
+  "res://assets/environment/tut_debris/deb_1.png",
+  "res://assets/environment/tut_debris/deb_2.png",
+  "res://assets/environment/tut_debris/deb_3.png",
+  "res://assets/environment/tut_debris/deb_4.png",
+  "res://assets/environment/tut_debris/deb_5.png",
+  "res://assets/environment/tut_debris/deb_6.png",
+  "res://assets/environment/tut_debris/deb_7.png",
+];
+const BARRIER_GAS_SPRITES = [
+  "res://assets/environment/cloud/cloud_lg_orange.png",
+  "res://assets/environment/cloud/cloud_lg_yellow.png",
+  "res://assets/environment/cloud/cloud_lg_brown_fifty.png",
+  "res://assets/environment/nebula/nebula_1.png",
 ];
 
 function clamp(value: number, min: number, max: number) {
@@ -596,6 +625,7 @@ function buildAsteroidVisuals(payload: SystemMapPayload, gates: SystemMapAsteroi
         y: Math.sin(angle) * radius,
         size,
         rotation: seededUnit(seed + 16) * 360,
+        spriteIndex,
         sprite: ASTEROID_SPRITES[spriteIndex],
         opacity: 0.42 + seededUnit(seed + 20) * 0.36,
       });
@@ -603,6 +633,196 @@ function buildAsteroidVisuals(payload: SystemMapPayload, gates: SystemMapAsteroi
   }
   return visuals;
 }
+
+function asteroidLodStep(zoom: number) {
+  if (zoom < ASTEROID_LOW_DETAIL_ZOOM) return 6;
+  if (zoom < ASTEROID_MEDIUM_DETAIL_ZOOM) return 3;
+  return 1;
+}
+
+function filterAsteroidsForCamera(asteroids: AsteroidVisual[], camera: Camera, viewport: Viewport) {
+  const lodStep = asteroidLodStep(camera.zoom);
+  const halfWidth = viewport.width / (2 * camera.zoom) + ASTEROID_VIEW_PADDING;
+  const halfHeight = viewport.height / (2 * camera.zoom) + ASTEROID_VIEW_PADDING;
+  const minX = camera.center.x - halfWidth;
+  const maxX = camera.center.x + halfWidth;
+  const minY = camera.center.y - halfHeight;
+  const maxY = camera.center.y + halfHeight;
+
+  return asteroids.filter((asteroid, index) => {
+    if (index % lodStep !== 0) return false;
+    if (lodStep > 1) return true;
+    return asteroid.x + asteroid.size >= minX && asteroid.x - asteroid.size <= maxX && asteroid.y + asteroid.size >= minY && asteroid.y - asteroid.size <= maxY;
+  });
+}
+
+const AsteroidFieldLayer = memo(function AsteroidFieldLayer({ asteroids }: { asteroids: AsteroidVisual[] }) {
+  return (
+    <>
+      {asteroids.map((asteroid) => (
+        <use
+          key={asteroid.key}
+          href={`#system-map-asteroid-${asteroid.spriteIndex}`}
+          opacity={asteroid.opacity}
+          transform={`translate(${asteroid.x - asteroid.size / 2} ${asteroid.y - asteroid.size / 2}) rotate(${asteroid.rotation} ${asteroid.size / 2} ${asteroid.size / 2}) scale(${asteroid.size})`}
+          style={{ pointerEvents: "none" }}
+        />
+      ))}
+    </>
+  );
+});
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function barrierSymbolId(sprite: string) {
+  return `system-map-barrier-${sprite.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+}
+
+function barrierMaterialFallbacks(kind: SystemMapSceneBarrier["visualKind"]) {
+  if (kind === "asteroid") return ASTEROID_SPRITES;
+  if (kind === "debris") return BARRIER_DEBRIS_SPRITES;
+  if (kind === "gas") return BARRIER_GAS_SPRITES;
+  return BARRIER_DEBRIS_SPRITES;
+}
+
+function barrierMaterialPaths(barrier: SystemMapSceneBarrier) {
+  const materialPaths = barrier.materialPaths ?? [];
+  return materialPaths.length ? materialPaths : barrierMaterialFallbacks(barrier.visualKind);
+}
+
+function barrierStrokeColor(kind: SystemMapSceneBarrier["visualKind"]) {
+  if (kind === "asteroid") return "rgba(251,191,36,0.16)";
+  if (kind === "debris") return "rgba(148,163,184,0.16)";
+  if (kind === "gas") return "rgba(250,204,21,0.18)";
+  return "rgba(251,146,60,0.28)";
+}
+
+function barrierBaseSpriteSize(kind: SystemMapSceneBarrier["visualKind"], seed: number) {
+  if (kind === "gas") return 2800 + seededUnit(seed + 13) * 5600;
+  if (kind === "asteroid") return 560 + seededUnit(seed + 13) * 1220;
+  if (kind === "debris") return 720 + seededUnit(seed + 13) * 1600;
+  return 900 + seededUnit(seed + 13) * 1400;
+}
+
+function barrierVisualStep(kind: SystemMapSceneBarrier["visualKind"], visualWidth: number, density: number) {
+  if (kind === "gas") return Math.max(1400, 3400 / density);
+  if (kind === "asteroid") return Math.max(360, Math.min(1200, visualWidth * 0.34) / density);
+  if (kind === "debris") return Math.max(520, Math.min(1500, visualWidth * 0.42) / density);
+  return Math.max(700, 1800 / density);
+}
+
+function buildBarrierVisuals(barrier: SystemMapSceneBarrier, keyBase: string): BarrierVisual[] {
+  const visuals: BarrierVisual[] = [];
+  if (barrier.worldPoints.length < 2) return visuals;
+
+  const kind = barrier.visualKind;
+  const materials = barrierMaterialPaths(barrier);
+  const visualWidth = Math.max(500, barrier.bandWidth * Math.max(0.1, barrier.visualWidthMultiplier));
+  const density = Math.max(0.1, barrier.visualDensityMultiplier);
+  const scale = Math.max(0.1, barrier.visualScaleMultiplier);
+  const alpha = clamp(barrier.visualAlphaMultiplier, 0.08, 1.4);
+  const step = barrierVisualStep(kind, visualWidth, density);
+  const maxVisuals = kind === "gas" ? 90 : kind === "asteroid" ? 170 : 140;
+
+  for (let segmentIndex = 1; segmentIndex < barrier.worldPoints.length; segmentIndex += 1) {
+    const start = barrier.worldPoints[segmentIndex - 1];
+    const end = barrier.worldPoints[segmentIndex];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const segmentLength = Math.hypot(dx, dy);
+    if (segmentLength <= 0) continue;
+
+    const normal = {
+      x: -dy / segmentLength,
+      y: dx / segmentLength,
+    };
+    const count = Math.max(1, Math.ceil(segmentLength / step));
+
+    for (let localIndex = 0; localIndex < count && visuals.length < maxVisuals; localIndex += 1) {
+      const seed = hashString(`${keyBase}:${segmentIndex}:${localIndex}:${kind}`);
+      const t = clamp((localIndex + 0.18 + seededUnit(seed + 1) * 0.64) / count, 0, 1);
+      const center = {
+        x: start.x + dx * t,
+        y: start.y + dy * t,
+      };
+      const offset = (seededUnit(seed + 2) - 0.5) * visualWidth;
+      const edgeFade = kind === "gas" ? 1 : clamp(1 - Math.abs(offset) / Math.max(1, visualWidth * 0.68), 0.22, 1);
+      const spriteIndex = Math.floor(seededUnit(seed + 3) * materials.length) % materials.length;
+      const sprite = materials[spriteIndex] || barrierMaterialFallbacks(kind)[0];
+      const baseOpacity = kind === "gas" ? 0.15 : kind === "asteroid" ? 0.66 : 0.48;
+
+      visuals.push({
+        key: `${keyBase}:${segmentIndex}:${localIndex}`,
+        x: center.x + normal.x * offset,
+        y: center.y + normal.y * offset,
+        size: barrierBaseSpriteSize(kind, seed) * scale * (kind === "gas" ? 1 : 0.72 + edgeFade * 0.35),
+        rotation: seededUnit(seed + 4) * 360,
+        sprite,
+        opacity: clamp(baseOpacity * alpha * edgeFade * (0.78 + seededUnit(seed + 5) * 0.34), 0.04, kind === "gas" ? 0.34 : 0.86),
+      });
+    }
+
+    if (visuals.length >= maxVisuals) break;
+  }
+
+  return visuals;
+}
+
+const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query }: { zones: SystemMapZone[]; query: string }) {
+  const entries = useMemo(
+    () =>
+      zones.flatMap((zone) =>
+        zone.mobs.flatMap((mob) =>
+          mob.sceneBarriers
+            .filter((barrier) => barrierMatches(barrier, query))
+            .map((barrier) => {
+              const key = `${zone.id}:${mob.mobId}:${barrier.nodeName}:${barrier.profileId}:${barrier.worldPoints.length}`;
+              return {
+                barrier,
+                key,
+                visuals: buildBarrierVisuals(barrier, key),
+              };
+            }),
+        ),
+      ),
+    [query, zones],
+  );
+
+  return (
+    <>
+      {entries.map(({ barrier, key, visuals }) => {
+        const visualWidth = Math.max(500, barrier.bandWidth * Math.max(0.1, barrier.visualWidthMultiplier));
+        return (
+          <g key={key} style={{ pointerEvents: "none" }}>
+            <polyline
+              points={barrier.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+              fill="none"
+              stroke={barrierStrokeColor(barrier.visualKind)}
+              strokeWidth={visualWidth}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {visuals.map((visual) => (
+              <use
+                key={visual.key}
+                href={`#${barrierSymbolId(visual.sprite)}`}
+                opacity={visual.opacity}
+                transform={`translate(${visual.x - visual.size / 2} ${visual.y - visual.size / 2}) rotate(${visual.rotation} ${visual.size / 2} ${visual.size / 2}) scale(${visual.size})`}
+              />
+            ))}
+          </g>
+        );
+      })}
+    </>
+  );
+});
 
 function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: string): SystemMapZone {
   const world = {
@@ -1105,7 +1325,7 @@ function stageMatches(stage: SystemMapStagePlacement, query: string) {
 
 function barrierMatches(barrier: SystemMapSceneBarrier, query: string) {
   if (!query) return true;
-  return [barrier.nodeName, barrier.profileId, barrier.sourceScene].join(" ").toLowerCase().includes(query);
+  return [barrier.nodeName, barrier.profileId, barrier.baseStageProfile, barrier.visualKind, barrier.sourceScene, ...(barrier.materialPaths ?? [])].join(" ").toLowerCase().includes(query);
 }
 
 function isMapUiTarget(target: EventTarget | null) {
@@ -1824,8 +2044,11 @@ export default function SystemMapViewer() {
                   subtitle: `Scene barrier in ${mob.displayName || mob.mobId}`,
                   lines: [
                     `Profile: ${barrier.profileId || "not set"}`,
+                    `Visual: ${barrier.visualKind}`,
+                    `Base stage: ${barrier.baseStageProfile || "not set"}`,
                     `Band width: ${formatNumber(barrier.bandWidth)}`,
                     `Visual width: ${barrier.visualWidthMultiplier}x`,
+                    `Materials: ${(barrier.materialPaths ?? []).length}`,
                     `Points: ${barrier.worldPoints.length}`,
                     `Scene: ${barrier.sourceScene}`,
                   ],
@@ -2604,14 +2827,28 @@ export default function SystemMapViewer() {
     }
   }
 
-  const filteredZones = mapZones.filter((zone) => zoneMatches(zone, normalizedQuery));
-  const filteredPois = payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [];
-  const filteredRoutes = mapRoutes.filter((route) => routeMatches(route, normalizedQuery));
-  const filteredGates = mapGates.filter((gate) => {
+  const filteredZones = useMemo(() => mapZones.filter((zone) => zoneMatches(zone, normalizedQuery)), [mapZones, normalizedQuery]);
+  const filteredPois = useMemo(() => payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [], [normalizedQuery, payload?.pois]);
+  const filteredRoutes = useMemo(() => mapRoutes.filter((route) => routeMatches(route, normalizedQuery)), [mapRoutes, normalizedQuery]);
+  const filteredGates = useMemo(() => mapGates.filter((gate) => {
     if (!normalizedQuery) return true;
     return [gate.id, gate.name, gate.enabled ? "enabled" : "disabled", gate.angleDegrees, gate.widthPx].join(" ").toLowerCase().includes(normalizedQuery);
-  });
+  }), [mapGates, normalizedQuery]);
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
+  const visibleAsteroids = useMemo(() => filterAsteroidsForCamera(asteroidVisuals, camera, viewport), [asteroidVisuals, camera, viewport]);
+  const barrierSpritePaths = useMemo(() => {
+    const paths = new Set<string>([...ASTEROID_SPRITES, ...BARRIER_DEBRIS_SPRITES, ...BARRIER_GAS_SPRITES]);
+    for (const zone of mapZones) {
+      for (const mob of zone.mobs) {
+        for (const barrier of mob.sceneBarriers) {
+          for (const materialPath of barrier.materialPaths ?? []) {
+            if (materialPath) paths.add(materialPath);
+          }
+        }
+      }
+    }
+    return Array.from(paths);
+  }, [mapZones]);
   const sceneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0);
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
@@ -2648,25 +2885,23 @@ export default function SystemMapViewer() {
               <stop offset="45%" stopColor="#f59e0b" stopOpacity="0.75" />
               <stop offset="100%" stopColor="#f97316" stopOpacity="0.05" />
             </radialGradient>
+            {ASTEROID_SPRITES.map((sprite, index) => (
+              <symbol key={sprite} id={`system-map-asteroid-${index}`} viewBox="0 0 1 1" preserveAspectRatio="xMidYMid meet">
+                <image href={buildIconSrc(sprite, `asteroid-${index}`, "Asteroid")} x={0} y={0} width={1} height={1} />
+              </symbol>
+            ))}
+            {barrierSpritePaths.map((sprite, index) => (
+              <symbol key={sprite} id={barrierSymbolId(sprite)} viewBox="0 0 1 1" preserveAspectRatio="xMidYMid meet">
+                <image href={buildIconSrc(sprite, `barrier-${index}`, "Barrier")} x={0} y={0} width={1} height={1} />
+              </symbol>
+            ))}
           </defs>
           <g transform={transform}>
             {toggles.environment ? (
               <>
                 <circle cx={0} cy={0} r={payload.config.asteroidBeltOuterRadius} fill="none" stroke="rgba(251,191,36,0.13)" strokeWidth={1.5 / camera.zoom} />
                 <circle cx={0} cy={0} r={payload.config.asteroidBeltInnerRadius} fill="none" stroke="rgba(251,191,36,0.10)" strokeWidth={1.5 / camera.zoom} />
-                {asteroidVisuals.map((asteroid) => (
-                  <image
-                    key={asteroid.key}
-                    href={buildIconSrc(asteroid.sprite, asteroid.key, "Asteroid")}
-                    x={asteroid.x - asteroid.size / 2}
-                    y={asteroid.y - asteroid.size / 2}
-                    width={asteroid.size}
-                    height={asteroid.size}
-                    opacity={asteroid.opacity}
-                    transform={`rotate(${asteroid.rotation} ${asteroid.x} ${asteroid.y})`}
-                    style={{ pointerEvents: "none" }}
-                  />
-                ))}
+                <AsteroidFieldLayer asteroids={visibleAsteroids} />
                 {filteredGates.map((gate) => {
                   const angle = (gate.angleDegrees * Math.PI) / 180;
                   const inner = {
@@ -2841,23 +3076,7 @@ export default function SystemMapViewer() {
                 })
               : null}
 
-            {toggles.barriers
-              ? filteredZones.flatMap((zone) =>
-                  zone.mobs.flatMap((mob) =>
-                    mob.sceneBarriers.filter((barrier) => barrierMatches(barrier, normalizedQuery)).map((barrier) => (
-                      <polyline
-                        key={`${zone.id}:${mob.mobId}:${barrier.nodeName}:${barrier.profileId}:${barrier.worldPoints.length}`}
-                        points={barrier.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-                        fill="none"
-                        stroke="rgba(251,146,60,0.62)"
-                        strokeWidth={Math.max(500, barrier.bandWidth * Math.max(1, barrier.visualWidthMultiplier))}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )),
-                  ),
-                )
-              : null}
+            {toggles.barriers ? <HazardBarrierLayer zones={filteredZones} query={normalizedQuery} /> : null}
 
             {toggles.stages
               ? filteredZones.flatMap((zone) =>

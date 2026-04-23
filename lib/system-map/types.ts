@@ -64,14 +64,20 @@ export type SystemMapSceneMobSpawn = {
   sourceScene: string;
 };
 
+export type SystemMapSceneBarrierVisualKind = "asteroid" | "debris" | "gas" | "unknown";
+
 export type SystemMapSceneBarrier = {
   nodeName: string;
   profileId: string;
+  baseStageProfile: string;
+  visualKind: SystemMapSceneBarrierVisualKind;
+  materialPaths: string[];
   localPoints: SystemMapVec[];
   worldPoints: SystemMapVec[];
   bandWidth: number;
   visualWidthMultiplier: number;
   visualDensityMultiplier: number;
+  visualScaleMultiplier: number;
   visualAlphaMultiplier: number;
   sourceScene: string;
 };

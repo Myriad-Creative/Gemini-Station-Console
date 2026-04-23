@@ -35,6 +35,8 @@ const ASTEROID_BELT_INNER_RADIUS = 370000;
 const ASTEROID_BELT_OUTER_RADIUS = 380000;
 const ASTEROID_BELT_MID_RADIUS = 375000;
 const DEFAULT_ASTEROID_BELT_GATE_WIDTH = 2000;
+const DEFAULT_HAZARD_BARRIER_PROFILE_ID = "wreck_plasma_orange";
+const DEFAULT_HAZARD_BARRIER_BAND_WIDTH = 480;
 
 const SECTOR_NAMES = new Map<string, string>([
   ["-3,3", "-33"],
@@ -100,6 +102,16 @@ type PendingSceneBarrier = {
   bandWidth: number;
   visualWidthMultiplier: number;
   visualDensityMultiplier: number;
+  visualScaleMultiplier: number;
+  visualAlphaMultiplier: number;
+};
+type BarrierVisualProfile = {
+  baseStageProfile: string;
+  visualKind: SystemMapSceneBarrier["visualKind"];
+  materialPaths: string[];
+  visualWidthMultiplier: number;
+  visualDensityMultiplier: number;
+  visualScaleMultiplier: number;
   visualAlphaMultiplier: number;
 };
 
@@ -298,6 +310,44 @@ function parsePackedVector2Array(value: string): SystemMapVec[] {
   return points;
 }
 
+function materialPathsFromProfile(profile: JsonRecord): string[] {
+  return asArray(profile.materials)
+    .map((entry) => stringValue(entry).trim())
+    .filter(Boolean);
+}
+
+function inferBarrierVisualKind(profileId: string, baseStageProfile: string, materialPaths: string[]): SystemMapSceneBarrier["visualKind"] {
+  const haystack = [profileId, baseStageProfile, ...materialPaths].join(" ").toLowerCase();
+  if (haystack.includes("/asteroids/") || haystack.includes("asteroid")) return "asteroid";
+  if (haystack.includes("/debris/") || haystack.includes("/tut_debris/") || haystack.includes("debris")) return "debris";
+  if (haystack.includes("/cloud/") || haystack.includes("/nebula/") || haystack.includes("gas") || haystack.includes("neb") || haystack.includes("smoke") || haystack.includes("plasma")) return "gas";
+  return "unknown";
+}
+
+function resolveBarrierVisualProfile(profileId: string, hazardBarrierProfilesJson: unknown, stagesJson: unknown): BarrierVisualProfile {
+  const stageProfiles = asRecord(stagesJson);
+  const barrierProfiles = asRecord(hazardBarrierProfilesJson);
+  const barrierProfile = asRecord(barrierProfiles[profileId]);
+  const baseStageProfile = stringValue(barrierProfile.base_stage_profile).trim();
+  const hasDirectStageProfile = !!stageProfiles[profileId];
+  const directStageProfile = asRecord(stageProfiles[profileId]);
+  const baseStage = asRecord(stageProfiles[baseStageProfile]);
+  const mergedProfile = {
+    ...(baseStageProfile ? baseStage : directStageProfile),
+    ...barrierProfile,
+  };
+  const materialPaths = materialPathsFromProfile(mergedProfile);
+  return {
+    baseStageProfile: baseStageProfile || (hasDirectStageProfile ? profileId : ""),
+    visualKind: inferBarrierVisualKind(profileId, baseStageProfile || profileId, materialPaths),
+    materialPaths,
+    visualWidthMultiplier: numberValue(mergedProfile.visual_width_multiplier, 1),
+    visualDensityMultiplier: numberValue(mergedProfile.visual_density_multiplier, 1),
+    visualScaleMultiplier: numberValue(mergedProfile.visual_scale_multiplier, 1),
+    visualAlphaMultiplier: numberValue(mergedProfile.visual_alpha_multiplier, 1),
+  };
+}
+
 function extractCurvePointsById(text: string) {
   const curves = new Map<string, SystemMapVec[]>();
   const pattern = /\[sub_resource type="Curve2D" id="([^"]+)"\][\s\S]*?"points":\s*PackedVector2Array\(([^)]*)\)/g;
@@ -318,6 +368,8 @@ function parseSceneContents(
   scenePath: string,
   parentWorld: SystemMapVec,
   mobCatalog: Map<string, JsonRecord>,
+  stagesJson: unknown,
+  hazardBarrierProfilesJson: unknown,
 ): { mobSpawns: SystemMapSceneMobSpawn[]; barriers: SystemMapSceneBarrier[] } {
   const absolute = resolveResPath(gameRootPath, scenePath);
   if (!absolute || !fs.existsSync(absolute)) {
@@ -341,9 +393,10 @@ function parseSceneContents(
   let respawnDelay: number | null = null;
   let routeId = "";
   let barrierProfileId = "";
-  let bandWidth = 0;
+  let bandWidth = DEFAULT_HAZARD_BARRIER_BAND_WIDTH;
   let visualWidthMultiplier = 1;
   let visualDensityMultiplier = 1;
+  let visualScaleMultiplier = 1;
   let visualAlphaMultiplier = 1;
   const pendingBarrierRef: { current: PendingSceneBarrier | null } = { current: null };
 
@@ -371,10 +424,11 @@ function parseSceneContents(
       pendingBarrierRef.current = {
         nodeName,
         position,
-        profileId: barrierProfileId,
+        profileId: barrierProfileId || DEFAULT_HAZARD_BARRIER_PROFILE_ID,
         bandWidth,
         visualWidthMultiplier,
         visualDensityMultiplier,
+        visualScaleMultiplier,
         visualAlphaMultiplier,
       };
     }
@@ -393,9 +447,10 @@ function parseSceneContents(
       respawnDelay = null;
       routeId = "";
       barrierProfileId = "";
-      bandWidth = 0;
+      bandWidth = DEFAULT_HAZARD_BARRIER_BAND_WIDTH;
       visualWidthMultiplier = 1;
       visualDensityMultiplier = 1;
+      visualScaleMultiplier = 1;
       visualAlphaMultiplier = 1;
       continue;
     }
@@ -445,6 +500,11 @@ function parseSceneContents(
       continue;
     }
 
+    if (line.startsWith("visual_scale_multiplier")) {
+      visualScaleMultiplier = numberValue(line.split("=").slice(1).join("=").trim(), 1);
+      continue;
+    }
+
     if (line.startsWith("visual_alpha_multiplier")) {
       visualAlphaMultiplier = numberValue(line.split("=").slice(1).join("=").trim(), 1);
       continue;
@@ -455,15 +515,20 @@ function parseSceneContents(
       const curveId = line.match(/SubResource\("([^"]+)"\)/)?.[1] ?? "";
       const localCurvePoints = curves.get(curveId) ?? [];
       const localPoints = localCurvePoints.map((point) => addVec(pendingBarrier.position, point));
+      const visualProfile = resolveBarrierVisualProfile(pendingBarrier.profileId, hazardBarrierProfilesJson, stagesJson);
       barriers.push({
         nodeName: pendingBarrier.nodeName,
         profileId: pendingBarrier.profileId,
+        baseStageProfile: visualProfile.baseStageProfile,
+        visualKind: visualProfile.visualKind,
+        materialPaths: visualProfile.materialPaths,
         localPoints,
         worldPoints: localPoints.map((point) => addVec(parentWorld, point)),
         bandWidth: pendingBarrier.bandWidth,
-        visualWidthMultiplier: pendingBarrier.visualWidthMultiplier,
-        visualDensityMultiplier: pendingBarrier.visualDensityMultiplier,
-        visualAlphaMultiplier: pendingBarrier.visualAlphaMultiplier,
+        visualWidthMultiplier: visualProfile.visualWidthMultiplier * pendingBarrier.visualWidthMultiplier,
+        visualDensityMultiplier: visualProfile.visualDensityMultiplier * pendingBarrier.visualDensityMultiplier,
+        visualScaleMultiplier: visualProfile.visualScaleMultiplier * pendingBarrier.visualScaleMultiplier,
+        visualAlphaMultiplier: visualProfile.visualAlphaMultiplier * pendingBarrier.visualAlphaMultiplier,
         sourceScene: scenePath,
       });
       pendingBarrierRef.current = null;
@@ -504,6 +569,8 @@ function buildMobSpawn(
   spawnEntry: unknown,
   zoneWorld: SystemMapVec,
   mobCatalog: Map<string, JsonRecord>,
+  stagesJson: unknown,
+  hazardBarrierProfilesJson: unknown,
   index: number,
 ): SystemMapMobSpawn {
   const spawn = asRecord(spawnEntry);
@@ -512,7 +579,7 @@ function buildMobSpawn(
   const local = vecValue(spawn.pos);
   const world = addVec(zoneWorld, local);
   const scene = stringValue(mob.scene, "");
-  const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog) : { mobSpawns: [], barriers: [] };
+  const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog, stagesJson, hazardBarrierProfilesJson) : { mobSpawns: [], barriers: [] };
 
   return {
     key: `zone-mob-${index}`,
@@ -537,7 +604,7 @@ function buildMobSpawn(
   };
 }
 
-function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknown, mobCatalog: Map<string, JsonRecord>): SystemMapZone[] {
+function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknown, mobCatalog: Map<string, JsonRecord>, hazardBarrierProfilesJson: unknown): SystemMapZone[] {
   const stages = asRecord(stagesJson);
   return Object.entries(asRecord(zonesJson)).map(([id, rawZone]) => {
     const zone = asRecord(rawZone);
@@ -567,7 +634,7 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
         height: numberValue(bounds.height),
       },
       stages: asArray(zone.stages).map((entry) => buildStagePlacement(entry, world, stages)),
-      mobs: asArray(zone.mobs).map((entry, index) => buildMobSpawn(gameRootPath, entry, world, mobCatalog, index)),
+      mobs: asArray(zone.mobs).map((entry, index) => buildMobSpawn(gameRootPath, entry, world, mobCatalog, stagesJson, hazardBarrierProfilesJson, index)),
     };
   });
 }
@@ -743,9 +810,10 @@ export async function GET() {
     );
   }
 
-  const [zonesResult, stagesResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
+  const [zonesResult, stagesResult, hazardBarrierProfilesResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
+    loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
     loadDataFile(local.gameRootPath, "mobs", "mobs.json"),
     loadDataFile(local.gameRootPath, "poi", "poi.json"),
     loadDataFile(local.gameRootPath, "regions", "regions.json"),
@@ -756,6 +824,7 @@ export async function GET() {
   const warnings = [
     ...zonesResult.warnings,
     ...stagesResult.warnings,
+    ...hazardBarrierProfilesResult.warnings,
     ...mobsResult.warnings,
     ...poiResult.warnings,
     ...regionsResult.warnings,
@@ -764,7 +833,7 @@ export async function GET() {
   ];
 
   const mobCatalog = buildMobCatalog(mobsResult.value);
-  const zones = buildZones(local.gameRootPath, zonesResult.value, stagesResult.value, mobCatalog);
+  const zones = buildZones(local.gameRootPath, zonesResult.value, stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value);
   const payload: SystemMapPayload = {
     ok: true,
     sourceRoot: local.gameRootPath,
