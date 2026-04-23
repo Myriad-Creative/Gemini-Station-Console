@@ -60,7 +60,7 @@ export default function ModsTable({ rows }: { rows: Row[] }) {
       return count ? <span className="badge mr-1">{count}</span> : <span className="text-white/50">—</span>;
     } },
     { key: "composite", header: "Score", render: (r: Row) => r.composite.toFixed(2) },
-  ], []);
+  ], [sharedDataVersion]);
 
   const headerCell = (c:any) => (
     <th key={c.key} onClick={()=>{ setAsc(c.key===sortKey? !asc : true); setSortKey(c.key);}}

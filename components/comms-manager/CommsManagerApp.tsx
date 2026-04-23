@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DismissibleStatusBanner,
   StatusBanner,
@@ -70,12 +70,6 @@ async function copyToClipboard(value: string) {
   } finally {
     document.body.removeChild(textarea);
   }
-}
-
-function mergeTextareaPaste(currentValue: string, pastedText: string, selectionStart: number | null, selectionEnd: number | null) {
-  const start = selectionStart ?? currentValue.length;
-  const end = selectionEnd ?? currentValue.length;
-  return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -156,7 +150,6 @@ function DialogLineEditor({
 }
 
 export default function CommsManagerApp() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<CommsLabWorkspace | null>(null);
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<CommsLabWorkspace | null>(null);
@@ -166,7 +159,6 @@ export default function CommsManagerApp() {
   const [portraitSearch, setPortraitSearch] = useState("");
   const [portraitCatalogStatus, setPortraitCatalogStatus] = useState("");
   const [manuallyEditedContactIds, setManuallyEditedContactIds] = useState<Set<string>>(() => new Set());
-  const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Comms Manager reads Comms.json directly from the active local game root in Settings.",
@@ -336,32 +328,6 @@ export default function CommsManagerApp() {
         message: error instanceof Error ? error.message : String(error),
         dismissAfterMs: null,
       });
-    }
-  }
-
-  async function importFile(file: File) {
-    importText(await file.text(), file.name, "uploaded");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function loadPastedJson() {
-    if (!pasteJson.trim()) {
-      setStatus({
-        tone: "error",
-        message: "Paste comms JSON content into the JSON box before loading it.",
-      });
-      return;
-    }
-    importText(pasteJson, "Pasted JSON", "pasted");
-  }
-
-  function handlePasteJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const pastedText = event.clipboardData.getData("text");
-    const nextValue = mergeTextareaPaste(pasteJson, pastedText, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
-    event.preventDefault();
-    setPasteJson(nextValue);
-    if (nextValue.trim()) {
-      importText(nextValue, "Pasted JSON", "pasted");
     }
   }
 

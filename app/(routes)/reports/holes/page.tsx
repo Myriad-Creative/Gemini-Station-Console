@@ -5,9 +5,8 @@ import { RARITY_COLOR } from "@lib/constants";
 export default function HolesPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [rarities, setRarities] = useState<number[]>([0,1,2,3,4]);
-  const [bands, setBands] = useState<[number,number][]>([]);
 
-  useEffect(()=>{ fetch("/api/reports/holes").then(r=>r.json()).then(j=>{ setRows(j.rows); setRarities(j.rarities); setBands(j.bands); }); }, []);
+  useEffect(()=>{ fetch("/api/reports/holes").then(r=>r.json()).then(j=>{ setRows(j.rows); setRarities(j.rarities); }); }, []);
 
   const grouped = rows.reduce((acc:any, r:any)=>{
     acc[r.band] ||= []; acc[r.band].push(r); return acc;

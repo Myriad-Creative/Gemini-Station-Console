@@ -1,4 +1,4 @@
-import { Ability, Hole, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
+import { Ability, Mission, Mob, Mod, Outlier, Summary, Item } from "@lib/types";
 import { getConfig } from "@lib/config";
 import { parseMods } from "@parser/mods";
 import { parseItems } from "@parser/items";

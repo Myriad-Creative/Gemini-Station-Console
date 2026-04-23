@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DismissibleStatusBanner,
   StatusBanner,
@@ -85,12 +85,6 @@ async function copyToClipboard(value: string) {
   } finally {
     document.body.removeChild(textarea);
   }
-}
-
-function mergeTextareaPaste(currentValue: string, pastedText: string, selectionStart: number | null, selectionEnd: number | null) {
-  const start = selectionStart ?? currentValue.length;
-  const end = selectionEnd ?? currentValue.length;
-  return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -191,7 +185,6 @@ function PreviewCard({
 }
 
 export default function MerchantLabApp() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<MerchantLabWorkspace | null>(null);
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<MerchantLabWorkspace | null>(null);
@@ -205,7 +198,6 @@ export default function MerchantLabApp() {
   const [slotFilter, setSlotFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
-  const [pasteJson, setPasteJson] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
   const [status, setStatus] = useState<TimedStatusState>({
@@ -470,32 +462,6 @@ export default function MerchantLabApp() {
         message: error instanceof Error ? error.message : String(error),
         dismissAfterMs: null,
       });
-    }
-  }
-
-  async function importFile(file: File) {
-    importText(await file.text(), file.name, "uploaded");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function loadPastedJson() {
-    if (!pasteJson.trim()) {
-      setStatus({
-        tone: "error",
-        message: "Paste merchant_profiles.json content into the JSON box before loading it.",
-      });
-      return;
-    }
-    importText(pasteJson, "Pasted JSON", "pasted");
-  }
-
-  function handlePasteJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const pastedText = event.clipboardData.getData("text");
-    const nextValue = mergeTextareaPaste(pasteJson, pastedText, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
-    event.preventDefault();
-    setPasteJson(nextValue);
-    if (nextValue.trim()) {
-      importText(nextValue, "Pasted JSON", "pasted");
     }
   }
 

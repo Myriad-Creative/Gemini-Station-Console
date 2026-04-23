@@ -27,6 +27,15 @@ function loadSharedText(kind: string) {
   });
 }
 
+function countObjectKeysFromJson(value: string) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? Object.keys(parsed).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function RoutesDataManager() {
   const [routesWorkspace, setRoutesWorkspace] = useState<TradeRoutesWorkspace | null>(null);
   const [trafficWorkspace, setTrafficWorkspace] = useState<NpcTrafficWorkspace | null>(null);
@@ -92,36 +101,44 @@ export default function RoutesDataManager() {
   }
 
   async function handleCopy(kind: "routes" | "traffic" | "currentRoute") {
-    const value =
-      kind === "routes"
-        ? routesWorkspace
-          ? stringifyTradeRoutesFile(routesWorkspace)
-          : ""
-        : kind === "traffic"
-          ? trafficWorkspace
-            ? stringifyNpcTrafficFile(trafficWorkspace)
+    try {
+      const value =
+        kind === "routes"
+          ? routesWorkspace
+            ? stringifyTradeRoutesFile(routesWorkspace)
             : ""
-          : selectedRoute
-            ? stringifySingleTradeRoute(selectedRoute)
-            : "";
-    if (!value) return;
-    await copyToClipboard(value);
-    setStatus({
-      tone: "success",
-      message:
-        kind === "currentRoute"
-          ? "Copied the current trade route JSON."
-          : `Copied ${kind === "routes" ? "trade_routes.json" : "npc_traffic.json"} to the clipboard.`,
-    });
+          : kind === "traffic"
+            ? trafficWorkspace
+              ? stringifyNpcTrafficFile(trafficWorkspace)
+              : ""
+            : selectedRoute
+              ? stringifySingleTradeRoute(selectedRoute)
+              : "";
+      if (!value) return;
+      await copyToClipboard(value);
+      setStatus({
+        tone: "success",
+        message:
+          kind === "currentRoute"
+            ? "Copied the current trade route JSON."
+            : `Copied ${kind === "routes" ? "trade_routes.json" : "npc_traffic.json"} to the clipboard.`,
+      });
+    } catch (error) {
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   function handleDownload(kind: "routes" | "traffic") {
-    const filename = kind === "routes" ? "trade_routes.json" : "npc_traffic.json";
-    const contents =
-      kind === "routes" ? (routesWorkspace ? stringifyTradeRoutesFile(routesWorkspace) : "") : trafficWorkspace ? stringifyNpcTrafficFile(trafficWorkspace) : "";
-    if (!contents) return;
-    downloadTextFile(filename, contents);
-    setStatus({ tone: "success", message: `Downloaded ${filename}.` });
+    try {
+      const filename = kind === "routes" ? "trade_routes.json" : "npc_traffic.json";
+      const contents =
+        kind === "routes" ? (routesWorkspace ? stringifyTradeRoutesFile(routesWorkspace) : "") : trafficWorkspace ? stringifyNpcTrafficFile(trafficWorkspace) : "";
+      if (!contents) return;
+      downloadTextFile(filename, contents);
+      setStatus({ tone: "success", message: `Downloaded ${filename}.` });
+    } catch (error) {
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   function addRoute() {
@@ -165,7 +182,7 @@ export default function RoutesDataManager() {
         <SummaryCard label="Trade Routes" value={routesWorkspace?.routes.length ?? 0} />
         <SummaryCard label="Route Duplicates" value={routeDuplicates.size} />
         <SummaryCard label="Traffic Enabled" value={trafficWorkspace?.enabled ? "Yes" : "No"} />
-        <SummaryCard label="Traffic Templates" value={trafficWorkspace ? Object.keys(JSON.parse(trafficWorkspace.templatesJson || "{}")).length : 0} />
+        <SummaryCard label="Traffic Templates" value={trafficWorkspace ? countObjectKeysFromJson(trafficWorkspace.templatesJson) : 0} />
       </div>
 
       <div className="flex flex-wrap gap-3">

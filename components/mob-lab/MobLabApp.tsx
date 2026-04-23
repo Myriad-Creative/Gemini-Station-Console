@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DismissibleStatusBanner,
   StatusBanner,
@@ -310,12 +310,6 @@ async function copyToClipboard(value: string) {
   }
 }
 
-function mergeTextareaPaste(currentValue: string, pastedText: string, selectionStart: number | null, selectionEnd: number | null) {
-  const start = selectionStart ?? currentValue.length;
-  const end = selectionEnd ?? currentValue.length;
-  return `${currentValue.slice(0, start)}${pastedText}${currentValue.slice(end)}`;
-}
-
 function normalizeCatalogText(value: string | number | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -325,7 +319,6 @@ function selectInputContents(event: { currentTarget: HTMLInputElement }) {
 }
 
 export default function MobLabApp() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceRef = useRef<MobLabWorkspace | null>(null);
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [workspace, setWorkspace] = useState<MobLabWorkspace | null>(null);
@@ -352,7 +345,6 @@ export default function MobLabApp() {
   const [itemLootTableSearch, setItemLootTableSearch] = useState("");
   const [modLootTableSearch, setModLootTableSearch] = useState("");
   const [lootTableCatalogStatus, setLootTableCatalogStatus] = useState("");
-  const [pasteJson, setPasteJson] = useState("");
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Mob Lab reads mobs.json directly from the active local game root in Settings.",
@@ -863,32 +855,6 @@ export default function MobLabApp() {
         message: error instanceof Error ? error.message : String(error),
         dismissAfterMs: null,
       });
-    }
-  }
-
-  async function importFile(file: File) {
-    importText(await file.text(), file.name, "uploaded");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function loadPastedJson() {
-    if (!pasteJson.trim()) {
-      setStatus({
-        tone: "error",
-        message: "Paste mobs.json content into the JSON box before loading it.",
-      });
-      return;
-    }
-    importText(pasteJson, "Pasted JSON", "pasted");
-  }
-
-  function handlePasteJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const pastedText = event.clipboardData.getData("text");
-    const nextValue = mergeTextareaPaste(pasteJson, pastedText, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
-    event.preventDefault();
-    setPasteJson(nextValue);
-    if (nextValue.trim()) {
-      importText(nextValue, "Pasted JSON", "pasted");
     }
   }
 

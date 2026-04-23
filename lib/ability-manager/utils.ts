@@ -29,11 +29,6 @@ function createStatusEffectKey() {
   return `status-effect-client-${statusEffectDraftCounter}`;
 }
 
-function asObject(value: unknown): JsonObject {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as JsonObject;
-}
-
 function cleanObject(source: JsonObject) {
   const next: JsonObject = {};
   for (const [key, value] of Object.entries(source)) {

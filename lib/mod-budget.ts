@@ -234,7 +234,6 @@ export function calculateModBudgetSummary(input: {
   const supportedStatCounts = getModSupportedStatCounts(input.rarity);
   const rarityCapacityMultiplier = getModRarityCapacityMultiplier(input.rarity);
   const statRows = input.stats.map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }));
-  const keyedStats = statRows.filter((entry) => entry.key);
   const activeStatCount = statRows.length;
   const slotProfile = getModSlotProfile(input.rarity, activeStatCount);
   const slotProfileLabel = slotProfile ? formatProfile(slotProfile) : undefined;

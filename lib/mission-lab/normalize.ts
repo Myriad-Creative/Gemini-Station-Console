@@ -12,7 +12,6 @@ import {
   extractObjectiveDescription,
   extractTargetIds,
   humanizeToken,
-  listFromUnknown,
   normalizeTaxonomyList,
   parseBooleanValue,
   parseNumberValue,

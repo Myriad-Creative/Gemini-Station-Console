@@ -127,15 +127,6 @@ function stringList(value: unknown): string[] {
   return [];
 }
 
-function stripKeys(source: JsonObject, keys: readonly string[]) {
-  const hidden = new Set(keys);
-  const next: JsonObject = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!hidden.has(key)) next[key] = value;
-  }
-  return next;
-}
-
 function parseBooleanFlag(value: unknown) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {

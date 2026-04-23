@@ -234,7 +234,6 @@ export default function ItemManagerApp() {
   }, [filteredItems, selectedItemKey, workspace]);
 
   const selectedIssues = selectedItem ? validationByItemKey.get(selectedItem.key) ?? [] : [];
-  const selectedHasErrors = selectedIssues.some((issue) => issue.level === "error");
   const selectedDuplicateKeys =
     selectedItem && normalizeComparableItemId(selectedItem.id)
       ? (duplicateIds.get(normalizeComparableItemId(selectedItem.id)) ?? []).filter((key) => key !== selectedItem.key)

@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getStore, loadAll } from "@lib/datastore";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   await loadAll();
   const store = getStore();
   return NextResponse.json({

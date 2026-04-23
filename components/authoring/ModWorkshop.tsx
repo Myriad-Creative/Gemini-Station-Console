@@ -1,6 +1,6 @@
 "use client";
 
-import { HTMLAttributes, startTransition, useEffect, useMemo, useState } from "react";
+import { HTMLAttributes, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SummaryCard } from "@components/ability-manager/common";
 import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
@@ -729,13 +729,6 @@ export default function ModWorkshop({
       fillBlankStatValues: options.fillBlankStatValues,
       syncAllStatValuesToMax: options.syncAllStatValuesToMax,
     });
-  }
-
-  function updateAbility(abilityIndex: number, updater: (ability: ModAbilityDraft) => ModAbilityDraft) {
-    updateSelected((draft) => ({
-      ...draft,
-      abilities: draft.abilities.map((ability, currentIndex) => (currentIndex === abilityIndex ? updater(ability) : ability)),
-    }), { autoBalance: true });
   }
 
   function updateBulkCreate<K extends keyof BulkCreateState>(
