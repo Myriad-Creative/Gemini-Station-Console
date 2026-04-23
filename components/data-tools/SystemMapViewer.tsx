@@ -7,6 +7,10 @@ import { createDraftKey, createUniqueId } from "@lib/data-tools/common";
 import { parseTolerantJsonText } from "@lib/data-tools/parse";
 import type {
   SystemMapAsteroidBeltGate,
+  SystemMapEnvironmentalElement,
+  SystemMapEnvironmentalHazardBarrier,
+  SystemMapEnvironmentalRegion,
+  SystemMapEnvironmentProfile,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -49,6 +53,30 @@ type ContextMenuState = {
   world: SystemMapVec;
   zoneId: string | null;
   routeId: string | null;
+};
+type EnvironmentalBarrierForm = {
+  mode: "create" | "edit";
+  originalId: string;
+  name: string;
+  id: string;
+  active: boolean;
+  sectorX: string;
+  sectorY: string;
+  profileId: string;
+  bandWidth: string;
+  closedLoop: boolean;
+  tags: string;
+  notes: string;
+  visualWidthMultiplier: string;
+  visualDensityMultiplier: string;
+  visualScaleMultiplier: string;
+  visualAlphaMultiplier: string;
+  useProfileBlockerWidthRatio: boolean;
+  blockerWidthRatio: string;
+  statusEffectId: string;
+  removeEffectOnExit: boolean;
+  affectPlayers: boolean;
+  affectNpcs: boolean;
 };
 type RouteDraftForm = {
   mode: "create" | "edit";
@@ -137,6 +165,20 @@ type GateDragState = {
   startScreen: SystemMapVec;
   startWorld: SystemMapVec;
   gateStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type EnvironmentalDragState = {
+  elementId: string;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  moved: boolean;
+};
+type EnvironmentalPointDragState = {
+  elementId: string;
+  pointIndex: number;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  pointStartWorld: SystemMapVec;
   moved: boolean;
 };
 type AsteroidVisual = {
@@ -267,6 +309,13 @@ function worldToSectorLocal(world: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZ
   };
 }
 
+function sectorLocalToWorld(sector: SystemMapVec, local: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZE) {
+  return {
+    x: sector.x * sectorSize + local.x,
+    y: sector.y * sectorSize + local.y,
+  };
+}
+
 function translateVec(value: SystemMapVec, delta: SystemMapVec): SystemMapVec {
   return {
     x: value.x + delta.x,
@@ -288,6 +337,21 @@ function routeIdentity(route: SystemMapRoute) {
 
 function gateIdentity(gate: SystemMapAsteroidBeltGate) {
   return gate.originalId ?? gate.id;
+}
+
+function environmentalElementIdentity(element: SystemMapEnvironmentalElement) {
+  return element.originalId ?? element.id;
+}
+
+function sanitizeEnvironmentalElementId(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/['"]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "new_hazard_barrier"
+  );
 }
 
 function sanitizeGateId(value: string) {
@@ -349,6 +413,51 @@ function pointInZoneBounds(point: SystemMapVec, zone: SystemMapZone) {
   return (dx * dx) / (halfWidth * halfWidth) + (dy * dy) / (halfHeight * halfHeight) <= 1;
 }
 
+function pointInPolygon(point: SystemMapVec, polygon: SystemMapVec[]) {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index, index += 1) {
+    const a = polygon[index];
+    const b = polygon[previous];
+    const intersects =
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / Math.max(0.000001, b.y - a.y) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInRotatedEllipse(point: SystemMapVec, center: SystemMapVec, width: number, height: number, rotationDeg: number) {
+  const radians = (-rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  const localX = dx * cos - dy * sin;
+  const localY = dx * sin + dy * cos;
+  const rx = Math.max(1, width / 2);
+  const ry = Math.max(1, height / 2);
+  return (localX * localX) / (rx * rx) + (localY * localY) / (ry * ry) <= 1;
+}
+
+function environmentalElementMatches(element: SystemMapEnvironmentalElement, query: string) {
+  if (!query) return true;
+  return [
+    element.id,
+    element.name,
+    element.type,
+    element.profileId,
+    element.baseStageProfile,
+    element.visualKind,
+    element.notes,
+    element.tags.join(" "),
+    ...(element.materialPaths ?? []),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
+}
+
 function expandBounds(bounds: SystemMapRect | null, point: SystemMapVec): SystemMapRect {
   if (!bounds) {
     return { x: point.x, y: point.y, w: 0, h: 0 };
@@ -370,7 +479,12 @@ function mergeRect(bounds: SystemMapRect | null, rect: SystemMapRect): SystemMap
   return expandBounds(a, { x: rect.x + rect.w, y: rect.y + rect.h });
 }
 
-function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = payload.zones, routes: SystemMapRoute[] = payload.routes): SystemMapRect {
+function computeWorldBounds(
+  payload: SystemMapPayload,
+  zones: SystemMapZone[] = payload.zones,
+  routes: SystemMapRoute[] = payload.routes,
+  environmentalElements: SystemMapEnvironmentalElement[] = payload.environmentalElements,
+): SystemMapRect {
   let bounds: SystemMapRect | null = null;
   for (const sector of payload.sectors) {
     bounds = mergeRect(bounds, sector.rect);
@@ -392,6 +506,24 @@ function computeWorldBounds(payload: SystemMapPayload, zones: SystemMapZone[] = 
   for (const route of routes) {
     for (const point of routeRenderPoints(route)) {
       bounds = expandBounds(bounds, point);
+    }
+  }
+  for (const element of environmentalElements) {
+    if (element.type === "hazard_barrier") {
+      for (const point of element.worldPoints) {
+        bounds = expandBounds(bounds, point);
+      }
+    } else if (element.worldCenter) {
+      bounds = mergeRect(bounds, {
+        x: element.worldCenter.x - element.width / 2,
+        y: element.worldCenter.y - element.height / 2,
+        w: element.width,
+        h: element.height,
+      });
+    } else {
+      for (const point of element.worldPoints) {
+        bounds = expandBounds(bounds, point);
+      }
     }
   }
   bounds = mergeRect(bounds, {
@@ -884,6 +1016,305 @@ const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query, show
     </>
   );
 });
+
+function worldPointsToSectorLocal(points: SystemMapVec[], sector: SystemMapVec, sectorSize: number) {
+  return points.map((point) => ({
+    x: Math.round(point.x - sector.x * sectorSize),
+    y: Math.round(point.y - sector.y * sectorSize),
+  }));
+}
+
+function barrierWorldCenter(barrier: SystemMapEnvironmentalHazardBarrier): SystemMapVec {
+  if (!barrier.worldPoints.length) {
+    return {
+      x: barrier.sector.x * DEFAULT_SECTOR_SIZE,
+      y: barrier.sector.y * DEFAULT_SECTOR_SIZE,
+    };
+  }
+  const sum = barrier.worldPoints.reduce(
+    (acc, point) => ({
+      x: acc.x + point.x,
+      y: acc.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  );
+  return {
+    x: sum.x / barrier.worldPoints.length,
+    y: sum.y / barrier.worldPoints.length,
+  };
+}
+
+function createEnvironmentalBarrierDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapEnvironmentalHazardBarrier {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeEnvironmentalElementId("New Hazard Barrier"), existingIds);
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  const points = [
+    { x: Math.round(local.x - 6000), y: Math.round(local.y) },
+    { x: Math.round(local.x + 6000), y: Math.round(local.y) },
+  ];
+  const worldPoints = points.map((point) => ({
+    x: sector.x * payload.config.sectorSize + point.x,
+    y: sector.y * payload.config.sectorSize + point.y,
+  }));
+  return {
+    id,
+    originalId: id,
+    draft: true,
+    modified: false,
+    type: "hazard_barrier",
+    name: "New Hazard Barrier",
+    active: true,
+    sector,
+    tags: [],
+    notes: "",
+    profileId: payload.environmentProfiles[0]?.id ?? "asteroid_debris_wall",
+    baseStageProfile: payload.environmentProfiles[0]?.baseStageProfile ?? "",
+    visualKind: payload.environmentProfiles[0]?.visualKind ?? "unknown",
+    materialPaths: payload.environmentProfiles[0]?.materialPaths ?? [],
+    visualWidthMultiplier: 1,
+    visualDensityMultiplier: 1,
+    visualScaleMultiplier: 1,
+    visualAlphaMultiplier: 1,
+    statusEffectId: -1,
+    removeEffectOnExit: true,
+    affectPlayers: true,
+    affectNpcs: true,
+    bandWidth: 1200,
+    closedLoop: false,
+    useProfileBlockerWidthRatio: true,
+    blockerWidthRatio: 1,
+    points,
+    worldPoints,
+  };
+}
+
+function environmentalBarrierToForm(barrier: SystemMapEnvironmentalHazardBarrier, mode: EnvironmentalBarrierForm["mode"]): EnvironmentalBarrierForm {
+  return {
+    mode,
+    originalId: environmentalElementIdentity(barrier),
+    name: barrier.name || barrier.id,
+    id: barrier.id,
+    active: barrier.active,
+    sectorX: numberInputValue(barrier.sector.x),
+    sectorY: numberInputValue(barrier.sector.y),
+    profileId: barrier.profileId,
+    bandWidth: numberInputValue(barrier.bandWidth),
+    closedLoop: barrier.closedLoop,
+    tags: barrier.tags.join(", "),
+    notes: barrier.notes,
+    visualWidthMultiplier: numberInputValue(barrier.visualWidthMultiplier),
+    visualDensityMultiplier: numberInputValue(barrier.visualDensityMultiplier),
+    visualScaleMultiplier: numberInputValue(barrier.visualScaleMultiplier),
+    visualAlphaMultiplier: numberInputValue(barrier.visualAlphaMultiplier),
+    useProfileBlockerWidthRatio: barrier.useProfileBlockerWidthRatio,
+    blockerWidthRatio: numberInputValue(barrier.blockerWidthRatio),
+    statusEffectId: numberInputValue(barrier.statusEffectId),
+    removeEffectOnExit: barrier.removeEffectOnExit,
+    affectPlayers: barrier.affectPlayers,
+    affectNpcs: barrier.affectNpcs,
+  };
+}
+
+function withEnvironmentalBarrierForm(
+  form: EnvironmentalBarrierForm,
+  barrier: SystemMapEnvironmentalHazardBarrier,
+  profiles: SystemMapEnvironmentProfile[],
+  sectorSize: number,
+  existingElements: SystemMapEnvironmentalElement[],
+): { error: string; barrier: null; form: null } | { error: ""; barrier: SystemMapEnvironmentalHazardBarrier; form: EnvironmentalBarrierForm } {
+  const id = sanitizeEnvironmentalElementId(form.id);
+  const sectorX = Number(form.sectorX);
+  const sectorY = Number(form.sectorY);
+  const bandWidth = Number(form.bandWidth);
+  const visualWidthMultiplier = Number(form.visualWidthMultiplier);
+  const visualDensityMultiplier = Number(form.visualDensityMultiplier);
+  const visualScaleMultiplier = Number(form.visualScaleMultiplier);
+  const visualAlphaMultiplier = Number(form.visualAlphaMultiplier);
+  const blockerWidthRatio = Number(form.blockerWidthRatio);
+  const statusEffectId = Number(form.statusEffectId);
+  if (!form.name.trim()) return { error: "Barrier name is required.", barrier: null, form: null };
+  if (!id) return { error: "Barrier ID is required.", barrier: null, form: null };
+  if (!Number.isFinite(sectorX) || !Number.isFinite(sectorY) || !Number.isFinite(bandWidth) || bandWidth <= 0) {
+    return { error: "Sector and band width must be valid numbers, and width must be greater than zero.", barrier: null, form: null };
+  }
+  if ([visualWidthMultiplier, visualDensityMultiplier, visualScaleMultiplier, visualAlphaMultiplier, blockerWidthRatio, statusEffectId].some((value) => !Number.isFinite(value))) {
+    return { error: "Visual multipliers, blocker ratio, and status effect ID must be valid numbers.", barrier: null, form: null };
+  }
+  const idTaken = existingElements.some((element) => environmentalElementIdentity(element) !== form.originalId && element.id === id);
+  if (idTaken) return { error: `Barrier ID "${id}" already exists.`, barrier: null, form: null };
+  const profile = profiles.find((entry) => entry.id === form.profileId) ?? profiles[0];
+  if (!profile) return { error: "At least one environment profile is required before authoring barriers.", barrier: null, form: null };
+
+  const sector = {
+    x: Math.round(sectorX),
+    y: Math.round(sectorY),
+  };
+  const worldPoints = barrier.points.map((point) => ({
+    x: sector.x * sectorSize + point.x,
+    y: sector.y * sectorSize + point.y,
+  }));
+
+  return {
+    error: "",
+    form: {
+      ...form,
+      id,
+      sectorX: numberInputValue(sector.x),
+      sectorY: numberInputValue(sector.y),
+      bandWidth: numberInputValue(bandWidth),
+      visualWidthMultiplier: numberInputValue(visualWidthMultiplier),
+      visualDensityMultiplier: numberInputValue(visualDensityMultiplier),
+      visualScaleMultiplier: numberInputValue(visualScaleMultiplier),
+      visualAlphaMultiplier: numberInputValue(visualAlphaMultiplier),
+      blockerWidthRatio: numberInputValue(blockerWidthRatio),
+      statusEffectId: numberInputValue(statusEffectId),
+    },
+    barrier: {
+      ...barrier,
+      id,
+      name: form.name.trim(),
+      active: form.active,
+      sector,
+      tags: form.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      notes: form.notes.trim(),
+      profileId: profile.id,
+      baseStageProfile: profile.baseStageProfile,
+      visualKind: profile.visualKind,
+      materialPaths: profile.materialPaths,
+      bandWidth,
+      closedLoop: form.closedLoop,
+      visualWidthMultiplier,
+      visualDensityMultiplier,
+      visualScaleMultiplier,
+      visualAlphaMultiplier,
+      useProfileBlockerWidthRatio: form.useProfileBlockerWidthRatio,
+      blockerWidthRatio,
+      statusEffectId,
+      removeEffectOnExit: form.removeEffectOnExit,
+      affectPlayers: form.affectPlayers,
+      affectNpcs: form.affectNpcs,
+      worldPoints,
+      modified: barrier.draft ? barrier.modified : true,
+      originalId: barrier.draft ? barrier.originalId : barrier.originalId ?? barrier.id,
+    },
+  };
+}
+
+function moveEnvironmentalBarrierPoint(
+  barrier: SystemMapEnvironmentalHazardBarrier,
+  pointIndex: number,
+  world: SystemMapVec,
+  sectorSize: number,
+): SystemMapEnvironmentalHazardBarrier {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const nextLocal = {
+    x: Math.round(roundedWorld.x - barrier.sector.x * sectorSize),
+    y: Math.round(roundedWorld.y - barrier.sector.y * sectorSize),
+  };
+  const points = barrier.points.map((point, index) => (index === pointIndex ? nextLocal : point));
+  const worldPoints = barrier.worldPoints.map((point, index) => (index === pointIndex ? roundedWorld : point));
+  return {
+    ...barrier,
+    points,
+    worldPoints,
+    modified: barrier.draft ? barrier.modified : true,
+    originalId: barrier.draft ? barrier.originalId : barrier.originalId ?? barrier.id,
+  };
+}
+
+function moveEnvironmentalBarrierByDelta(
+  barrier: SystemMapEnvironmentalHazardBarrier,
+  delta: SystemMapVec,
+  payload: SystemMapPayload,
+): SystemMapEnvironmentalHazardBarrier {
+  const nextWorldPoints = barrier.worldPoints.map((point) => ({
+    x: Math.round(point.x + delta.x),
+    y: Math.round(point.y + delta.y),
+  }));
+  const center = {
+    x: nextWorldPoints.reduce((sum, point) => sum + point.x, 0) / Math.max(1, nextWorldPoints.length),
+    y: nextWorldPoints.reduce((sum, point) => sum + point.y, 0) / Math.max(1, nextWorldPoints.length),
+  };
+  const { sector } = worldToSectorLocal(center, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    ...barrier,
+    sector,
+    points: worldPointsToSectorLocal(nextWorldPoints, sector, payload.config.sectorSize),
+    worldPoints: nextWorldPoints,
+    modified: barrier.draft ? barrier.modified : true,
+    originalId: barrier.draft ? barrier.originalId : barrier.originalId ?? barrier.id,
+  };
+}
+
+function environmentalElementToJson(element: SystemMapEnvironmentalElement): Record<string, unknown> {
+  if (element.type === "environment_region") {
+    const regionData: Record<string, unknown> = {
+      profile_id: element.profileId,
+      shape: element.shape,
+      status_effect_id: element.statusEffectId,
+      remove_effect_on_exit: element.removeEffectOnExit,
+      affect_players: element.affectPlayers,
+      affect_npcs: element.affectNpcs,
+      visual_width_multiplier: element.visualWidthMultiplier,
+      visual_density_multiplier: element.visualDensityMultiplier,
+      visual_scale_multiplier: element.visualScaleMultiplier,
+      visual_alpha_multiplier: element.visualAlphaMultiplier,
+    };
+    if (element.shape === "polygon") {
+      regionData.points = element.points.map((point) => [Math.round(point.x), Math.round(point.y)]);
+    } else if (element.center) {
+      regionData.center = [Math.round(element.center.x), Math.round(element.center.y)];
+      regionData.width = element.width;
+      regionData.height = element.height;
+      regionData.rotation_deg = element.rotationDeg;
+    }
+    return {
+      id: element.id,
+      type: element.type,
+      name: element.name || element.id,
+      active: element.active,
+      sector_id: [Math.round(element.sector.x), Math.round(element.sector.y)],
+      tags: element.tags,
+      notes: element.notes,
+      data: regionData,
+    };
+  }
+
+  return {
+    id: element.id,
+    type: element.type,
+    name: element.name || element.id,
+    active: element.active,
+    sector_id: [Math.round(element.sector.x), Math.round(element.sector.y)],
+    tags: element.tags,
+    notes: element.notes,
+    data: {
+      profile_id: element.profileId,
+      band_width: element.bandWidth,
+      closed_loop: element.closedLoop,
+      points: element.points.map((point) => [Math.round(point.x), Math.round(point.y)]),
+      visual_width_multiplier: element.visualWidthMultiplier,
+      visual_density_multiplier: element.visualDensityMultiplier,
+      visual_scale_multiplier: element.visualScaleMultiplier,
+      visual_alpha_multiplier: element.visualAlphaMultiplier,
+      use_profile_blocker_width_ratio: element.useProfileBlockerWidthRatio,
+      blocker_width_ratio: element.blockerWidthRatio,
+      status_effect_id: element.statusEffectId,
+      remove_effect_on_exit: element.removeEffectOnExit,
+      affect_players: element.affectPlayers,
+      affect_npcs: element.affectNpcs,
+    },
+  };
+}
 
 function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: string): SystemMapZone {
   const world = {
@@ -1404,6 +1835,8 @@ export default function SystemMapViewer() {
   const mobDragRef = useRef<MobDragState | null>(null);
   const routeDragRef = useRef<RouteDragState | null>(null);
   const gateDragRef = useRef<GateDragState | null>(null);
+  const environmentalDragRef = useRef<EnvironmentalDragState | null>(null);
+  const environmentalPointDragRef = useRef<EnvironmentalPointDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -1416,27 +1849,35 @@ export default function SystemMapViewer() {
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
   const [draftRoutes, setDraftRoutes] = useState<SystemMapRoute[]>([]);
+  const [draftEnvironmentalElements, setDraftEnvironmentalElements] = useState<SystemMapEnvironmentalElement[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
   const [routeForm, setRouteForm] = useState<RouteDraftForm | null>(null);
   const [gateForm, setGateForm] = useState<GateDraftForm | null>(null);
+  const [environmentalBarrierForm, setEnvironmentalBarrierForm] = useState<EnvironmentalBarrierForm | null>(null);
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
   const [routeIdManuallyEdited, setRouteIdManuallyEdited] = useState(false);
+  const [environmentalIdManuallyEdited, setEnvironmentalIdManuallyEdited] = useState(false);
   const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
   const [editedRouteIds, setEditedRouteIds] = useState<string[]>([]);
   const [editedGateIds, setEditedGateIds] = useState<string[]>([]);
+  const [editedEnvironmentalIds, setEditedEnvironmentalIds] = useState<string[]>([]);
   const [pendingRouteStart, setPendingRouteStart] = useState(false);
   const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
+  const [activeEnvironmentalPointAddId, setActiveEnvironmentalPointAddId] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
   const [draggingRouteHandle, setDraggingRouteHandle] = useState<string | null>(null);
   const [draggingGateId, setDraggingGateId] = useState<string | null>(null);
+  const [draggingEnvironmentalId, setDraggingEnvironmentalId] = useState<string | null>(null);
+  const [draggingEnvironmentalPoint, setDraggingEnvironmentalPoint] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
   const [savingGates, setSavingGates] = useState(false);
+  const [savingEnvironmental, setSavingEnvironmental] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
 
   useEffect(() => {
@@ -1506,9 +1947,11 @@ export default function SystemMapViewer() {
   const mapZones = useMemo(() => (payload ? [...payload.zones, ...draftZones] : []), [draftZones, payload]);
   const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
   const mapGates = useMemo(() => payload?.asteroidBeltGates ?? [], [payload]);
+  const mapEnvironmentalElements = useMemo(() => (payload ? [...payload.environmentalElements, ...draftEnvironmentalElements] : []), [draftEnvironmentalElements, payload]);
   const existingZoneIds = useMemo(() => mapZones.map((zone) => zone.id).filter(Boolean), [mapZones]);
   const existingRouteIds = useMemo(() => mapRoutes.map((route) => route.id).filter(Boolean), [mapRoutes]);
-  const bounds = useMemo(() => (payload ? computeWorldBounds(payload, mapZones, mapRoutes) : null), [mapRoutes, mapZones, payload]);
+  const existingEnvironmentalIds = useMemo(() => mapEnvironmentalElements.map((element) => element.id).filter(Boolean), [mapEnvironmentalElements]);
+  const bounds = useMemo(() => (payload ? computeWorldBounds(payload, mapZones, mapRoutes, mapEnvironmentalElements) : null), [mapEnvironmentalElements, mapRoutes, mapZones, payload]);
 
   useEffect(() => {
     if (!payload || !bounds || fittedRef.current) return;
@@ -1657,6 +2100,92 @@ export default function SystemMapViewer() {
     setEditedGateIds((current) => (current.includes(gateId) ? current : [...current, gateId]));
   }
 
+  function updateEnvironmentalElementInMap(elementId: string, updater: (element: SystemMapEnvironmentalElement) => SystemMapEnvironmentalElement) {
+    const draftElement = draftEnvironmentalElements.find((element) => environmentalElementIdentity(element) === elementId);
+    if (draftElement) {
+      const nextElement = updater(draftElement);
+      setDraftEnvironmentalElements((current) => current.map((element) => (environmentalElementIdentity(element) === elementId ? nextElement : element)));
+      if (nextElement.type === "hazard_barrier") {
+        setEnvironmentalBarrierForm((current) =>
+          current?.originalId === elementId
+            ? {
+                ...current,
+                sectorX: numberInputValue(nextElement.sector.x),
+                sectorY: numberInputValue(nextElement.sector.y),
+              }
+            : current,
+        );
+      }
+      return;
+    }
+
+    const existing = payload?.environmentalElements.find((element) => environmentalElementIdentity(element) === elementId);
+    if (!existing) return;
+    const nextElement = updater(existing);
+    setPayload((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        environmentalElements: current.environmentalElements.map((element) => (environmentalElementIdentity(element) === elementId ? nextElement : element)),
+      };
+    });
+    if (nextElement.type === "hazard_barrier") {
+      setEnvironmentalBarrierForm((current) =>
+        current?.originalId === elementId
+          ? {
+              ...current,
+              sectorX: numberInputValue(nextElement.sector.x),
+              sectorY: numberInputValue(nextElement.sector.y),
+            }
+          : current,
+      );
+    }
+    setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
+  }
+
+  function findEnvironmentalBarrierPointAtWorld(world: SystemMapVec) {
+    if (!environmentalBarrierForm) return null;
+    const activeElement = mapEnvironmentalElements.find((element) => environmentalElementIdentity(element) === environmentalBarrierForm.originalId);
+    if (!activeElement || activeElement.type !== "hazard_barrier") return null;
+    const screenHitRadius = 11 / camera.zoom;
+    for (let index = activeElement.worldPoints.length - 1; index >= 0; index -= 1) {
+      if (distance(world, activeElement.worldPoints[index]) <= screenHitRadius) {
+        return { barrier: activeElement, pointIndex: index, point: activeElement.worldPoints[index] };
+      }
+    }
+    return null;
+  }
+
+  function findEnvironmentalBarrierAtWorld(world: SystemMapVec) {
+    for (let index = filteredEnvironmentalBarriers.length - 1; index >= 0; index -= 1) {
+      const barrier = filteredEnvironmentalBarriers[index];
+      const hitDistance = Math.max(barrier.bandWidth * barrier.visualWidthMultiplier * 0.5, 10 / camera.zoom);
+      const points = barrier.closedLoop && barrier.worldPoints.length > 2 ? [...barrier.worldPoints, barrier.worldPoints[0]] : barrier.worldPoints;
+      for (let pointIndex = 1; pointIndex < points.length; pointIndex += 1) {
+        if (pointToSegmentDistance(world, points[pointIndex - 1], points[pointIndex]) <= hitDistance) {
+          return barrier;
+        }
+      }
+    }
+    return null;
+  }
+
+  function updateEnvironmentalBarrierPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
+    if (!payload) return;
+    updateEnvironmentalElementInMap(elementId, (element) => {
+      if (element.type !== "hazard_barrier") return element;
+      return moveEnvironmentalBarrierPoint(element, pointIndex, world, payload.config.sectorSize);
+    });
+  }
+
+  function updateEnvironmentalBarrierPosition(elementId: string, delta: SystemMapVec) {
+    if (!payload) return;
+    updateEnvironmentalElementInMap(elementId, (element) => {
+      if (element.type !== "hazard_barrier") return element;
+      return moveEnvironmentalBarrierByDelta(element, delta, payload);
+    });
+  }
+
   function updateMobSpawnPosition(zoneId: string, mobKey: string, world: SystemMapVec) {
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
@@ -1725,6 +2254,8 @@ export default function SystemMapViewer() {
   function openZoneEditor(zone: SystemMapZone) {
     setGateForm(null);
     setRouteForm(null);
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
     setZoneForm({
       mode: "edit",
       originalId: zone.originalId ?? zone.id,
@@ -1751,6 +2282,8 @@ export default function SystemMapViewer() {
   function openRouteEditor(route: SystemMapRoute) {
     setGateForm(null);
     setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
     setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
     setRouteIdManuallyEdited(true);
     setActiveRouteAddId(null);
@@ -1762,14 +2295,43 @@ export default function SystemMapViewer() {
   function openGateEditor(gate: SystemMapAsteroidBeltGate) {
     setRouteForm(null);
     setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
     setGateForm(gateToForm(gate));
     setContextMenu(null);
     setStatus(null);
   }
 
+  function openEnvironmentalBarrierEditor(barrier: SystemMapEnvironmentalHazardBarrier) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, barrier.draft ? "create" : "edit"));
+    setEnvironmentalIdManuallyEdited(true);
+    setActiveEnvironmentalPointAddId(null);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openCreateEnvironmentalBarrierForm(world: SystemMapVec) {
+    if (!payload) return;
+    const barrier = createEnvironmentalBarrierDraftFromPoint(world, payload, existingEnvironmentalIds);
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setDraftEnvironmentalElements((current) => [...current, barrier]);
+    setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, "create"));
+    setEnvironmentalIdManuallyEdited(false);
+    setActiveEnvironmentalPointAddId(null);
+    setContextMenu(null);
+    setStatus({ tone: "success", message: `Added draft barrier "${barrier.name}". Drag its end points or use Add Point On Map before saving.` });
+  }
+
   function startRouteDraft(world: SystemMapVec) {
     if (!payload) return;
     const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
     setDraftRoutes((current) => [...current, route]);
     setRouteForm(routeToForm(route, "create"));
     setRouteIdManuallyEdited(false);
@@ -1829,6 +2391,28 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    const targetEnvironmentalPoint = toggles.barriers ? findEnvironmentalBarrierPointAtWorld(world) : null;
+    if (targetEnvironmentalPoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalPointDragRef.current = {
+        elementId: environmentalElementIdentity(targetEnvironmentalPoint.barrier),
+        pointIndex: targetEnvironmentalPoint.pointIndex,
+        startScreen: screen,
+        startWorld: world,
+        pointStartWorld: targetEnvironmentalPoint.point,
+        moved: false,
+      };
+      setDraggingEnvironmentalPoint(`${environmentalElementIdentity(targetEnvironmentalPoint.barrier)}:${targetEnvironmentalPoint.pointIndex}`);
+      clearHover();
+      return;
+    }
+    if (activeEnvironmentalPointAddId) {
+      addEnvironmentalBarrierPointAtWorld(activeEnvironmentalPointAddId, world);
+      setActiveEnvironmentalPointAddId(null);
+      setStatus({ tone: "success", message: "Added a new barrier point. Drag it to refine the path, then save to build when ready." });
+      clearHover();
+      return;
+    }
     const targetRouteHandle = toggles.routes ? findRouteHandleAtWorld(world) : null;
     if (targetRouteHandle) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1870,6 +2454,24 @@ export default function SystemMapViewer() {
     }
     if (targetGate) {
       openGateEditor(targetGate);
+      clearHover();
+      return;
+    }
+    const targetEnvironmentalBarrier = toggles.barriers ? findEnvironmentalBarrierAtWorld(world) : null;
+    if (targetEnvironmentalBarrier && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalDragRef.current = {
+        elementId: environmentalElementIdentity(targetEnvironmentalBarrier),
+        startScreen: screen,
+        startWorld: world,
+        moved: false,
+      };
+      setDraggingEnvironmentalId(environmentalElementIdentity(targetEnvironmentalBarrier));
+      clearHover();
+      return;
+    }
+    if (targetEnvironmentalBarrier) {
+      openEnvironmentalBarrierEditor(targetEnvironmentalBarrier);
       clearHover();
       return;
     }
@@ -1925,6 +2527,15 @@ export default function SystemMapViewer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    const environmentalPointDrag = environmentalPointDragRef.current;
+    if (environmentalPointDrag) {
+      const barrier = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalPointDrag.elementId);
+      if (environmentalPointDrag.moved) {
+        setStatus({ tone: "success", message: `Moved point ${environmentalPointDrag.pointIndex + 1} on "${barrier?.name || environmentalPointDrag.elementId}". Save Environmental Changes To Build to write EnvironmentalElements.json.` });
+      } else if (barrier?.type === "hazard_barrier") {
+        openEnvironmentalBarrierEditor(barrier);
+      }
+    }
     const routeDrag = routeDragRef.current;
     if (routeDrag) {
       const route = mapRoutes.find((entry) => routeIdentity(entry) === routeDrag.routeId);
@@ -1958,12 +2569,25 @@ export default function SystemMapViewer() {
         openGateEditor(gate);
       }
     }
+    const environmentalDrag = environmentalDragRef.current;
+    if (environmentalDrag) {
+      const barrier = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDrag.elementId);
+      if (environmentalDrag.moved) {
+        setStatus({ tone: "success", message: `Moved "${barrier?.name || environmentalDrag.elementId}". Save Environmental Changes To Build to write EnvironmentalElements.json.` });
+      } else if (barrier?.type === "hazard_barrier") {
+        openEnvironmentalBarrierEditor(barrier);
+      }
+    }
     mobDragRef.current = null;
     setDraggingMobKey(null);
+    environmentalPointDragRef.current = null;
+    setDraggingEnvironmentalPoint(null);
     routeDragRef.current = null;
     setDraggingRouteHandle(null);
     gateDragRef.current = null;
     setDraggingGateId(null);
+    environmentalDragRef.current = null;
+    setDraggingEnvironmentalId(null);
     zoneDragRef.current = null;
     setDraggingZoneId(null);
     dragRef.current = null;
@@ -2110,6 +2734,55 @@ export default function SystemMapViewer() {
                 `World: ${formatVec(stage.world)}`,
               ],
             };
+          }
+        }
+      }
+    }
+
+    if (toggles.barriers) {
+      for (const element of filteredEnvironmentalElements) {
+        if (element.type === "hazard_barrier") {
+          const points = element.closedLoop && element.worldPoints.length > 2 ? [...element.worldPoints, element.worldPoints[0]] : element.worldPoints;
+          for (let index = 1; index < points.length; index += 1) {
+            const hitDistance = Math.max(element.bandWidth * element.visualWidthMultiplier * 0.5, 10 / camera.zoom);
+            if (pointToSegmentDistance(world, points[index - 1], points[index]) <= hitDistance) {
+              return {
+                x: screen.x,
+                y: screen.y,
+                title: element.name || element.id,
+                subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Authored barrier"} · sector ${element.sector.x}, ${element.sector.y}`,
+                lines: [
+                  `Element ID: ${element.id}`,
+                  `Profile: ${element.profileId}`,
+                  `Visual: ${element.visualKind}`,
+                  `Band width: ${formatNumber(element.bandWidth)}`,
+                  `Points: ${element.worldPoints.length}`,
+                  `Status effect: ${element.statusEffectId}`,
+                  `Tags: ${element.tags.join(", ") || "none"}`,
+                ],
+              };
+            }
+          }
+        } else {
+          const regionHit =
+            element.shape === "ellipse" && element.worldCenter
+              ? pointInRotatedEllipse(world, element.worldCenter, element.width, element.height, element.rotationDeg)
+              : pointInPolygon(world, element.worldPoints);
+          if (regionHit) {
+            return {
+              x: screen.x,
+              y: screen.y,
+              title: element.name || element.id,
+              subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Environment region"} · sector ${element.sector.x}, ${element.sector.y}`,
+                lines: [
+                  `Element ID: ${element.id}`,
+                  `Profile: ${element.profileId}`,
+                  `Shape: ${element.shape}`,
+                  `Status effect: ${element.statusEffectId}`,
+                  `Affects: ${element.affectPlayers || element.affectNpcs ? `${element.affectPlayers ? "players" : ""}${element.affectPlayers && element.affectNpcs ? " + " : ""}${element.affectNpcs ? "NPCs" : ""}` : "none"}`,
+                  `Tags: ${element.tags.join(", ") || "none"}`,
+                ],
+              };
           }
         }
       }
@@ -2264,6 +2937,46 @@ export default function SystemMapViewer() {
       return;
     }
 
+    const environmentalPointDrag = environmentalPointDragRef.current;
+    if (environmentalPointDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: environmentalPointDrag.pointStartWorld.x + world.x - environmentalPointDrag.startWorld.x,
+        y: environmentalPointDrag.pointStartWorld.y + world.y - environmentalPointDrag.startWorld.y,
+      };
+      if (!environmentalPointDrag.moved && distance(screen, environmentalPointDrag.startScreen) > 4) {
+        environmentalPointDrag.moved = true;
+      }
+      updateEnvironmentalBarrierPointPosition(environmentalPointDrag.elementId, environmentalPointDrag.pointIndex, nextWorld);
+      clearHover();
+      return;
+    }
+
+    const environmentalDrag = environmentalDragRef.current;
+    if (environmentalDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const delta = {
+        x: world.x - environmentalDrag.startWorld.x,
+        y: world.y - environmentalDrag.startWorld.y,
+      };
+      if (!environmentalDrag.moved && distance(screen, environmentalDrag.startScreen) > 4) {
+        environmentalDrag.moved = true;
+      }
+      updateEnvironmentalBarrierPosition(environmentalDrag.elementId, delta);
+      clearHover();
+      return;
+    }
+
     const mobDrag = mobDragRef.current;
     const routeDrag = routeDragRef.current;
     if (routeDrag) {
@@ -2373,6 +3086,8 @@ export default function SystemMapViewer() {
   }
 
   function openCreateZoneForm(world: SystemMapVec) {
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
     const defaultName = "New Zone";
     setZoneForm({
       mode: "create",
@@ -2476,6 +3191,23 @@ export default function SystemMapViewer() {
     setRouteForm((current) => (current ? { ...current, id: sanitizeRouteId(id) } : current));
   }
 
+  function handleEnvironmentalBarrierNameChange(name: string) {
+    setEnvironmentalBarrierForm((current) => {
+      if (!current) return current;
+      const reservedIds = existingEnvironmentalIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        name,
+        id: current.mode === "create" && !environmentalIdManuallyEdited ? createUniqueId(sanitizeEnvironmentalElementId(name), reservedIds) : current.id,
+      };
+    });
+  }
+
+  function handleEnvironmentalBarrierIdChange(id: string) {
+    setEnvironmentalIdManuallyEdited(true);
+    setEnvironmentalBarrierForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
+  }
+
   function applyRouteForm() {
     if (!routeForm) return;
     const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
@@ -2511,11 +3243,74 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Applied gate details for "${applied.gate.name}". Use Save Gate Changes To Build to write AsteroidBeltGates.json.` });
   }
 
+  function applyEnvironmentalBarrierForm() {
+    if (!environmentalBarrierForm || !payload) return;
+    const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalBarrierForm.originalId);
+    if (!element || element.type !== "hazard_barrier") {
+      setStatus({ tone: "error", message: "Could not find the environmental barrier being edited." });
+      return;
+    }
+    const applied = withEnvironmentalBarrierForm(environmentalBarrierForm, element, payload.environmentProfiles, payload.config.sectorSize, mapEnvironmentalElements);
+    if (applied.error || !applied.barrier || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+    updateEnvironmentalElementInMap(environmentalBarrierForm.originalId, () => applied.barrier);
+    setEnvironmentalBarrierForm(applied.form);
+    setStatus({ tone: "success", message: `Applied barrier details for "${applied.barrier.name}". Use Save Environmental Changes To Build to write EnvironmentalElements.json.` });
+  }
+
   function removeDraftRoute(routeId: string) {
     setDraftRoutes((current) => current.filter((route) => routeIdentity(route) !== routeId));
     setRouteForm((current) => (current?.originalId === routeId ? null : current));
     setActiveRouteAddId((current) => (current === routeId ? null : current));
     setStatus({ tone: "neutral", message: "Removed the unsaved trade route draft." });
+  }
+
+  function removeEnvironmentalBarrier(elementId: string) {
+    const draftElement = draftEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === elementId);
+    if (draftElement) {
+      setDraftEnvironmentalElements((current) => current.filter((entry) => environmentalElementIdentity(entry) !== elementId));
+      setEnvironmentalBarrierForm((current) => (current?.originalId === elementId ? null : current));
+      setActiveEnvironmentalPointAddId((current) => (current === elementId ? null : current));
+      setStatus({ tone: "neutral", message: "Removed the unsaved environmental barrier draft." });
+      return;
+    }
+
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            environmentalElements: current.environmentalElements.filter((entry) => environmentalElementIdentity(entry) !== elementId),
+          }
+        : current,
+    );
+    setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
+    setEnvironmentalBarrierForm(null);
+    setActiveEnvironmentalPointAddId(null);
+    setStatus({ tone: "success", message: "Removed the environmental barrier from the map. Save Environmental Changes To Build to write EnvironmentalElements.json." });
+  }
+
+  function addEnvironmentalBarrierPointAtWorld(elementId: string, world: SystemMapVec) {
+    if (!payload) return;
+    updateEnvironmentalElementInMap(elementId, (element) => {
+      if (element.type !== "hazard_barrier") return element;
+      const roundedWorld = {
+        x: Math.round(world.x),
+        y: Math.round(world.y),
+      };
+      const local = {
+        x: Math.round(roundedWorld.x - element.sector.x * payload.config.sectorSize),
+        y: Math.round(roundedWorld.y - element.sector.y * payload.config.sectorSize),
+      };
+      return {
+        ...element,
+        points: [...element.points, local],
+        worldPoints: [...element.worldPoints, roundedWorld],
+        modified: element.draft ? element.modified : true,
+        originalId: element.draft ? element.originalId : element.originalId ?? element.id,
+      };
+    });
   }
 
   function saveZoneForm() {
@@ -2914,6 +3709,98 @@ export default function SystemMapViewer() {
     }
   }
 
+  async function handleSaveEnvironmentalChangesToBuild() {
+    if ((!draftEnvironmentalElements.length && !editedEnvironmentalIds.length) || savingEnvironmental || !payload) return;
+    setSavingEnvironmental(true);
+    setStatus(null);
+    try {
+      let elementsForSave = mapEnvironmentalElements;
+      let editedEnvironmentalIdsForSave = editedEnvironmentalIds;
+
+      if (environmentalBarrierForm) {
+        const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalBarrierForm.originalId);
+        if (element?.type === "hazard_barrier") {
+          const applied = withEnvironmentalBarrierForm(environmentalBarrierForm, element, payload.environmentProfiles, payload.config.sectorSize, elementsForSave);
+          if (applied.error || !applied.barrier || !applied.form) {
+            setStatus({ tone: "error", message: applied.error });
+            return;
+          }
+          elementsForSave = elementsForSave.map((entry) => (environmentalElementIdentity(entry) === environmentalBarrierForm.originalId ? applied.barrier : entry));
+          if (!applied.barrier.draft && !editedEnvironmentalIdsForSave.includes(environmentalBarrierForm.originalId)) {
+            editedEnvironmentalIdsForSave = [...editedEnvironmentalIdsForSave, environmentalBarrierForm.originalId];
+          }
+          setEnvironmentalBarrierForm(applied.form);
+        }
+      }
+
+      const invalidBarrier = elementsForSave.find((element) => element.type === "hazard_barrier" && element.points.length < 2);
+      if (invalidBarrier?.type === "hazard_barrier") {
+        setStatus({ tone: "error", message: `Barrier "${invalidBarrier.name || invalidBarrier.id}" needs at least two points before saving.` });
+        return;
+      }
+
+      const sourceResponse = await fetch("/api/settings/data/source?kind=environmentalElements", { cache: "no-store" });
+      const sourcePayload = await sourceResponse.json().catch(() => ({}));
+      if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
+        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current EnvironmentalElements.json before saving." });
+        return;
+      }
+
+      const parsed = parseTolerantJsonText(sourcePayload.text);
+      const base = isPlainRecord(parsed.value) ? parsed.value : {};
+      const environmentalElements = {
+        ...base,
+        version: typeof base.version === "number" ? base.version : 1,
+        elements: elementsForSave.map((element) => environmentalElementToJson(element)),
+      };
+
+      const saveResponse = await fetch("/api/environmental-elements/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ environmentalElements }),
+      });
+      const savePayload = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok || !savePayload?.ok) {
+        setStatus({ tone: "error", message: savePayload?.error || "Could not save environmental elements into EnvironmentalElements.json." });
+        return;
+      }
+
+      const savedElements = elementsForSave.map((element) => ({
+        ...element,
+        draft: false,
+        modified: false,
+        originalId: undefined,
+      }));
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              environmentalElements: savedElements,
+            }
+          : current,
+      );
+      setDraftEnvironmentalElements([]);
+      setEditedEnvironmentalIds([]);
+      setEnvironmentalBarrierForm((current) =>
+        current
+          ? {
+              ...current,
+              originalId: sanitizeEnvironmentalElementId(current.id),
+              mode: "edit",
+            }
+          : current,
+      );
+      const savedCount = draftEnvironmentalElements.length + editedEnvironmentalIdsForSave.length;
+      setStatus({ tone: "success", message: `Saved ${savedCount} environmental change${savedCount === 1 ? "" : "s"} into the live EnvironmentalElements.json file.` });
+    } catch (saveError) {
+      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+    } finally {
+      setSavingEnvironmental(false);
+    }
+  }
+
   const filteredZones = useMemo(() => mapZones.filter((zone) => zoneMatches(zone, normalizedQuery)), [mapZones, normalizedQuery]);
   const filteredPois = useMemo(() => payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [], [normalizedQuery, payload?.pois]);
   const filteredRoutes = useMemo(() => mapRoutes.filter((route) => routeMatches(route, normalizedQuery)), [mapRoutes, normalizedQuery]);
@@ -2921,6 +3808,15 @@ export default function SystemMapViewer() {
     if (!normalizedQuery) return true;
     return [gate.id, gate.name, gate.enabled ? "enabled" : "disabled", gate.angleDegrees, gate.widthPx].join(" ").toLowerCase().includes(normalizedQuery);
   }), [mapGates, normalizedQuery]);
+  const filteredEnvironmentalElements = useMemo(() => mapEnvironmentalElements.filter((element) => environmentalElementMatches(element, normalizedQuery)), [mapEnvironmentalElements, normalizedQuery]);
+  const filteredEnvironmentalBarriers = useMemo(
+    () => filteredEnvironmentalElements.filter((element): element is SystemMapEnvironmentalHazardBarrier => element.type === "hazard_barrier"),
+    [filteredEnvironmentalElements],
+  );
+  const filteredEnvironmentalRegions = useMemo(
+    () => filteredEnvironmentalElements.filter((element): element is SystemMapEnvironmentalRegion => element.type === "environment_region"),
+    [filteredEnvironmentalElements],
+  );
   const showAsteroidSprites = camera.zoom >= ASTEROID_SPRITE_DETAIL_ZOOM;
   const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
@@ -2936,14 +3832,22 @@ export default function SystemMapViewer() {
         }
       }
     }
+    for (const element of mapEnvironmentalElements) {
+      for (const materialPath of element.materialPaths ?? []) {
+        if (materialPath) paths.add(materialPath);
+      }
+    }
     return Array.from(paths);
-  }, [mapZones]);
+  }, [mapEnvironmentalElements, mapZones]);
   const sceneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0);
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
+  const environmentalBarrierCount = mapEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
+  const environmentalRegionCount = mapEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const hasGateChanges = editedGateIds.length > 0;
+  const hasEnvironmentalChanges = draftEnvironmentalElements.length > 0 || editedEnvironmentalIds.length > 0;
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
@@ -3164,6 +4068,122 @@ export default function SystemMapViewer() {
                 })
               : null}
 
+            {toggles.barriers
+              ? filteredEnvironmentalRegions.map((region) => {
+                  const isChanged = region.draft || region.modified;
+                  const stroke =
+                    region.visualKind === "gas"
+                      ? "rgba(250,204,21,0.52)"
+                      : region.visualKind === "asteroid"
+                        ? "rgba(251,191,36,0.45)"
+                        : "rgba(125,211,252,0.42)";
+                  const fill =
+                    region.visualKind === "gas"
+                      ? "rgba(250,204,21,0.10)"
+                      : region.visualKind === "asteroid"
+                        ? "rgba(251,191,36,0.06)"
+                        : "rgba(125,211,252,0.08)";
+                  return region.shape === "ellipse" && region.worldCenter ? (
+                    <ellipse
+                      key={`environment-region:${environmentalElementIdentity(region)}`}
+                      cx={region.worldCenter.x}
+                      cy={region.worldCenter.y}
+                      rx={region.width / 2}
+                      ry={region.height / 2}
+                      fill={fill}
+                      stroke={stroke}
+                      transform={region.rotationDeg ? `rotate(${region.rotationDeg} ${region.worldCenter.x} ${region.worldCenter.y})` : undefined}
+                      strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                      strokeWidth={2 / camera.zoom}
+                    />
+                  ) : (
+                    <polygon
+                      key={`environment-region:${environmentalElementIdentity(region)}`}
+                      points={region.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                      strokeWidth={2 / camera.zoom}
+                    />
+                  );
+                })
+              : null}
+
+            {toggles.barriers
+              ? filteredEnvironmentalBarriers.map((barrier) => {
+                  const isChanged = barrier.draft || barrier.modified;
+                  const key = `environment-barrier:${environmentalElementIdentity(barrier)}`;
+                  const adaptedBarrier: SystemMapSceneBarrier = {
+                    nodeName: barrier.name || barrier.id,
+                    profileId: barrier.profileId,
+                    baseStageProfile: barrier.baseStageProfile,
+                    visualKind: barrier.visualKind,
+                    materialPaths: barrier.materialPaths,
+                    localPoints: barrier.points,
+                    worldPoints: barrier.closedLoop && barrier.worldPoints.length > 2 ? [...barrier.worldPoints, barrier.worldPoints[0]] : barrier.worldPoints,
+                    bandWidth: barrier.bandWidth,
+                    visualWidthMultiplier: barrier.visualWidthMultiplier,
+                    visualDensityMultiplier: barrier.visualDensityMultiplier,
+                    visualScaleMultiplier: barrier.visualScaleMultiplier,
+                    visualAlphaMultiplier: barrier.visualAlphaMultiplier,
+                    sourceScene: "EnvironmentalElements.json",
+                  };
+                  const visuals = showBarrierSprites ? buildBarrierVisuals(adaptedBarrier, key) : [];
+                  const isActiveBarrier = environmentalBarrierForm?.originalId === environmentalElementIdentity(barrier);
+                  return (
+                    <g key={key}>
+                      <polyline
+                        points={adaptedBarrier.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                        fill="none"
+                        stroke={barrierStrokeColor(adaptedBarrier.visualKind)}
+                        strokeWidth={Math.max(500, adaptedBarrier.bandWidth * Math.max(0.1, adaptedBarrier.visualWidthMultiplier))}
+                        strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {showBarrierSprites
+                        ? visuals.map((visual) => (
+                            <use
+                              key={visual.key}
+                              href={`#${barrierSymbolId(visual.sprite)}`}
+                              x={visual.x - visual.size / 2}
+                              y={visual.y - visual.size / 2}
+                              width={visual.size}
+                              height={visual.size}
+                              opacity={visual.opacity}
+                              transform={`rotate(${visual.rotation} ${visual.x} ${visual.y})`}
+                            />
+                          ))
+                        : null}
+                      {isActiveBarrier
+                        ? barrier.worldPoints.map((point, index) => {
+                            const pointKey = `${environmentalElementIdentity(barrier)}:${index}`;
+                            return (
+                              <circle
+                                key={pointKey}
+                                cx={point.x}
+                                cy={point.y}
+                                r={(draggingEnvironmentalPoint === pointKey ? 8 : 6) / camera.zoom}
+                                fill={barrier.draft ? "#34d399" : barrier.modified ? "#facc15" : "#38bdf8"}
+                                stroke="rgba(255,255,255,0.82)"
+                                strokeWidth={(draggingEnvironmentalPoint === pointKey ? 2 : 1) / camera.zoom}
+                              />
+                            );
+                          })
+                        : null}
+                      <circle
+                        cx={barrierWorldCenter(barrier).x}
+                        cy={barrierWorldCenter(barrier).y}
+                        r={(draggingEnvironmentalId === environmentalElementIdentity(barrier) ? 8 : 5) / camera.zoom}
+                        fill={barrier.draft ? "#34d399" : barrier.modified ? "#facc15" : "#c084fc"}
+                        stroke="rgba(255,255,255,0.72)"
+                        strokeWidth={(draggingEnvironmentalId === environmentalElementIdentity(barrier) ? 2 : 1) / camera.zoom}
+                      />
+                    </g>
+                  );
+                })
+              : null}
+
             {toggles.barriers ? <HazardBarrierLayer zones={filteredZones} query={normalizedQuery} showSprites={showBarrierSprites} /> : null}
 
             {toggles.stages
@@ -3285,6 +4305,31 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
+          {toggles.barriers
+            ? filteredEnvironmentalElements.map((element) => {
+                const anchor =
+                  element.type === "hazard_barrier"
+                    ? barrierWorldCenter(element)
+                    : element.worldCenter ?? element.worldPoints[0] ?? sectorLocalToWorld(element.sector, { x: 0, y: 0 });
+                const point = worldToScreen(anchor);
+                return (
+                  <div
+                    key={`${environmentalElementIdentity(element)}:environment-label`}
+                    className={`absolute translate-x-3 -translate-y-1/2 whitespace-nowrap rounded border px-2 py-1 text-xs shadow-lg ${
+                      element.draft
+                        ? "border-emerald-300/35 bg-emerald-950/85 text-emerald-100"
+                        : element.modified
+                          ? "border-yellow-300/35 bg-yellow-950/80 text-yellow-100"
+                          : "border-purple-300/25 bg-purple-950/75 text-purple-100"
+                    }`}
+                    style={{ left: point.x, top: point.y }}
+                  >
+                    {element.name || element.id}
+                    {element.draft ? " (draft)" : element.modified ? " (edited)" : ""}
+                  </div>
+                );
+              })
+            : null}
           {toggles.environment
             ? filteredGates.map((gate) => {
                 const point = worldToScreen(gate.world);
@@ -3334,7 +4379,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} authored barriers${draftEnvironmentalElements.length ? ` (${draftEnvironmentalElements.length} draft${draftEnvironmentalElements.length === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -3347,6 +4392,9 @@ export default function SystemMapViewer() {
             </button>
             <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasGateChanges || savingGates} onClick={() => void handleSaveGateChangesToBuild()}>
               {savingGates ? "Saving..." : "Save Gate Changes To Build"}
+            </button>
+            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasEnvironmentalChanges || savingEnvironmental} onClick={() => void handleSaveEnvironmentalChangesToBuild()}>
+              {savingEnvironmental ? "Saving..." : "Save Environmental Changes To Build"}
             </button>
             <button
               type="button"
@@ -3372,7 +4420,7 @@ export default function SystemMapViewer() {
         </div>
 
         <div className="mt-4">
-          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, stages, or mobs..." />
+          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, authored barriers, stages, or mobs..." />
         </div>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -3399,7 +4447,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers` : "0 zones"}</div>
           </div>
         </div>
 
@@ -3429,7 +4477,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, or asteroid belt gate to edit details. Hold Command and drag a zone or gate to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, or authored barrier to edit details. Hold Command and drag a zone, gate, or authored barrier to move it. Drag barrier points to reshape hazard paths. Right-click the map to add zones, mob spawns, trade routes, or authored hazard barriers.</div>
       </div>
 
       {contextMenu ? (
@@ -3467,6 +4515,9 @@ export default function SystemMapViewer() {
           ) : null}
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
             Add Zone Here
+          </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalBarrierForm(contextMenu.world)}>
+            Add Hazard Barrier Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -3691,6 +4742,221 @@ export default function SystemMapViewer() {
                   </button>
                   <button type="button" className="btn-save-build" onClick={applyRouteForm}>
                     Apply Route Details
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
+
+      {environmentalBarrierForm
+        ? (() => {
+            const barrier = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalBarrierForm.originalId);
+            const activeBarrier = barrier?.type === "hazard_barrier" ? barrier : null;
+            const isAddingPoint = activeEnvironmentalPointAddId === environmentalBarrierForm.originalId;
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">{environmentalBarrierForm.mode === "create" ? "New Hazard Barrier" : "Edit Hazard Barrier"}</div>
+                    <div className="mt-1 text-sm text-white/55">Choose the hazard profile, set band width and status effect behavior, then drag points on the map or add new ones visually.</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5"
+                    onClick={() => {
+                      setEnvironmentalBarrierForm(null);
+                      setActiveEnvironmentalPointAddId(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Barrier Name
+                    <input className="input mt-1" value={environmentalBarrierForm.name} onChange={(event) => handleEnvironmentalBarrierNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Barrier ID
+                    <input className="input mt-1 font-mono" value={environmentalBarrierForm.id} onChange={(event) => handleEnvironmentalBarrierIdChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector X
+                    <input className="input mt-1" type="number" value={environmentalBarrierForm.sectorX} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, sectorX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector Y
+                    <input className="input mt-1" type="number" value={environmentalBarrierForm.sectorY} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, sectorY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Profile
+                    <select className="input mt-1" value={environmentalBarrierForm.profileId} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, profileId: event.target.value } : current))}>
+                      {(payload?.environmentProfiles ?? []).map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.label} · {profile.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Band Width
+                    <input className="input mt-1" type="number" min="1" value={environmentalBarrierForm.bandWidth} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, bandWidth: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Status Effect ID
+                    <input className="input mt-1" type="number" value={environmentalBarrierForm.statusEffectId} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, statusEffectId: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Width
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalBarrierForm.visualWidthMultiplier} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, visualWidthMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Density
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalBarrierForm.visualDensityMultiplier} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, visualDensityMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Scale
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalBarrierForm.visualScaleMultiplier} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, visualScaleMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Alpha
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalBarrierForm.visualAlphaMultiplier} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, visualAlphaMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Tags
+                    <input className="input mt-1" value={environmentalBarrierForm.tags} placeholder="tutorial, asteroid, blockage" onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, tags: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Notes
+                    <textarea className="input mt-1 min-h-24" value={environmentalBarrierForm.notes} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, notes: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Active</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.active} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, active: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Closed Loop</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.closedLoop} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, closedLoop: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                    <span>Use Profile Blocker Width Ratio</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.useProfileBlockerWidthRatio} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, useProfileBlockerWidthRatio: event.target.checked } : current))} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Blocker Width Ratio
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalBarrierForm.blockerWidthRatio} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, blockerWidthRatio: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Remove Effect On Exit</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.removeEffectOnExit} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, removeEffectOnExit: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Affect Players</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.affectPlayers} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, affectPlayers: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Affect NPCs</span>
+                    <input type="checkbox" checked={environmentalBarrierForm.affectNpcs} onChange={(event) => setEnvironmentalBarrierForm((current) => (current ? { ...current, affectNpcs: event.target.checked } : current))} />
+                  </label>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-white">Barrier Points</div>
+                      <div className="text-xs text-white/45">Drag these handles on the map, or add a new point at the cursor location.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`rounded border px-3 py-2 text-sm ${isAddingPoint ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"}`}
+                      onClick={() => {
+                        setPendingRouteStart(false);
+                        setActiveRouteAddId(null);
+                        setActiveEnvironmentalPointAddId((current) => (current === environmentalBarrierForm.originalId ? null : environmentalBarrierForm.originalId));
+                        setStatus({ tone: "neutral", message: "Click the map to append a new point to this barrier." });
+                      }}
+                    >
+                      {isAddingPoint ? "Click Map To Add" : "Add Point On Map"}
+                    </button>
+                  </div>
+                  <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+                    {activeBarrier?.worldPoints.map((point, index) => (
+                      <div key={`${environmentalBarrierForm.originalId}:point:${index}`} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-medium text-white">Point {index + 1}</div>
+                          <button
+                            type="button"
+                            className="rounded border border-red-300/25 bg-red-400/10 px-2 py-1 text-xs text-red-100 disabled:cursor-default disabled:opacity-35"
+                            disabled={(activeBarrier?.points.length ?? 0) <= 2}
+                            onClick={() => {
+                              updateEnvironmentalElementInMap(environmentalBarrierForm.originalId, (element) => {
+                                if (element.type !== "hazard_barrier") return element;
+                                return {
+                                  ...element,
+                                  points: element.points.filter((_, pointIndex) => pointIndex !== index),
+                                  worldPoints: element.worldPoints.filter((_, pointIndex) => pointIndex !== index),
+                                  modified: element.draft ? element.modified : true,
+                                  originalId: element.draft ? element.originalId : element.originalId ?? element.id,
+                                };
+                              });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="mt-1 text-xs text-white/55">Local: {activeBarrier ? formatVec(activeBarrier.points[index]) : "?"}</div>
+                        <div className="text-xs text-white/45">World: {formatVec(point)}</div>
+                      </div>
+                    ))}
+                    {!activeBarrier?.worldPoints.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No barrier points found.</div> : null}
+                  </div>
+                </div>
+
+                {activeBarrier ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Barrier Summary</div>
+                    <div className="mt-2">Center: {formatVec(barrierWorldCenter(activeBarrier))}</div>
+                    <div>Profile: {activeBarrier.profileId}</div>
+                    <div>Visual kind: {activeBarrier.visualKind}</div>
+                    <div>Materials: {activeBarrier.materialPaths.length}</div>
+                    <div>Sector-local points are what get written into EnvironmentalElements.json.</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15"
+                    onClick={() => removeEnvironmentalBarrier(environmentalBarrierForm.originalId)}
+                  >
+                    {activeBarrier?.draft ? "Remove Draft" : "Delete Barrier"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5"
+                    onClick={() => {
+                      setEnvironmentalBarrierForm(null);
+                      setActiveEnvironmentalPointAddId(null);
+                    }}
+                  >
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applyEnvironmentalBarrierForm}>
+                    {environmentalBarrierForm.mode === "create" ? "Apply Draft Details" : "Apply Barrier Details"}
                   </button>
                 </div>
               </div>

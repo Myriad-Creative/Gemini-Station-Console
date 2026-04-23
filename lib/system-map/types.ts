@@ -82,6 +82,64 @@ export type SystemMapSceneBarrier = {
   sourceScene: string;
 };
 
+export type SystemMapEnvironmentProfile = {
+  id: string;
+  label: string;
+  source: "barrier" | "stage";
+  baseStageProfile: string;
+  visualKind: SystemMapSceneBarrierVisualKind;
+  materialPaths: string[];
+};
+
+export type SystemMapEnvironmentalElementBase = {
+  id: string;
+  originalId?: string;
+  draft?: boolean;
+  modified?: boolean;
+  type: "hazard_barrier" | "environment_region";
+  name: string;
+  active: boolean;
+  sector: SystemMapVec;
+  tags: string[];
+  notes: string;
+  profileId: string;
+  baseStageProfile: string;
+  visualKind: SystemMapSceneBarrierVisualKind;
+  materialPaths: string[];
+  visualWidthMultiplier: number;
+  visualDensityMultiplier: number;
+  visualScaleMultiplier: number;
+  visualAlphaMultiplier: number;
+  statusEffectId: number;
+  removeEffectOnExit: boolean;
+  affectPlayers: boolean;
+  affectNpcs: boolean;
+};
+
+export type SystemMapEnvironmentalHazardBarrier = SystemMapEnvironmentalElementBase & {
+  type: "hazard_barrier";
+  bandWidth: number;
+  closedLoop: boolean;
+  useProfileBlockerWidthRatio: boolean;
+  blockerWidthRatio: number;
+  points: SystemMapVec[];
+  worldPoints: SystemMapVec[];
+};
+
+export type SystemMapEnvironmentalRegion = SystemMapEnvironmentalElementBase & {
+  type: "environment_region";
+  shape: "polygon" | "ellipse";
+  points: SystemMapVec[];
+  worldPoints: SystemMapVec[];
+  center: SystemMapVec | null;
+  worldCenter: SystemMapVec | null;
+  width: number;
+  height: number;
+  rotationDeg: number;
+};
+
+export type SystemMapEnvironmentalElement = SystemMapEnvironmentalHazardBarrier | SystemMapEnvironmentalRegion;
+
 export type SystemMapMobSpawn = {
   key: string;
   originalIndex: number | null;
@@ -200,5 +258,7 @@ export type SystemMapPayload = {
   pois: SystemMapPoi[];
   routes: SystemMapRoute[];
   asteroidBeltGates: SystemMapAsteroidBeltGate[];
+  environmentProfiles: SystemMapEnvironmentProfile[];
+  environmentalElements: SystemMapEnvironmentalElement[];
   warnings: string[];
 };

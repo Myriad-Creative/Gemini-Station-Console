@@ -6,6 +6,8 @@ import { getLocalGameSourceState } from "@lib/local-game-source";
 import { DATA_FILE_PATHS, type UploadedDataFileKind } from "@lib/uploaded-data";
 import type {
   SystemMapAsteroidBeltGate,
+  SystemMapEnvironmentalElement,
+  SystemMapEnvironmentProfile,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -199,6 +201,29 @@ function addVec(a: SystemMapVec, b: SystemMapVec): SystemMapVec {
   };
 }
 
+function localPointsToWorld(sector: SystemMapVec, points: SystemMapVec[]) {
+  return points.map((point) => worldFromSectorLocal(sector, point));
+}
+
+function ellipsePoints(center: SystemMapVec, width: number, height: number, rotationDeg: number, samples = 48) {
+  const radians = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const rx = Math.max(1, width / 2);
+  const ry = Math.max(1, height / 2);
+  const points: SystemMapVec[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    const theta = (index / samples) * Math.PI * 2;
+    const x = Math.cos(theta) * rx;
+    const y = Math.sin(theta) * ry;
+    points.push({
+      x: center.x + x * cos - y * sin,
+      y: center.y + x * sin + y * cos,
+    });
+  }
+  return points;
+}
+
 function sectorName(x: number, y: number) {
   return SECTOR_NAMES.get(`${x},${y}`) ?? "Unknown Sector";
 }
@@ -346,6 +371,110 @@ function resolveBarrierVisualProfile(profileId: string, hazardBarrierProfilesJso
     visualScaleMultiplier: numberValue(mergedProfile.visual_scale_multiplier, 1),
     visualAlphaMultiplier: numberValue(mergedProfile.visual_alpha_multiplier, 1),
   };
+}
+
+function buildEnvironmentProfiles(hazardBarrierProfilesJson: unknown, stagesJson: unknown): SystemMapEnvironmentProfile[] {
+  const profiles = new Map<string, SystemMapEnvironmentProfile>();
+  const stageProfiles = asRecord(stagesJson);
+
+  for (const profileId of Object.keys(asRecord(hazardBarrierProfilesJson))) {
+    const resolved = resolveBarrierVisualProfile(profileId, hazardBarrierProfilesJson, stagesJson);
+    profiles.set(profileId, {
+      id: profileId,
+      label: stringValue(asRecord(asRecord(hazardBarrierProfilesJson)[profileId]).name, profileId),
+      source: "barrier",
+      baseStageProfile: resolved.baseStageProfile,
+      visualKind: resolved.visualKind,
+      materialPaths: resolved.materialPaths,
+    });
+  }
+
+  for (const [profileId, rawStage] of Object.entries(stageProfiles)) {
+    const stage = asRecord(rawStage);
+    const materialPaths = materialPathsFromProfile(stage);
+    if (!materialPaths.length || profiles.has(profileId)) continue;
+    profiles.set(profileId, {
+      id: profileId,
+      label: stringValue(stage.name, profileId),
+      source: "stage",
+      baseStageProfile: profileId,
+      visualKind: inferBarrierVisualKind(profileId, profileId, materialPaths),
+      materialPaths,
+    });
+  }
+
+  return Array.from(profiles.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfilesJson: unknown, stagesJson: unknown): SystemMapEnvironmentalElement[] {
+  const root = asRecord(elementsJson);
+  return asArray(root.elements)
+    .map((entry, index) => {
+      const element = asRecord(entry);
+      const data = asRecord(element.data);
+      const id = stringValue(element.id, `environmental_element_${index + 1}`);
+      const type = stringValue(element.type, "hazard_barrier");
+      const sector = vecValue(element.sector_id);
+      const profileId = stringValue(data.profile_id, DEFAULT_HAZARD_BARRIER_PROFILE_ID);
+      const visualProfile = resolveBarrierVisualProfile(profileId, hazardBarrierProfilesJson, stagesJson);
+      const common = {
+        id,
+        name: stringValue(element.name, id),
+        active: boolValue(element.active, true),
+        sector,
+        tags: asArray(element.tags)
+          .map((tag) => stringValue(tag).trim())
+          .filter(Boolean),
+        notes: stringValue(element.notes, ""),
+        profileId,
+        baseStageProfile: visualProfile.baseStageProfile,
+        visualKind: visualProfile.visualKind,
+        materialPaths: visualProfile.materialPaths,
+        visualWidthMultiplier: numberValue(data.visual_width_multiplier, 1),
+        visualDensityMultiplier: numberValue(data.visual_density_multiplier, 1),
+        visualScaleMultiplier: numberValue(data.visual_scale_multiplier, 1),
+        visualAlphaMultiplier: numberValue(data.visual_alpha_multiplier, 1),
+        statusEffectId: numberValue(data.status_effect_id, -1),
+        removeEffectOnExit: boolValue(data.remove_effect_on_exit, true),
+        affectPlayers: boolValue(data.affect_players, true),
+        affectNpcs: boolValue(data.affect_npcs, true),
+      };
+
+      if (type === "environment_region") {
+        const shape: "ellipse" | "polygon" = stringValue(data.shape, "polygon").trim().toLowerCase() === "ellipse" ? "ellipse" : "polygon";
+        const points = shape === "polygon" ? asArray(data.points).map((point) => vecValue(point)) : [];
+        const center = shape === "ellipse" ? vecValue(data.center) : null;
+        const width = Math.max(1, numberValue(data.width, 1));
+        const height = Math.max(1, numberValue(data.height, 1));
+        const rotationDeg = numberValue(data.rotation_deg);
+        const outlinePoints = shape === "polygon" ? points : center ? ellipsePoints(center, width, height, rotationDeg) : [];
+        return {
+          ...common,
+          type: "environment_region" as const,
+          shape,
+          points,
+          worldPoints: localPointsToWorld(sector, outlinePoints),
+          center,
+          worldCenter: center ? worldFromSectorLocal(sector, center) : null,
+          width,
+          height,
+          rotationDeg,
+        };
+      }
+
+      const points = asArray(data.points).map((point) => vecValue(point));
+      return {
+        ...common,
+        type: "hazard_barrier" as const,
+        bandWidth: Math.max(1, numberValue(data.band_width, DEFAULT_HAZARD_BARRIER_BAND_WIDTH)),
+        closedLoop: boolValue(data.closed_loop, false),
+        useProfileBlockerWidthRatio: boolValue(data.use_profile_blocker_width_ratio, true),
+        blockerWidthRatio: numberValue(data.blocker_width_ratio, 1),
+        points,
+        worldPoints: localPointsToWorld(sector, points),
+      };
+    })
+    .filter((element) => element.id);
 }
 
 function extractCurvePointsById(text: string) {
@@ -810,10 +939,11 @@ export async function GET() {
     );
   }
 
-  const [zonesResult, stagesResult, hazardBarrierProfilesResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
+  const [zonesResult, stagesResult, hazardBarrierProfilesResult, environmentalElementsResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
+    loadDataFile(local.gameRootPath, "environmentalElements", "EnvironmentalElements.json"),
     loadDataFile(local.gameRootPath, "mobs", "mobs.json"),
     loadDataFile(local.gameRootPath, "poi", "poi.json"),
     loadDataFile(local.gameRootPath, "regions", "regions.json"),
@@ -825,6 +955,7 @@ export async function GET() {
     ...zonesResult.warnings,
     ...stagesResult.warnings,
     ...hazardBarrierProfilesResult.warnings,
+    ...environmentalElementsResult.warnings,
     ...mobsResult.warnings,
     ...poiResult.warnings,
     ...regionsResult.warnings,
@@ -857,6 +988,8 @@ export async function GET() {
     pois: buildPois(poiResult.value, zones),
     routes: buildRoutes(routesResult.value),
     asteroidBeltGates: buildAsteroidBeltGates(asteroidBeltGatesResult.value),
+    environmentProfiles: buildEnvironmentProfiles(hazardBarrierProfilesResult.value, stagesResult.value),
+    environmentalElements: buildEnvironmentalElements(environmentalElementsResult.value, hazardBarrierProfilesResult.value, stagesResult.value),
     warnings,
   };
 

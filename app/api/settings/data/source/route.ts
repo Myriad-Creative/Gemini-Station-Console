@@ -21,6 +21,7 @@ const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
   "stages",
   "hazardBarrierProfiles",
   "asteroidBeltGates",
+  "environmentalElements",
 ]);
 
 function isSupportedKind(value: string): value is UploadedDataFileKind {
