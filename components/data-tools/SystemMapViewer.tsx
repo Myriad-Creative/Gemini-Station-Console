@@ -663,8 +663,12 @@ const AsteroidFieldLayer = memo(function AsteroidFieldLayer({ asteroids }: { ast
         <use
           key={asteroid.key}
           href={`#system-map-asteroid-${asteroid.spriteIndex}`}
+          x={asteroid.x - asteroid.size / 2}
+          y={asteroid.y - asteroid.size / 2}
+          width={asteroid.size}
+          height={asteroid.size}
           opacity={asteroid.opacity}
-          transform={`translate(${asteroid.x - asteroid.size / 2} ${asteroid.y - asteroid.size / 2}) rotate(${asteroid.rotation} ${asteroid.size / 2} ${asteroid.size / 2}) scale(${asteroid.size})`}
+          transform={`rotate(${asteroid.rotation} ${asteroid.x} ${asteroid.y})`}
           style={{ pointerEvents: "none" }}
         />
       ))}
@@ -706,9 +710,9 @@ function barrierStrokeColor(kind: SystemMapSceneBarrier["visualKind"]) {
 
 function barrierBaseSpriteSize(kind: SystemMapSceneBarrier["visualKind"], seed: number) {
   if (kind === "gas") return 2800 + seededUnit(seed + 13) * 5600;
-  if (kind === "asteroid") return 560 + seededUnit(seed + 13) * 1220;
-  if (kind === "debris") return 720 + seededUnit(seed + 13) * 1600;
-  return 900 + seededUnit(seed + 13) * 1400;
+  if (kind === "asteroid") return 160 + seededUnit(seed + 13) * 520;
+  if (kind === "debris") return 260 + seededUnit(seed + 13) * 720;
+  return 320 + seededUnit(seed + 13) * 680;
 }
 
 function barrierVisualStep(kind: SystemMapSceneBarrier["visualKind"], visualWidth: number, density: number) {
@@ -813,8 +817,12 @@ const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query }: { 
               <use
                 key={visual.key}
                 href={`#${barrierSymbolId(visual.sprite)}`}
+                x={visual.x - visual.size / 2}
+                y={visual.y - visual.size / 2}
+                width={visual.size}
+                height={visual.size}
                 opacity={visual.opacity}
-                transform={`translate(${visual.x - visual.size / 2} ${visual.y - visual.size / 2}) rotate(${visual.rotation} ${visual.size / 2} ${visual.size / 2}) scale(${visual.size})`}
+                transform={`rotate(${visual.rotation} ${visual.x} ${visual.y})`}
               />
             ))}
           </g>
