@@ -78,6 +78,30 @@ type EnvironmentalBarrierForm = {
   affectPlayers: boolean;
   affectNpcs: boolean;
 };
+type EnvironmentalRegionForm = {
+  mode: "create" | "edit";
+  originalId: string;
+  name: string;
+  id: string;
+  active: boolean;
+  sectorX: string;
+  sectorY: string;
+  profileId: string;
+  shape: "polygon" | "ellipse";
+  tags: string;
+  notes: string;
+  visualWidthMultiplier: string;
+  visualDensityMultiplier: string;
+  visualScaleMultiplier: string;
+  visualAlphaMultiplier: string;
+  statusEffectId: string;
+  removeEffectOnExit: boolean;
+  affectPlayers: boolean;
+  affectNpcs: boolean;
+  width: string;
+  height: string;
+  rotationDeg: string;
+};
 type RouteDraftForm = {
   mode: "create" | "edit";
   originalId: string;
@@ -174,6 +198,14 @@ type EnvironmentalDragState = {
   moved: boolean;
 };
 type EnvironmentalPointDragState = {
+  elementId: string;
+  pointIndex: number;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  pointStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type EnvironmentalRegionPointDragState = {
   elementId: string;
   pointIndex: number;
   startScreen: SystemMapVec;
@@ -316,6 +348,10 @@ function sectorLocalToWorld(sector: SystemMapVec, local: SystemMapVec, sectorSiz
   };
 }
 
+function localPointsToWorld(sector: SystemMapVec, points: SystemMapVec[], sectorSize = DEFAULT_SECTOR_SIZE) {
+  return points.map((point) => sectorLocalToWorld(sector, point, sectorSize));
+}
+
 function translateVec(value: SystemMapVec, delta: SystemMapVec): SystemMapVec {
   return {
     x: value.x + delta.x,
@@ -402,6 +438,21 @@ function pointInRect(point: SystemMapVec, rect: SystemMapRect) {
   return point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
 }
 
+function averagePoints(points: SystemMapVec[]): SystemMapVec {
+  if (!points.length) return { x: 0, y: 0 };
+  const total = points.reduce(
+    (sum, point) => ({
+      x: sum.x + point.x,
+      y: sum.y + point.y,
+    }),
+    { x: 0, y: 0 },
+  );
+  return {
+    x: total.x / points.length,
+    y: total.y / points.length,
+  };
+}
+
 function pointInZoneBounds(point: SystemMapVec, zone: SystemMapZone) {
   const halfWidth = Math.max(1, zone.bounds.width / 2);
   const halfHeight = Math.max(1, zone.bounds.height / 2);
@@ -438,6 +489,36 @@ function pointInRotatedEllipse(point: SystemMapVec, center: SystemMapVec, width:
   const rx = Math.max(1, width / 2);
   const ry = Math.max(1, height / 2);
   return (localX * localX) / (rx * rx) + (localY * localY) / (ry * ry) <= 1;
+}
+
+function ellipsePoints(center: SystemMapVec, width: number, height: number, rotationDeg: number, samples = 48) {
+  const radians = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const rx = Math.max(1, width / 2);
+  const ry = Math.max(1, height / 2);
+  const points: SystemMapVec[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    const theta = (index / samples) * Math.PI * 2;
+    const x = Math.cos(theta) * rx;
+    const y = Math.sin(theta) * ry;
+    points.push({
+      x: center.x + x * cos - y * sin,
+      y: center.y + x * sin + y * cos,
+    });
+  }
+  return points;
+}
+
+function defaultEnvironmentProfile(
+  profiles: SystemMapEnvironmentProfile[],
+  preferredKinds: Array<SystemMapEnvironmentProfile["visualKind"]> = ["asteroid", "debris", "gas", "unknown"],
+) {
+  for (const kind of preferredKinds) {
+    const match = profiles.find((profile) => profile.visualKind === kind);
+    if (match) return match;
+  }
+  return profiles[0];
 }
 
 function environmentalElementMatches(element: SystemMapEnvironmentalElement, query: string) {
@@ -1044,6 +1125,18 @@ function barrierWorldCenter(barrier: SystemMapEnvironmentalHazardBarrier): Syste
   };
 }
 
+function environmentalRegionWorldAnchor(region: SystemMapEnvironmentalRegion): SystemMapVec {
+  if (region.worldCenter) return region.worldCenter;
+  if (region.worldPoints.length) return averagePoints(region.worldPoints);
+  return sectorLocalToWorld(region.sector, { x: 0, y: 0 });
+}
+
+function environmentalRegionLocalCenter(region: SystemMapEnvironmentalRegion): SystemMapVec {
+  if (region.center) return region.center;
+  if (region.points.length) return averagePoints(region.points);
+  return { x: 0, y: 0 };
+}
+
 function createEnvironmentalBarrierDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapEnvironmentalHazardBarrier {
   const roundedWorld = {
     x: Math.round(world.x),
@@ -1051,14 +1144,12 @@ function createEnvironmentalBarrierDraftFromPoint(world: SystemMapVec, payload: 
   };
   const id = createUniqueId(sanitizeEnvironmentalElementId("New Hazard Barrier"), existingIds);
   const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  const profile = defaultEnvironmentProfile(payload.environmentProfiles, ["asteroid", "debris", "gas", "unknown"]);
   const points = [
     { x: Math.round(local.x - 6000), y: Math.round(local.y) },
     { x: Math.round(local.x + 6000), y: Math.round(local.y) },
   ];
-  const worldPoints = points.map((point) => ({
-    x: sector.x * payload.config.sectorSize + point.x,
-    y: sector.y * payload.config.sectorSize + point.y,
-  }));
+  const worldPoints = localPointsToWorld(sector, points, payload.config.sectorSize);
   return {
     id,
     originalId: id,
@@ -1070,10 +1161,10 @@ function createEnvironmentalBarrierDraftFromPoint(world: SystemMapVec, payload: 
     sector,
     tags: [],
     notes: "",
-    profileId: payload.environmentProfiles[0]?.id ?? "asteroid_debris_wall",
-    baseStageProfile: payload.environmentProfiles[0]?.baseStageProfile ?? "",
-    visualKind: payload.environmentProfiles[0]?.visualKind ?? "unknown",
-    materialPaths: payload.environmentProfiles[0]?.materialPaths ?? [],
+    profileId: profile?.id ?? "asteroid_debris_wall",
+    baseStageProfile: profile?.baseStageProfile ?? "",
+    visualKind: profile?.visualKind ?? "unknown",
+    materialPaths: profile?.materialPaths ?? [],
     visualWidthMultiplier: 1,
     visualDensityMultiplier: 1,
     visualScaleMultiplier: 1,
@@ -1088,6 +1179,101 @@ function createEnvironmentalBarrierDraftFromPoint(world: SystemMapVec, payload: 
     blockerWidthRatio: 1,
     points,
     worldPoints,
+  };
+}
+
+function createEnvironmentalPolygonDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapEnvironmentalRegion {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeEnvironmentalElementId("New Polygon Region"), existingIds);
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  const profile = defaultEnvironmentProfile(payload.environmentProfiles, ["gas", "debris", "asteroid", "unknown"]);
+  const points = [
+    { x: Math.round(local.x - 12000), y: Math.round(local.y - 7000) },
+    { x: Math.round(local.x + 11000), y: Math.round(local.y - 9500) },
+    { x: Math.round(local.x + 15000), y: Math.round(local.y + 8000) },
+    { x: Math.round(local.x - 9000), y: Math.round(local.y + 11000) },
+  ];
+  const worldPoints = localPointsToWorld(sector, points, payload.config.sectorSize);
+  return {
+    id,
+    originalId: id,
+    draft: true,
+    modified: false,
+    type: "environment_region",
+    name: "New Polygon Region",
+    active: true,
+    sector,
+    tags: [],
+    notes: "",
+    profileId: profile?.id ?? "asteroid_debris_wall",
+    baseStageProfile: profile?.baseStageProfile ?? "",
+    visualKind: profile?.visualKind ?? "unknown",
+    materialPaths: profile?.materialPaths ?? [],
+    visualWidthMultiplier: 1,
+    visualDensityMultiplier: 1,
+    visualScaleMultiplier: 1,
+    visualAlphaMultiplier: 1,
+    statusEffectId: -1,
+    removeEffectOnExit: true,
+    affectPlayers: true,
+    affectNpcs: true,
+    shape: "polygon",
+    points,
+    worldPoints,
+    center: null,
+    worldCenter: averagePoints(worldPoints),
+    width: 24000,
+    height: 20000,
+    rotationDeg: 0,
+  };
+}
+
+function createEnvironmentalEllipseDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapEnvironmentalRegion {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeEnvironmentalElementId("New Ellipse Region"), existingIds);
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  const profile = defaultEnvironmentProfile(payload.environmentProfiles, ["gas", "debris", "asteroid", "unknown"]);
+  const width = 28000;
+  const height = 18000;
+  const rotationDeg = 0;
+  const worldCenter = sectorLocalToWorld(sector, local, payload.config.sectorSize);
+  return {
+    id,
+    originalId: id,
+    draft: true,
+    modified: false,
+    type: "environment_region",
+    name: "New Ellipse Region",
+    active: true,
+    sector,
+    tags: [],
+    notes: "",
+    profileId: profile?.id ?? "asteroid_debris_wall",
+    baseStageProfile: profile?.baseStageProfile ?? "",
+    visualKind: profile?.visualKind ?? "unknown",
+    materialPaths: profile?.materialPaths ?? [],
+    visualWidthMultiplier: 1,
+    visualDensityMultiplier: 1,
+    visualScaleMultiplier: 1,
+    visualAlphaMultiplier: 1,
+    statusEffectId: -1,
+    removeEffectOnExit: true,
+    affectPlayers: true,
+    affectNpcs: true,
+    shape: "ellipse",
+    points: [],
+    worldPoints: localPointsToWorld(sector, ellipsePoints(local, width, height, rotationDeg), payload.config.sectorSize),
+    center: local,
+    worldCenter,
+    width,
+    height,
+    rotationDeg,
   };
 }
 
@@ -1115,6 +1301,33 @@ function environmentalBarrierToForm(barrier: SystemMapEnvironmentalHazardBarrier
     removeEffectOnExit: barrier.removeEffectOnExit,
     affectPlayers: barrier.affectPlayers,
     affectNpcs: barrier.affectNpcs,
+  };
+}
+
+function environmentalRegionToForm(region: SystemMapEnvironmentalRegion, mode: EnvironmentalRegionForm["mode"]): EnvironmentalRegionForm {
+  return {
+    mode,
+    originalId: environmentalElementIdentity(region),
+    name: region.name || region.id,
+    id: region.id,
+    active: region.active,
+    sectorX: numberInputValue(region.sector.x),
+    sectorY: numberInputValue(region.sector.y),
+    profileId: region.profileId,
+    shape: region.shape,
+    tags: region.tags.join(", "),
+    notes: region.notes,
+    visualWidthMultiplier: numberInputValue(region.visualWidthMultiplier),
+    visualDensityMultiplier: numberInputValue(region.visualDensityMultiplier),
+    visualScaleMultiplier: numberInputValue(region.visualScaleMultiplier),
+    visualAlphaMultiplier: numberInputValue(region.visualAlphaMultiplier),
+    statusEffectId: numberInputValue(region.statusEffectId),
+    removeEffectOnExit: region.removeEffectOnExit,
+    affectPlayers: region.affectPlayers,
+    affectNpcs: region.affectNpcs,
+    width: numberInputValue(region.width),
+    height: numberInputValue(region.height),
+    rotationDeg: numberInputValue(region.rotationDeg),
   };
 }
 
@@ -1206,6 +1419,123 @@ function withEnvironmentalBarrierForm(
   };
 }
 
+function withEnvironmentalRegionForm(
+  form: EnvironmentalRegionForm,
+  region: SystemMapEnvironmentalRegion,
+  profiles: SystemMapEnvironmentProfile[],
+  sectorSize: number,
+  existingElements: SystemMapEnvironmentalElement[],
+): { error: string; region: null; form: null } | { error: ""; region: SystemMapEnvironmentalRegion; form: EnvironmentalRegionForm } {
+  const id = sanitizeEnvironmentalElementId(form.id);
+  const sectorX = Number(form.sectorX);
+  const sectorY = Number(form.sectorY);
+  const visualWidthMultiplier = Number(form.visualWidthMultiplier);
+  const visualDensityMultiplier = Number(form.visualDensityMultiplier);
+  const visualScaleMultiplier = Number(form.visualScaleMultiplier);
+  const visualAlphaMultiplier = Number(form.visualAlphaMultiplier);
+  const statusEffectId = Number(form.statusEffectId);
+  const width = Number(form.width);
+  const height = Number(form.height);
+  const rotationDeg = Number(form.rotationDeg);
+  if (!form.name.trim()) return { error: "Region name is required.", region: null, form: null };
+  if (!id) return { error: "Region ID is required.", region: null, form: null };
+  if (!Number.isFinite(sectorX) || !Number.isFinite(sectorY)) {
+    return { error: "Sector coordinates must be valid numbers.", region: null, form: null };
+  }
+  if ([visualWidthMultiplier, visualDensityMultiplier, visualScaleMultiplier, visualAlphaMultiplier, statusEffectId].some((value) => !Number.isFinite(value))) {
+    return { error: "Visual multipliers and status effect ID must be valid numbers.", region: null, form: null };
+  }
+  if (form.shape === "ellipse" && (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(rotationDeg) || width <= 0 || height <= 0)) {
+    return { error: "Ellipse width, height, and rotation must be valid numbers, and width/height must be greater than zero.", region: null, form: null };
+  }
+  const idTaken = existingElements.some((element) => environmentalElementIdentity(element) !== form.originalId && element.id === id);
+  if (idTaken) return { error: `Region ID "${id}" already exists.`, region: null, form: null };
+  const profile = profiles.find((entry) => entry.id === form.profileId) ?? profiles[0];
+  if (!profile) return { error: "At least one environment profile is required before authoring regions.", region: null, form: null };
+
+  const sector = {
+    x: Math.round(sectorX),
+    y: Math.round(sectorY),
+  };
+
+  let nextRegion: SystemMapEnvironmentalRegion;
+  if (form.shape === "polygon") {
+    if (region.points.length < 3) {
+      return { error: "Polygon regions need at least three points before saving.", region: null, form: null };
+    }
+    const worldPoints = localPointsToWorld(sector, region.points, sectorSize);
+    nextRegion = {
+      ...region,
+      shape: "polygon",
+      points: region.points,
+      worldPoints,
+      center: null,
+      worldCenter: averagePoints(worldPoints),
+      width: region.width,
+      height: region.height,
+      rotationDeg: region.rotationDeg,
+    };
+  } else {
+    const center = region.center ?? environmentalRegionLocalCenter(region);
+    const worldCenter = sectorLocalToWorld(sector, center, sectorSize);
+    nextRegion = {
+      ...region,
+      shape: "ellipse",
+      points: [],
+      center,
+      worldCenter,
+      width,
+      height,
+      rotationDeg,
+      worldPoints: localPointsToWorld(sector, ellipsePoints(center, width, height, rotationDeg), sectorSize),
+    };
+  }
+
+  return {
+    error: "",
+    form: {
+      ...form,
+      id,
+      sectorX: numberInputValue(sector.x),
+      sectorY: numberInputValue(sector.y),
+      visualWidthMultiplier: numberInputValue(visualWidthMultiplier),
+      visualDensityMultiplier: numberInputValue(visualDensityMultiplier),
+      visualScaleMultiplier: numberInputValue(visualScaleMultiplier),
+      visualAlphaMultiplier: numberInputValue(visualAlphaMultiplier),
+      statusEffectId: numberInputValue(statusEffectId),
+      width: numberInputValue(form.shape === "ellipse" ? width : nextRegion.width),
+      height: numberInputValue(form.shape === "ellipse" ? height : nextRegion.height),
+      rotationDeg: numberInputValue(form.shape === "ellipse" ? rotationDeg : nextRegion.rotationDeg),
+    },
+    region: {
+      ...nextRegion,
+      id,
+      name: form.name.trim(),
+      active: form.active,
+      sector,
+      tags: form.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      notes: form.notes.trim(),
+      profileId: profile.id,
+      baseStageProfile: profile.baseStageProfile,
+      visualKind: profile.visualKind,
+      materialPaths: profile.materialPaths,
+      visualWidthMultiplier,
+      visualDensityMultiplier,
+      visualScaleMultiplier,
+      visualAlphaMultiplier,
+      statusEffectId,
+      removeEffectOnExit: form.removeEffectOnExit,
+      affectPlayers: form.affectPlayers,
+      affectNpcs: form.affectNpcs,
+      modified: region.draft ? region.modified : true,
+      originalId: region.draft ? region.originalId : region.originalId ?? region.id,
+    },
+  };
+}
+
 function moveEnvironmentalBarrierPoint(
   barrier: SystemMapEnvironmentalHazardBarrier,
   pointIndex: number,
@@ -1252,6 +1582,73 @@ function moveEnvironmentalBarrierByDelta(
     worldPoints: nextWorldPoints,
     modified: barrier.draft ? barrier.modified : true,
     originalId: barrier.draft ? barrier.originalId : barrier.originalId ?? barrier.id,
+  };
+}
+
+function moveEnvironmentalRegionPoint(
+  region: SystemMapEnvironmentalRegion,
+  pointIndex: number,
+  world: SystemMapVec,
+  sectorSize: number,
+): SystemMapEnvironmentalRegion {
+  if (region.shape !== "polygon") return region;
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const nextLocal = {
+    x: Math.round(roundedWorld.x - region.sector.x * sectorSize),
+    y: Math.round(roundedWorld.y - region.sector.y * sectorSize),
+  };
+  const points = region.points.map((point, index) => (index === pointIndex ? nextLocal : point));
+  const worldPoints = region.worldPoints.map((point, index) => (index === pointIndex ? roundedWorld : point));
+  return {
+    ...region,
+    points,
+    worldPoints,
+    worldCenter: averagePoints(worldPoints),
+    modified: region.draft ? region.modified : true,
+    originalId: region.draft ? region.originalId : region.originalId ?? region.id,
+  };
+}
+
+function moveEnvironmentalRegionByDelta(
+  region: SystemMapEnvironmentalRegion,
+  delta: SystemMapVec,
+  payload: SystemMapPayload,
+): SystemMapEnvironmentalRegion {
+  if (region.shape === "ellipse") {
+    const nextWorldCenter = translateVec(region.worldCenter ?? environmentalRegionWorldAnchor(region), delta);
+    const roundedWorldCenter = {
+      x: Math.round(nextWorldCenter.x),
+      y: Math.round(nextWorldCenter.y),
+    };
+    const { sector, local } = worldToSectorLocal(roundedWorldCenter, payload.config.sectorSize, payload.config.sectorHalfExtent);
+    return {
+      ...region,
+      sector,
+      center: local,
+      worldCenter: roundedWorldCenter,
+      worldPoints: localPointsToWorld(sector, ellipsePoints(local, region.width, region.height, region.rotationDeg), payload.config.sectorSize),
+      modified: region.draft ? region.modified : true,
+      originalId: region.draft ? region.originalId : region.originalId ?? region.id,
+    };
+  }
+
+  const nextWorldPoints = region.worldPoints.map((point) => ({
+    x: Math.round(point.x + delta.x),
+    y: Math.round(point.y + delta.y),
+  }));
+  const center = averagePoints(nextWorldPoints);
+  const { sector } = worldToSectorLocal(center, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    ...region,
+    sector,
+    points: worldPointsToSectorLocal(nextWorldPoints, sector, payload.config.sectorSize),
+    worldPoints: nextWorldPoints,
+    worldCenter: averagePoints(nextWorldPoints),
+    modified: region.draft ? region.modified : true,
+    originalId: region.draft ? region.originalId : region.originalId ?? region.id,
   };
 }
 
@@ -1837,6 +2234,7 @@ export default function SystemMapViewer() {
   const gateDragRef = useRef<GateDragState | null>(null);
   const environmentalDragRef = useRef<EnvironmentalDragState | null>(null);
   const environmentalPointDragRef = useRef<EnvironmentalPointDragState | null>(null);
+  const environmentalRegionPointDragRef = useRef<EnvironmentalRegionPointDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -1855,6 +2253,7 @@ export default function SystemMapViewer() {
   const [routeForm, setRouteForm] = useState<RouteDraftForm | null>(null);
   const [gateForm, setGateForm] = useState<GateDraftForm | null>(null);
   const [environmentalBarrierForm, setEnvironmentalBarrierForm] = useState<EnvironmentalBarrierForm | null>(null);
+  const [environmentalRegionForm, setEnvironmentalRegionForm] = useState<EnvironmentalRegionForm | null>(null);
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
@@ -1867,12 +2266,14 @@ export default function SystemMapViewer() {
   const [pendingRouteStart, setPendingRouteStart] = useState(false);
   const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
   const [activeEnvironmentalPointAddId, setActiveEnvironmentalPointAddId] = useState<string | null>(null);
+  const [activeEnvironmentalRegionPointAddId, setActiveEnvironmentalRegionPointAddId] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
   const [draggingRouteHandle, setDraggingRouteHandle] = useState<string | null>(null);
   const [draggingGateId, setDraggingGateId] = useState<string | null>(null);
   const [draggingEnvironmentalId, setDraggingEnvironmentalId] = useState<string | null>(null);
   const [draggingEnvironmentalPoint, setDraggingEnvironmentalPoint] = useState<string | null>(null);
+  const [draggingEnvironmentalRegionPoint, setDraggingEnvironmentalRegionPoint] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
@@ -2115,6 +2516,16 @@ export default function SystemMapViewer() {
               }
             : current,
         );
+      } else {
+        setEnvironmentalRegionForm((current) =>
+          current?.originalId === elementId
+            ? {
+                ...current,
+                sectorX: numberInputValue(nextElement.sector.x),
+                sectorY: numberInputValue(nextElement.sector.y),
+              }
+            : current,
+        );
       }
       return;
     }
@@ -2131,6 +2542,16 @@ export default function SystemMapViewer() {
     });
     if (nextElement.type === "hazard_barrier") {
       setEnvironmentalBarrierForm((current) =>
+        current?.originalId === elementId
+          ? {
+              ...current,
+              sectorX: numberInputValue(nextElement.sector.x),
+              sectorY: numberInputValue(nextElement.sector.y),
+            }
+          : current,
+      );
+    } else {
+      setEnvironmentalRegionForm((current) =>
         current?.originalId === elementId
           ? {
               ...current,
@@ -2156,6 +2577,19 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findEnvironmentalRegionPointAtWorld(world: SystemMapVec) {
+    if (!environmentalRegionForm) return null;
+    const activeElement = mapEnvironmentalElements.find((element) => environmentalElementIdentity(element) === environmentalRegionForm.originalId);
+    if (!activeElement || activeElement.type !== "environment_region" || activeElement.shape !== "polygon") return null;
+    const screenHitRadius = 11 / camera.zoom;
+    for (let index = activeElement.worldPoints.length - 1; index >= 0; index -= 1) {
+      if (distance(world, activeElement.worldPoints[index]) <= screenHitRadius) {
+        return { region: activeElement, pointIndex: index, point: activeElement.worldPoints[index] };
+      }
+    }
+    return null;
+  }
+
   function findEnvironmentalBarrierAtWorld(world: SystemMapVec) {
     for (let index = filteredEnvironmentalBarriers.length - 1; index >= 0; index -= 1) {
       const barrier = filteredEnvironmentalBarriers[index];
@@ -2170,6 +2604,18 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findEnvironmentalRegionAtWorld(world: SystemMapVec) {
+    for (let index = filteredEnvironmentalRegions.length - 1; index >= 0; index -= 1) {
+      const region = filteredEnvironmentalRegions[index];
+      const hit =
+        region.shape === "ellipse" && region.worldCenter
+          ? pointInRotatedEllipse(world, region.worldCenter, region.width, region.height, region.rotationDeg)
+          : pointInPolygon(world, region.worldPoints);
+      if (hit) return region;
+    }
+    return null;
+  }
+
   function updateEnvironmentalBarrierPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
@@ -2178,11 +2624,19 @@ export default function SystemMapViewer() {
     });
   }
 
-  function updateEnvironmentalBarrierPosition(elementId: string, delta: SystemMapVec) {
+  function updateEnvironmentalRegionPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
-      if (element.type !== "hazard_barrier") return element;
-      return moveEnvironmentalBarrierByDelta(element, delta, payload);
+      if (element.type !== "environment_region") return element;
+      return moveEnvironmentalRegionPoint(element, pointIndex, world, payload.config.sectorSize);
+    });
+  }
+
+  function updateEnvironmentalElementPosition(elementId: string, delta: SystemMapVec) {
+    if (!payload) return;
+    updateEnvironmentalElementInMap(elementId, (element) => {
+      if (element.type === "hazard_barrier") return moveEnvironmentalBarrierByDelta(element, delta, payload);
+      return moveEnvironmentalRegionByDelta(element, delta, payload);
     });
   }
 
@@ -2255,7 +2709,9 @@ export default function SystemMapViewer() {
     setGateForm(null);
     setRouteForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setZoneForm({
       mode: "edit",
       originalId: zone.originalId ?? zone.id,
@@ -2283,7 +2739,9 @@ export default function SystemMapViewer() {
     setGateForm(null);
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
     setRouteIdManuallyEdited(true);
     setActiveRouteAddId(null);
@@ -2296,7 +2754,9 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setGateForm(gateToForm(gate));
     setContextMenu(null);
     setStatus(null);
@@ -2306,9 +2766,24 @@ export default function SystemMapViewer() {
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
+    setEnvironmentalRegionForm(null);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, barrier.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openEnvironmentalRegionEditor(region: SystemMapEnvironmentalRegion) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(environmentalRegionToForm(region, region.draft ? "create" : "edit"));
+    setEnvironmentalIdManuallyEdited(true);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setContextMenu(null);
     setStatus(null);
   }
@@ -2319,19 +2794,55 @@ export default function SystemMapViewer() {
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
+    setEnvironmentalRegionForm(null);
     setDraftEnvironmentalElements((current) => [...current, barrier]);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, "create"));
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setContextMenu(null);
     setStatus({ tone: "success", message: `Added draft barrier "${barrier.name}". Drag its end points or use Add Point On Map before saving.` });
+  }
+
+  function openCreateEnvironmentalPolygonForm(world: SystemMapVec) {
+    if (!payload) return;
+    const region = createEnvironmentalPolygonDraftFromPoint(world, payload, existingEnvironmentalIds);
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setDraftEnvironmentalElements((current) => [...current, region]);
+    setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
+    setEnvironmentalIdManuallyEdited(false);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setContextMenu(null);
+    setStatus({ tone: "success", message: `Added draft polygon region "${region.name}". Drag its vertices or add points on the map, then save to build.` });
+  }
+
+  function openCreateEnvironmentalEllipseForm(world: SystemMapVec) {
+    if (!payload) return;
+    const region = createEnvironmentalEllipseDraftFromPoint(world, payload, existingEnvironmentalIds);
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setDraftEnvironmentalElements((current) => [...current, region]);
+    setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
+    setEnvironmentalIdManuallyEdited(false);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setContextMenu(null);
+    setStatus({ tone: "success", message: `Added draft ellipse region "${region.name}". Adjust its size and profile, then save to build.` });
   }
 
   function startRouteDraft(world: SystemMapVec) {
     if (!payload) return;
     const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     setDraftRoutes((current) => [...current, route]);
     setRouteForm(routeToForm(route, "create"));
     setRouteIdManuallyEdited(false);
@@ -2391,6 +2902,21 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    const targetEnvironmentalRegionPoint = toggles.barriers ? findEnvironmentalRegionPointAtWorld(world) : null;
+    if (targetEnvironmentalRegionPoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalRegionPointDragRef.current = {
+        elementId: environmentalElementIdentity(targetEnvironmentalRegionPoint.region),
+        pointIndex: targetEnvironmentalRegionPoint.pointIndex,
+        startScreen: screen,
+        startWorld: world,
+        pointStartWorld: targetEnvironmentalRegionPoint.point,
+        moved: false,
+      };
+      setDraggingEnvironmentalRegionPoint(`${environmentalElementIdentity(targetEnvironmentalRegionPoint.region)}:${targetEnvironmentalRegionPoint.pointIndex}`);
+      clearHover();
+      return;
+    }
     const targetEnvironmentalPoint = toggles.barriers ? findEnvironmentalBarrierPointAtWorld(world) : null;
     if (targetEnvironmentalPoint) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -2403,6 +2929,13 @@ export default function SystemMapViewer() {
         moved: false,
       };
       setDraggingEnvironmentalPoint(`${environmentalElementIdentity(targetEnvironmentalPoint.barrier)}:${targetEnvironmentalPoint.pointIndex}`);
+      clearHover();
+      return;
+    }
+    if (activeEnvironmentalRegionPointAddId) {
+      addEnvironmentalRegionPointAtWorld(activeEnvironmentalRegionPointAddId, world);
+      setActiveEnvironmentalRegionPointAddId(null);
+      setStatus({ tone: "success", message: "Added a new polygon point. Drag it to refine the region, then save to build when ready." });
       clearHover();
       return;
     }
@@ -2475,6 +3008,24 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
+    const targetEnvironmentalRegion = toggles.barriers ? findEnvironmentalRegionAtWorld(world) : null;
+    if (targetEnvironmentalRegion && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalDragRef.current = {
+        elementId: environmentalElementIdentity(targetEnvironmentalRegion),
+        startScreen: screen,
+        startWorld: world,
+        moved: false,
+      };
+      setDraggingEnvironmentalId(environmentalElementIdentity(targetEnvironmentalRegion));
+      clearHover();
+      return;
+    }
+    if (targetEnvironmentalRegion) {
+      openEnvironmentalRegionEditor(targetEnvironmentalRegion);
+      clearHover();
+      return;
+    }
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -2527,11 +3078,20 @@ export default function SystemMapViewer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    const environmentalRegionPointDrag = environmentalRegionPointDragRef.current;
+    if (environmentalRegionPointDrag) {
+      const region = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalRegionPointDrag.elementId);
+      if (environmentalRegionPointDrag.moved) {
+        setStatus({ tone: "success", message: `Moved point ${environmentalRegionPointDrag.pointIndex + 1} on "${region?.name || environmentalRegionPointDrag.elementId}". Use Save Changes To Build to write it into EnvironmentalElements.json.` });
+      } else if (region?.type === "environment_region") {
+        openEnvironmentalRegionEditor(region);
+      }
+    }
     const environmentalPointDrag = environmentalPointDragRef.current;
     if (environmentalPointDrag) {
       const barrier = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalPointDrag.elementId);
       if (environmentalPointDrag.moved) {
-        setStatus({ tone: "success", message: `Moved point ${environmentalPointDrag.pointIndex + 1} on "${barrier?.name || environmentalPointDrag.elementId}". Save Environmental Changes To Build to write EnvironmentalElements.json.` });
+        setStatus({ tone: "success", message: `Moved point ${environmentalPointDrag.pointIndex + 1} on "${barrier?.name || environmentalPointDrag.elementId}". Use Save Changes To Build to write it into EnvironmentalElements.json.` });
       } else if (barrier?.type === "hazard_barrier") {
         openEnvironmentalBarrierEditor(barrier);
       }
@@ -2540,7 +3100,7 @@ export default function SystemMapViewer() {
     if (routeDrag) {
       const route = mapRoutes.find((entry) => routeIdentity(entry) === routeDrag.routeId);
       if (routeDrag.moved) {
-        setStatus({ tone: "success", message: `Moved ${routeDrag.handleKey} on "${route?.name || routeDrag.routeId}". Use Save Route Changes To Build to write it into trade_routes.json.` });
+        setStatus({ tone: "success", message: `Moved ${routeDrag.handleKey} on "${route?.name || routeDrag.routeId}". Use Save Changes To Build to write it into trade_routes.json.` });
       } else if (route) {
         openRouteEditor(route);
       }
@@ -2550,7 +3110,7 @@ export default function SystemMapViewer() {
       const zone = mapZones.find((entry) => zoneIdentity(entry) === mobDrag.zoneId);
       const mob = zone?.mobs.find((entry) => mobIdentity(entry) === mobDrag.mobKey);
       if (mobDrag.moved) {
-        setStatus({ tone: "success", message: `Moved "${mob?.displayName || mobDrag.mobKey}". Use Save Zone Changes To Build to write the spawn position into Zones.json.` });
+        setStatus({ tone: "success", message: `Moved "${mob?.displayName || mobDrag.mobKey}". Use Save Changes To Build to write the spawn position into Zones.json.` });
       } else if (zone && mob) {
         openMobSpawnEditor(zone, mob);
       }
@@ -2558,28 +3118,32 @@ export default function SystemMapViewer() {
     const zoneDrag = zoneDragRef.current;
     if (zoneDrag?.moved) {
       const zone = mapZones.find((entry) => entry.id === zoneDrag.zoneId);
-      setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Zone Changes To Build to write the new coordinates into Zones.json.` });
+      setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Changes To Build to write the new coordinates into Zones.json.` });
     }
     const gateDrag = gateDragRef.current;
     if (gateDrag) {
       const gate = mapGates.find((entry) => gateIdentity(entry) === gateDrag.gateId);
       if (gateDrag.moved) {
-        setStatus({ tone: "success", message: `Moved "${gate?.name || gateDrag.gateId}". Use Save Gate Changes To Build to write the new angle into AsteroidBeltGates.json.` });
+        setStatus({ tone: "success", message: `Moved "${gate?.name || gateDrag.gateId}". Use Save Changes To Build to write the new angle into AsteroidBeltGates.json.` });
       } else if (gate) {
         openGateEditor(gate);
       }
     }
     const environmentalDrag = environmentalDragRef.current;
     if (environmentalDrag) {
-      const barrier = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDrag.elementId);
+      const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDrag.elementId);
       if (environmentalDrag.moved) {
-        setStatus({ tone: "success", message: `Moved "${barrier?.name || environmentalDrag.elementId}". Save Environmental Changes To Build to write EnvironmentalElements.json.` });
-      } else if (barrier?.type === "hazard_barrier") {
-        openEnvironmentalBarrierEditor(barrier);
+        setStatus({ tone: "success", message: `Moved "${element?.name || environmentalDrag.elementId}". Use Save Changes To Build to write it into EnvironmentalElements.json.` });
+      } else if (element?.type === "hazard_barrier") {
+        openEnvironmentalBarrierEditor(element);
+      } else if (element?.type === "environment_region") {
+        openEnvironmentalRegionEditor(element);
       }
     }
     mobDragRef.current = null;
     setDraggingMobKey(null);
+    environmentalRegionPointDragRef.current = null;
+    setDraggingEnvironmentalRegionPoint(null);
     environmentalPointDragRef.current = null;
     setDraggingEnvironmentalPoint(null);
     routeDragRef.current = null;
@@ -2937,6 +3501,26 @@ export default function SystemMapViewer() {
       return;
     }
 
+    const environmentalRegionPointDrag = environmentalRegionPointDragRef.current;
+    if (environmentalRegionPointDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: environmentalRegionPointDrag.pointStartWorld.x + world.x - environmentalRegionPointDrag.startWorld.x,
+        y: environmentalRegionPointDrag.pointStartWorld.y + world.y - environmentalRegionPointDrag.startWorld.y,
+      };
+      if (!environmentalRegionPointDrag.moved && distance(screen, environmentalRegionPointDrag.startScreen) > 4) {
+        environmentalRegionPointDrag.moved = true;
+      }
+      updateEnvironmentalRegionPointPosition(environmentalRegionPointDrag.elementId, environmentalRegionPointDrag.pointIndex, nextWorld);
+      clearHover();
+      return;
+    }
+
     const environmentalPointDrag = environmentalPointDragRef.current;
     if (environmentalPointDrag) {
       const rect = event.currentTarget.getBoundingClientRect();
@@ -2972,7 +3556,7 @@ export default function SystemMapViewer() {
       if (!environmentalDrag.moved && distance(screen, environmentalDrag.startScreen) > 4) {
         environmentalDrag.moved = true;
       }
-      updateEnvironmentalBarrierPosition(environmentalDrag.elementId, delta);
+      updateEnvironmentalElementPosition(environmentalDrag.elementId, delta);
       clearHover();
       return;
     }
@@ -3087,7 +3671,9 @@ export default function SystemMapViewer() {
 
   function openCreateZoneForm(world: SystemMapVec) {
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
     setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
     const defaultName = "New Zone";
     setZoneForm({
       mode: "create",
@@ -3208,6 +3794,23 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
   }
 
+  function handleEnvironmentalRegionNameChange(name: string) {
+    setEnvironmentalRegionForm((current) => {
+      if (!current) return current;
+      const reservedIds = existingEnvironmentalIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        name,
+        id: current.mode === "create" && !environmentalIdManuallyEdited ? createUniqueId(sanitizeEnvironmentalElementId(name), reservedIds) : current.id,
+      };
+    });
+  }
+
+  function handleEnvironmentalRegionIdChange(id: string) {
+    setEnvironmentalIdManuallyEdited(true);
+    setEnvironmentalRegionForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
+  }
+
   function applyRouteForm() {
     if (!routeForm) return;
     const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
@@ -3223,7 +3826,7 @@ export default function SystemMapViewer() {
 
     updateRouteInMap(routeForm.originalId, () => applied.route);
     setRouteForm(applied.form);
-    setStatus({ tone: "success", message: `Applied route details for "${routeForm.name.trim()}". Use Save Route Changes To Build to write trade_routes.json.` });
+    setStatus({ tone: "success", message: `Applied route details for "${routeForm.name.trim()}". Use Save Changes To Build to write trade_routes.json.` });
   }
 
   function applyGateForm() {
@@ -3240,7 +3843,7 @@ export default function SystemMapViewer() {
     }
     updateGateInMap(gateForm.originalId, () => applied.gate);
     setGateForm(applied.form);
-    setStatus({ tone: "success", message: `Applied gate details for "${applied.gate.name}". Use Save Gate Changes To Build to write AsteroidBeltGates.json.` });
+    setStatus({ tone: "success", message: `Applied gate details for "${applied.gate.name}". Use Save Changes To Build to write AsteroidBeltGates.json.` });
   }
 
   function applyEnvironmentalBarrierForm() {
@@ -3257,7 +3860,24 @@ export default function SystemMapViewer() {
     }
     updateEnvironmentalElementInMap(environmentalBarrierForm.originalId, () => applied.barrier);
     setEnvironmentalBarrierForm(applied.form);
-    setStatus({ tone: "success", message: `Applied barrier details for "${applied.barrier.name}". Use Save Environmental Changes To Build to write EnvironmentalElements.json.` });
+    setStatus({ tone: "success", message: `Applied barrier details for "${applied.barrier.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
+  }
+
+  function applyEnvironmentalRegionForm() {
+    if (!environmentalRegionForm || !payload) return;
+    const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalRegionForm.originalId);
+    if (!element || element.type !== "environment_region") {
+      setStatus({ tone: "error", message: "Could not find the environmental region being edited." });
+      return;
+    }
+    const applied = withEnvironmentalRegionForm(environmentalRegionForm, element, payload.environmentProfiles, payload.config.sectorSize, mapEnvironmentalElements);
+    if (applied.error || !applied.region || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+    updateEnvironmentalElementInMap(environmentalRegionForm.originalId, () => applied.region);
+    setEnvironmentalRegionForm(applied.form);
+    setStatus({ tone: "success", message: `Applied region details for "${applied.region.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
   }
 
   function removeDraftRoute(routeId: string) {
@@ -3288,7 +3908,31 @@ export default function SystemMapViewer() {
     setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
     setEnvironmentalBarrierForm(null);
     setActiveEnvironmentalPointAddId(null);
-    setStatus({ tone: "success", message: "Removed the environmental barrier from the map. Save Environmental Changes To Build to write EnvironmentalElements.json." });
+      setStatus({ tone: "success", message: "Removed the environmental barrier from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
+  }
+
+  function removeEnvironmentalRegion(elementId: string) {
+    const draftElement = draftEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === elementId);
+    if (draftElement) {
+      setDraftEnvironmentalElements((current) => current.filter((entry) => environmentalElementIdentity(entry) !== elementId));
+      setEnvironmentalRegionForm((current) => (current?.originalId === elementId ? null : current));
+      setActiveEnvironmentalRegionPointAddId((current) => (current === elementId ? null : current));
+      setStatus({ tone: "neutral", message: "Removed the unsaved environmental region draft." });
+      return;
+    }
+
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            environmentalElements: current.environmentalElements.filter((entry) => environmentalElementIdentity(entry) !== elementId),
+          }
+        : current,
+    );
+    setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
+    setEnvironmentalRegionForm(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setStatus({ tone: "success", message: "Removed the environmental region from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
   }
 
   function addEnvironmentalBarrierPointAtWorld(elementId: string, world: SystemMapVec) {
@@ -3307,6 +3951,30 @@ export default function SystemMapViewer() {
         ...element,
         points: [...element.points, local],
         worldPoints: [...element.worldPoints, roundedWorld],
+        modified: element.draft ? element.modified : true,
+        originalId: element.draft ? element.originalId : element.originalId ?? element.id,
+      };
+    });
+  }
+
+  function addEnvironmentalRegionPointAtWorld(elementId: string, world: SystemMapVec) {
+    if (!payload) return;
+    updateEnvironmentalElementInMap(elementId, (element) => {
+      if (element.type !== "environment_region" || element.shape !== "polygon") return element;
+      const roundedWorld = {
+        x: Math.round(world.x),
+        y: Math.round(world.y),
+      };
+      const local = {
+        x: Math.round(roundedWorld.x - element.sector.x * payload.config.sectorSize),
+        y: Math.round(roundedWorld.y - element.sector.y * payload.config.sectorSize),
+      };
+      const worldPoints = [...element.worldPoints, roundedWorld];
+      return {
+        ...element,
+        points: [...element.points, local],
+        worldPoints,
+        worldCenter: averagePoints(worldPoints),
         modified: element.draft ? element.modified : true,
         originalId: element.draft ? element.originalId : element.originalId ?? element.id,
       };
@@ -3354,7 +4022,7 @@ export default function SystemMapViewer() {
       const zone = zoneFromDraftForm(normalizedForm, payload, id);
       setDraftZones((current) => [...current, zone]);
       setZoneForm(null);
-      setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Zone Changes To Build to write it into Zones.json.` });
+      setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Changes To Build to write it into Zones.json.` });
       return;
     }
 
@@ -3387,7 +4055,7 @@ export default function SystemMapViewer() {
       setEditedZoneIds((current) => (current.includes(originalId) ? current : [...current, originalId]));
     }
     setZoneForm(null);
-    setStatus({ tone: "success", message: `Updated "${nextZone.name}". Use Save Zone Changes To Build to write changes into Zones.json.` });
+    setStatus({ tone: "success", message: `Updated "${nextZone.name}". Use Save Changes To Build to write changes into Zones.json.` });
   }
 
   function saveMobSpawnForm() {
@@ -3437,19 +4105,19 @@ export default function SystemMapViewer() {
       };
     });
     setMobSpawnForm(null);
-    setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Zone Changes To Build to write it into Zones.json.` });
+    setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into Zones.json.` });
   }
 
-  async function handleSaveZoneChangesToBuild() {
+  async function handleSaveZoneChangesToBuild(suppressStatus = false) {
     if ((!draftZones.length && !editedZoneIds.length) || savingZones) return;
     setSavingZones(true);
-    setStatus(null);
+    if (!suppressStatus) setStatus(null);
     try {
       const sourceResponse = await fetch("/api/settings/data/source?kind=zones", { cache: "no-store" });
       const sourcePayload = await sourceResponse.json().catch(() => ({}));
       if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
-        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current Zones.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current Zones.json before saving." });
+        return false;
       }
 
       const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
@@ -3478,8 +4146,8 @@ export default function SystemMapViewer() {
       });
       const savePayload = await saveResponse.json().catch(() => ({}));
       if (!saveResponse.ok || !savePayload?.ok) {
-        setStatus({ tone: "error", message: savePayload?.error || "Could not save zone drafts into Zones.json." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save zone drafts into Zones.json." });
+        return false;
       }
 
       const savedZones = draftZones.map((zone, index) => ({
@@ -3501,18 +4169,20 @@ export default function SystemMapViewer() {
       setDraftZones([]);
       setEditedZoneIds([]);
       const savedCount = savedZones.length + editedZones.length;
-      setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into the live Zones.json file.` });
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into the live Zones.json file.` });
+      return true;
     } catch (saveError) {
-      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      return false;
     } finally {
       setSavingZones(false);
     }
   }
 
-  async function handleSaveRouteChangesToBuild() {
+  async function handleSaveRouteChangesToBuild(suppressStatus = false) {
     if ((!draftRoutes.length && !editedRouteIds.length) || savingRoutes || !payload) return;
     setSavingRoutes(true);
-    setStatus(null);
+    if (!suppressStatus) setStatus(null);
     try {
       let routesForSave = mapRoutes;
       let draftRoutesForSave = draftRoutes;
@@ -3522,8 +4192,8 @@ export default function SystemMapViewer() {
         if (route) {
           const applied = applyRouteFormToRouteValue(routeForm, route, routesForSave);
           if (applied.error || !applied.route || !applied.form) {
-            setStatus({ tone: "error", message: applied.error });
-            return;
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
           }
           routesForSave = routesForSave.map((entry) => (routeIdentity(entry) === routeForm.originalId ? applied.route : entry));
           draftRoutesForSave = draftRoutesForSave.map((entry) => (routeIdentity(entry) === routeForm.originalId ? applied.route : entry));
@@ -3536,21 +4206,21 @@ export default function SystemMapViewer() {
 
       const incompleteRoute = [...draftRoutesForSave, ...routesForSave.filter((route) => !route.draft && editedRouteIdsForSave.includes(route.originalId ?? route.id))].find((route) => route.points.length < 2);
       if (incompleteRoute) {
-        setStatus({ tone: "error", message: `Trade route "${incompleteRoute.name || incompleteRoute.id}" needs at least two points before saving.` });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: `Trade route "${incompleteRoute.name || incompleteRoute.id}" needs at least two points before saving.` });
+        return false;
       }
 
       const sourceResponse = await fetch("/api/settings/data/source?kind=tradeRoutes", { cache: "no-store" });
       const sourcePayload = await sourceResponse.json().catch(() => ({}));
       if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
-        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current trade_routes.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current trade_routes.json before saving." });
+        return false;
       }
 
       const parsed = parseTolerantJsonText(sourcePayload.text);
       if (!parsed.value || !isPlainRecord(parsed.value)) {
-        setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse trade_routes.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse trade_routes.json before saving." });
+        return false;
       }
       const sourceRoutes = Array.isArray(parsed.value.routes) ? parsed.value.routes : [];
       const editedRoutes = routesForSave.filter((route) => !route.draft && editedRouteIdsForSave.includes(route.originalId ?? route.id));
@@ -3567,8 +4237,8 @@ export default function SystemMapViewer() {
       );
       for (const route of draftRoutesForSave) {
         if (existingSourceIds.has(route.id)) {
-          setStatus({ tone: "error", message: `Trade route ID "${route.id}" already exists in the live trade_routes.json file.` });
-          return;
+          if (!suppressStatus) setStatus({ tone: "error", message: `Trade route ID "${route.id}" already exists in the live trade_routes.json file.` });
+          return false;
         }
         updatedRoutes.push(routeToTradeRouteJson(route, payload.config.sectorSize));
       }
@@ -3587,8 +4257,8 @@ export default function SystemMapViewer() {
       });
       const savePayload = await saveResponse.json().catch(() => ({}));
       if (!saveResponse.ok || !savePayload?.ok) {
-        setStatus({ tone: "error", message: savePayload?.error || "Could not save trade route changes into trade_routes.json." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save trade route changes into trade_routes.json." });
+        return false;
       }
 
       const savedExistingRoutes = routesForSave
@@ -3617,18 +4287,20 @@ export default function SystemMapViewer() {
       setActiveRouteAddId(null);
       setPendingRouteStart(false);
       const savedCount = savedDraftRoutes.length + editedRoutes.length;
-      setStatus({ tone: "success", message: `Saved ${savedCount} trade route change${savedCount === 1 ? "" : "s"} into the live trade_routes.json file.` });
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} trade route change${savedCount === 1 ? "" : "s"} into the live trade_routes.json file.` });
+      return true;
     } catch (saveError) {
-      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      return false;
     } finally {
       setSavingRoutes(false);
     }
   }
 
-  async function handleSaveGateChangesToBuild() {
+  async function handleSaveGateChangesToBuild(suppressStatus = false) {
     if (!editedGateIds.length || savingGates || !payload) return;
     setSavingGates(true);
-    setStatus(null);
+    if (!suppressStatus) setStatus(null);
     try {
       let gatesForSave = mapGates;
       let editedGateIdsForSave = editedGateIds;
@@ -3637,8 +4309,8 @@ export default function SystemMapViewer() {
         if (gate) {
           const applied = applyGateFormToGate(gateForm, gate, gatesForSave, payload.config.asteroidBeltMidRadius);
           if (applied.error || !applied.gate || !applied.form) {
-            setStatus({ tone: "error", message: applied.error });
-            return;
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
           }
           gatesForSave = gatesForSave.map((entry) => (gateIdentity(entry) === gateForm.originalId ? applied.gate : entry));
           if (!editedGateIdsForSave.includes(gateForm.originalId)) {
@@ -3651,14 +4323,14 @@ export default function SystemMapViewer() {
       const sourceResponse = await fetch("/api/settings/data/source?kind=asteroidBeltGates", { cache: "no-store" });
       const sourcePayload = await sourceResponse.json().catch(() => ({}));
       if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
-        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current AsteroidBeltGates.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current AsteroidBeltGates.json before saving." });
+        return false;
       }
 
       const parsed = parseTolerantJsonText(sourcePayload.text);
       if (!parsed.value || !isPlainRecord(parsed.value)) {
-        setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse AsteroidBeltGates.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse AsteroidBeltGates.json before saving." });
+        return false;
       }
       const sourceGates = Array.isArray(parsed.value.gates) ? parsed.value.gates : [];
       const editedGates = gatesForSave.filter((gate) => editedGateIdsForSave.includes(gateIdentity(gate)));
@@ -3682,8 +4354,8 @@ export default function SystemMapViewer() {
       });
       const savePayload = await saveResponse.json().catch(() => ({}));
       if (!saveResponse.ok || !savePayload?.ok) {
-        setStatus({ tone: "error", message: savePayload?.error || "Could not save gate changes into AsteroidBeltGates.json." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save gate changes into AsteroidBeltGates.json." });
+        return false;
       }
 
       const savedGates = gatesForSave.map((gate) => ({
@@ -3701,29 +4373,47 @@ export default function SystemMapViewer() {
       );
       setEditedGateIds([]);
       setGateForm((current) => (current ? { ...current, originalId: sanitizeGateId(current.id) } : current));
-      setStatus({ tone: "success", message: `Saved ${editedGates.length} asteroid belt gate change${editedGates.length === 1 ? "" : "s"} into the live AsteroidBeltGates.json file.` });
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${editedGates.length} asteroid belt gate change${editedGates.length === 1 ? "" : "s"} into the live AsteroidBeltGates.json file.` });
+      return true;
     } catch (saveError) {
-      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      return false;
     } finally {
       setSavingGates(false);
     }
   }
 
-  async function handleSaveEnvironmentalChangesToBuild() {
+  async function handleSaveEnvironmentalChangesToBuild(suppressStatus = false) {
     if ((!draftEnvironmentalElements.length && !editedEnvironmentalIds.length) || savingEnvironmental || !payload) return;
     setSavingEnvironmental(true);
-    setStatus(null);
+    if (!suppressStatus) setStatus(null);
     try {
       let elementsForSave = mapEnvironmentalElements;
       let editedEnvironmentalIdsForSave = editedEnvironmentalIds;
+
+      if (environmentalRegionForm) {
+        const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalRegionForm.originalId);
+        if (element?.type === "environment_region") {
+          const applied = withEnvironmentalRegionForm(environmentalRegionForm, element, payload.environmentProfiles, payload.config.sectorSize, elementsForSave);
+          if (applied.error || !applied.region || !applied.form) {
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
+          }
+          elementsForSave = elementsForSave.map((entry) => (environmentalElementIdentity(entry) === environmentalRegionForm.originalId ? applied.region : entry));
+          if (!applied.region.draft && !editedEnvironmentalIdsForSave.includes(environmentalRegionForm.originalId)) {
+            editedEnvironmentalIdsForSave = [...editedEnvironmentalIdsForSave, environmentalRegionForm.originalId];
+          }
+          setEnvironmentalRegionForm(applied.form);
+        }
+      }
 
       if (environmentalBarrierForm) {
         const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalBarrierForm.originalId);
         if (element?.type === "hazard_barrier") {
           const applied = withEnvironmentalBarrierForm(environmentalBarrierForm, element, payload.environmentProfiles, payload.config.sectorSize, elementsForSave);
           if (applied.error || !applied.barrier || !applied.form) {
-            setStatus({ tone: "error", message: applied.error });
-            return;
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
           }
           elementsForSave = elementsForSave.map((entry) => (environmentalElementIdentity(entry) === environmentalBarrierForm.originalId ? applied.barrier : entry));
           if (!applied.barrier.draft && !editedEnvironmentalIdsForSave.includes(environmentalBarrierForm.originalId)) {
@@ -3735,15 +4425,20 @@ export default function SystemMapViewer() {
 
       const invalidBarrier = elementsForSave.find((element) => element.type === "hazard_barrier" && element.points.length < 2);
       if (invalidBarrier?.type === "hazard_barrier") {
-        setStatus({ tone: "error", message: `Barrier "${invalidBarrier.name || invalidBarrier.id}" needs at least two points before saving.` });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: `Barrier "${invalidBarrier.name || invalidBarrier.id}" needs at least two points before saving.` });
+        return false;
+      }
+      const invalidPolygonRegion = elementsForSave.find((element) => element.type === "environment_region" && element.shape === "polygon" && element.points.length < 3);
+      if (invalidPolygonRegion?.type === "environment_region") {
+        if (!suppressStatus) setStatus({ tone: "error", message: `Polygon region "${invalidPolygonRegion.name || invalidPolygonRegion.id}" needs at least three points before saving.` });
+        return false;
       }
 
       const sourceResponse = await fetch("/api/settings/data/source?kind=environmentalElements", { cache: "no-store" });
       const sourcePayload = await sourceResponse.json().catch(() => ({}));
       if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
-        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current EnvironmentalElements.json before saving." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current EnvironmentalElements.json before saving." });
+        return false;
       }
 
       const parsed = parseTolerantJsonText(sourcePayload.text);
@@ -3763,8 +4458,8 @@ export default function SystemMapViewer() {
       });
       const savePayload = await saveResponse.json().catch(() => ({}));
       if (!saveResponse.ok || !savePayload?.ok) {
-        setStatus({ tone: "error", message: savePayload?.error || "Could not save environmental elements into EnvironmentalElements.json." });
-        return;
+        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save environmental elements into EnvironmentalElements.json." });
+        return false;
       }
 
       const savedElements = elementsForSave.map((element) => ({
@@ -3792,13 +4487,69 @@ export default function SystemMapViewer() {
             }
           : current,
       );
+      setEnvironmentalRegionForm((current) =>
+        current
+          ? {
+              ...current,
+              originalId: sanitizeEnvironmentalElementId(current.id),
+              mode: "edit",
+            }
+          : current,
+      );
       const savedCount = draftEnvironmentalElements.length + editedEnvironmentalIdsForSave.length;
-      setStatus({ tone: "success", message: `Saved ${savedCount} environmental change${savedCount === 1 ? "" : "s"} into the live EnvironmentalElements.json file.` });
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} environmental change${savedCount === 1 ? "" : "s"} into the live EnvironmentalElements.json file.` });
+      return true;
     } catch (saveError) {
-      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      return false;
     } finally {
       setSavingEnvironmental(false);
     }
+  }
+
+  async function handleSaveAllChangesToBuild() {
+    if (!(hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges)) return;
+    setStatus(null);
+
+    if (hasZoneChanges) {
+      const ok = await handleSaveZoneChangesToBuild(true);
+      if (ok === false) {
+        setStatus({ tone: "error", message: "Could not save zone changes into Zones.json." });
+        return;
+      }
+    }
+    if (hasRouteChanges) {
+      const ok = await handleSaveRouteChangesToBuild(true);
+      if (ok === false) {
+        setStatus({ tone: "error", message: "Could not save trade route changes into trade_routes.json." });
+        return;
+      }
+    }
+    if (hasGateChanges) {
+      const ok = await handleSaveGateChangesToBuild(true);
+      if (ok === false) {
+        setStatus({ tone: "error", message: "Could not save asteroid belt gate changes into AsteroidBeltGates.json." });
+        return;
+      }
+    }
+    if (hasEnvironmentalChanges) {
+      const ok = await handleSaveEnvironmentalChangesToBuild(true);
+      if (ok === false) {
+        setStatus({ tone: "error", message: "Could not save environmental changes into EnvironmentalElements.json." });
+        return;
+      }
+    }
+
+    const changedSystems = [
+      hasZoneChanges ? "zones" : null,
+      hasRouteChanges ? "trade routes" : null,
+      hasGateChanges ? "belt gates" : null,
+      hasEnvironmentalChanges ? "environmental elements" : null,
+    ].filter(Boolean);
+    setStatus({
+      tone: "success",
+      message: `Saved all pending system-map changes to build (${changedSystems.join(", ")}).`,
+    });
   }
 
   const filteredZones = useMemo(() => mapZones.filter((zone) => zoneMatches(zone, normalizedQuery)), [mapZones, normalizedQuery]);
@@ -3843,11 +4594,15 @@ export default function SystemMapViewer() {
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const environmentalBarrierCount = mapEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionCount = mapEnvironmentalElements.filter((element) => element.type === "environment_region").length;
+  const environmentalBarrierDraftCount = draftEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
+  const environmentalRegionDraftCount = draftEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const hasGateChanges = editedGateIds.length > 0;
   const hasEnvironmentalChanges = draftEnvironmentalElements.length > 0 || editedEnvironmentalIds.length > 0;
+  const hasBuildChanges = hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges;
+  const savingBuild = savingZones || savingRoutes || savingGates || savingEnvironmental;
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
@@ -4071,6 +4826,8 @@ export default function SystemMapViewer() {
             {toggles.barriers
               ? filteredEnvironmentalRegions.map((region) => {
                   const isChanged = region.draft || region.modified;
+                  const isActiveRegion = environmentalRegionForm?.originalId === environmentalElementIdentity(region);
+                  const anchor = environmentalRegionWorldAnchor(region);
                   const stroke =
                     region.visualKind === "gas"
                       ? "rgba(250,204,21,0.52)"
@@ -4083,28 +4840,54 @@ export default function SystemMapViewer() {
                       : region.visualKind === "asteroid"
                         ? "rgba(251,191,36,0.06)"
                         : "rgba(125,211,252,0.08)";
-                  return region.shape === "ellipse" && region.worldCenter ? (
-                    <ellipse
-                      key={`environment-region:${environmentalElementIdentity(region)}`}
-                      cx={region.worldCenter.x}
-                      cy={region.worldCenter.y}
-                      rx={region.width / 2}
-                      ry={region.height / 2}
-                      fill={fill}
-                      stroke={stroke}
-                      transform={region.rotationDeg ? `rotate(${region.rotationDeg} ${region.worldCenter.x} ${region.worldCenter.y})` : undefined}
-                      strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                      strokeWidth={2 / camera.zoom}
-                    />
-                  ) : (
-                    <polygon
-                      key={`environment-region:${environmentalElementIdentity(region)}`}
-                      points={region.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-                      fill={fill}
-                      stroke={stroke}
-                      strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                      strokeWidth={2 / camera.zoom}
-                    />
+                  return (
+                    <g key={`environment-region:${environmentalElementIdentity(region)}`}>
+                      {region.shape === "ellipse" && region.worldCenter ? (
+                        <ellipse
+                          cx={region.worldCenter.x}
+                          cy={region.worldCenter.y}
+                          rx={region.width / 2}
+                          ry={region.height / 2}
+                          fill={fill}
+                          stroke={stroke}
+                          transform={region.rotationDeg ? `rotate(${region.rotationDeg} ${region.worldCenter.x} ${region.worldCenter.y})` : undefined}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={2 / camera.zoom}
+                        />
+                      ) : (
+                        <polygon
+                          points={region.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                          fill={fill}
+                          stroke={stroke}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={2 / camera.zoom}
+                        />
+                      )}
+                      {isActiveRegion && region.shape === "polygon"
+                        ? region.worldPoints.map((point, index) => {
+                            const pointKey = `${environmentalElementIdentity(region)}:${index}`;
+                            return (
+                              <circle
+                                key={pointKey}
+                                cx={point.x}
+                                cy={point.y}
+                                r={(draggingEnvironmentalRegionPoint === pointKey ? 8 : 6) / camera.zoom}
+                                fill={region.draft ? "#34d399" : region.modified ? "#facc15" : "#38bdf8"}
+                                stroke="rgba(255,255,255,0.82)"
+                                strokeWidth={(draggingEnvironmentalRegionPoint === pointKey ? 2 : 1) / camera.zoom}
+                              />
+                            );
+                          })
+                        : null}
+                      <circle
+                        cx={anchor.x}
+                        cy={anchor.y}
+                        r={(draggingEnvironmentalId === environmentalElementIdentity(region) ? 8 : 5) / camera.zoom}
+                        fill={region.draft ? "#34d399" : region.modified ? "#facc15" : "#38bdf8"}
+                        stroke="rgba(255,255,255,0.72)"
+                        strokeWidth={(draggingEnvironmentalId === environmentalElementIdentity(region) ? 2 : 1) / camera.zoom}
+                      />
+                    </g>
                   );
                 })
               : null}
@@ -4310,7 +5093,7 @@ export default function SystemMapViewer() {
                 const anchor =
                   element.type === "hazard_barrier"
                     ? barrierWorldCenter(element)
-                    : element.worldCenter ?? element.worldPoints[0] ?? sectorLocalToWorld(element.sector, { x: 0, y: 0 });
+                    : environmentalRegionWorldAnchor(element);
                 const point = worldToScreen(anchor);
                 return (
                   <div
@@ -4379,22 +5162,13 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} authored barriers${draftEnvironmentalElements.length ? ` (${draftEnvironmentalElements.length} draft${draftEnvironmentalElements.length === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
                 : "Loading local game source..."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasZoneChanges || savingZones} onClick={() => void handleSaveZoneChangesToBuild()}>
-              {savingZones ? "Saving..." : "Save Zone Changes To Build"}
-            </button>
-            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasRouteChanges || savingRoutes} onClick={() => void handleSaveRouteChangesToBuild()}>
-              {savingRoutes ? "Saving..." : "Save Route Changes To Build"}
-            </button>
-            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasGateChanges || savingGates} onClick={() => void handleSaveGateChangesToBuild()}>
-              {savingGates ? "Saving..." : "Save Gate Changes To Build"}
-            </button>
-            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasEnvironmentalChanges || savingEnvironmental} onClick={() => void handleSaveEnvironmentalChangesToBuild()}>
-              {savingEnvironmental ? "Saving..." : "Save Environmental Changes To Build"}
+            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasBuildChanges || savingBuild} onClick={() => void handleSaveAllChangesToBuild()}>
+              {savingBuild ? "Saving..." : "Save Changes To Build"}
             </button>
             <button
               type="button"
@@ -4447,7 +5221,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers · ${filteredEnvironmentalRegions.length} regions` : "0 zones"}</div>
           </div>
         </div>
 
@@ -4477,14 +5251,14 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, or authored barrier to edit details. Hold Command and drag a zone, gate, or authored barrier to move it. Drag barrier points to reshape hazard paths. Right-click the map to add zones, mob spawns, trade routes, or authored hazard barriers.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, or region to edit details. Hold Command and drag a zone, gate, barrier, or region to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, or ellipse regions.</div>
       </div>
 
       {contextMenu ? (
         <div
           data-system-map-ui="true"
           className="absolute z-[120] min-w-56 cursor-default rounded-xl border border-white/10 bg-[#08111f]/95 p-2 text-sm shadow-2xl backdrop-blur"
-          style={{ left: Math.min(contextMenu.x, viewport.width - 240), top: Math.min(contextMenu.y, viewport.height - 120) }}
+          style={{ left: Math.min(contextMenu.x, viewport.width - 240), top: Math.min(contextMenu.y, viewport.height - 220) }}
           onPointerDown={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
@@ -4518,6 +5292,12 @@ export default function SystemMapViewer() {
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalBarrierForm(contextMenu.world)}>
             Add Hazard Barrier Here
+          </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalPolygonForm(contextMenu.world)}>
+            Add Polygon Region Here
+          </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalEllipseForm(contextMenu.world)}>
+            Add Ellipse Region Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -4957,6 +5737,246 @@ export default function SystemMapViewer() {
                   </button>
                   <button type="button" className="btn-save-build" onClick={applyEnvironmentalBarrierForm}>
                     {environmentalBarrierForm.mode === "create" ? "Apply Draft Details" : "Apply Barrier Details"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
+
+      {environmentalRegionForm
+        ? (() => {
+            const region = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalRegionForm.originalId);
+            const activeRegion = region?.type === "environment_region" ? region : null;
+            const isPolygon = environmentalRegionForm.shape === "polygon";
+            const isAddingPoint = activeEnvironmentalRegionPointAddId === environmentalRegionForm.originalId;
+            const anchor = activeRegion ? environmentalRegionWorldAnchor(activeRegion) : null;
+            const localCenter = activeRegion ? environmentalRegionLocalCenter(activeRegion) : null;
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">{environmentalRegionForm.mode === "create" ? "New Environment Region" : "Edit Environment Region"}</div>
+                    <div className="mt-1 text-sm text-white/55">
+                      {isPolygon
+                        ? "Draw a filled custom region with draggable polygon vertices. Use a hazard profile, optional status effect, and map-side point editing."
+                        : "Create a filled ellipse region for nebulae, gas pockets, or large hazards. Size and rotate it here, then Command-drag it on the map to reposition."}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5"
+                    onClick={() => {
+                      setEnvironmentalRegionForm(null);
+                      setActiveEnvironmentalRegionPointAddId(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Region Name
+                    <input className="input mt-1" value={environmentalRegionForm.name} onChange={(event) => handleEnvironmentalRegionNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Region ID
+                    <input className="input mt-1 font-mono" value={environmentalRegionForm.id} onChange={(event) => handleEnvironmentalRegionIdChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector X
+                    <input className="input mt-1" type="number" value={environmentalRegionForm.sectorX} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, sectorX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector Y
+                    <input className="input mt-1" type="number" value={environmentalRegionForm.sectorY} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, sectorY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Profile
+                    <select className="input mt-1" value={environmentalRegionForm.profileId} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, profileId: event.target.value } : current))}>
+                      {(payload?.environmentProfiles ?? []).map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.label} · {profile.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Shape
+                    <input className="input mt-1 bg-black/30 text-white/55" value={environmentalRegionForm.shape === "polygon" ? "Polygon" : "Ellipse"} readOnly />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Status Effect ID
+                    <input className="input mt-1" type="number" value={environmentalRegionForm.statusEffectId} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, statusEffectId: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  {!isPolygon ? (
+                    <>
+                      <label className="text-sm text-white/65">
+                        Width
+                        <input className="input mt-1" type="number" min="1" value={environmentalRegionForm.width} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, width: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                      </label>
+                      <label className="text-sm text-white/65">
+                        Height
+                        <input className="input mt-1" type="number" min="1" value={environmentalRegionForm.height} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, height: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                      </label>
+                      <label className="text-sm text-white/65 sm:col-span-2">
+                        Rotation Deg
+                        <input className="input mt-1" type="number" step="0.1" value={environmentalRegionForm.rotationDeg} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, rotationDeg: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                      </label>
+                    </>
+                  ) : null}
+                  <label className="text-sm text-white/65">
+                    Visual Width
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalRegionForm.visualWidthMultiplier} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, visualWidthMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Density
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalRegionForm.visualDensityMultiplier} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, visualDensityMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Scale
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalRegionForm.visualScaleMultiplier} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, visualScaleMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Alpha
+                    <input className="input mt-1" type="number" step="0.01" value={environmentalRegionForm.visualAlphaMultiplier} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, visualAlphaMultiplier: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Tags
+                    <input className="input mt-1" value={environmentalRegionForm.tags} placeholder="nebula, hazard, tutorial" onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, tags: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Notes
+                    <textarea className="input mt-1 min-h-24" value={environmentalRegionForm.notes} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, notes: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Active</span>
+                    <input type="checkbox" checked={environmentalRegionForm.active} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, active: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Remove Effect On Exit</span>
+                    <input type="checkbox" checked={environmentalRegionForm.removeEffectOnExit} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, removeEffectOnExit: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Affect Players</span>
+                    <input type="checkbox" checked={environmentalRegionForm.affectPlayers} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, affectPlayers: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Affect NPCs</span>
+                    <input type="checkbox" checked={environmentalRegionForm.affectNpcs} onChange={(event) => setEnvironmentalRegionForm((current) => (current ? { ...current, affectNpcs: event.target.checked } : current))} />
+                  </label>
+                </div>
+
+                {isPolygon ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-white">Polygon Points</div>
+                        <div className="text-xs text-white/45">Drag these vertices on the map, or add a new one at the cursor location.</div>
+                      </div>
+                      <button
+                        type="button"
+                        className={`rounded border px-3 py-2 text-sm ${isAddingPoint ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"}`}
+                        onClick={() => {
+                          setPendingRouteStart(false);
+                          setActiveRouteAddId(null);
+                          setActiveEnvironmentalPointAddId(null);
+                          setActiveEnvironmentalRegionPointAddId((current) => (current === environmentalRegionForm.originalId ? null : environmentalRegionForm.originalId));
+                          setStatus({ tone: "neutral", message: "Click the map to append a new point to this polygon region." });
+                        }}
+                      >
+                        {isAddingPoint ? "Click Map To Add" : "Add Point On Map"}
+                      </button>
+                    </div>
+                    <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+                      {activeRegion?.worldPoints.map((point, index) => (
+                        <div key={`${environmentalRegionForm.originalId}:point:${index}`} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium text-white">Point {index + 1}</div>
+                            <button
+                              type="button"
+                              className="rounded border border-red-300/25 bg-red-400/10 px-2 py-1 text-xs text-red-100 disabled:cursor-default disabled:opacity-35"
+                              disabled={(activeRegion?.points.length ?? 0) <= 3}
+                              onClick={() => {
+                                updateEnvironmentalElementInMap(environmentalRegionForm.originalId, (element) => {
+                                  if (element.type !== "environment_region" || element.shape !== "polygon") return element;
+                                  const worldPoints = element.worldPoints.filter((_, pointIndex) => pointIndex !== index);
+                                  return {
+                                    ...element,
+                                    points: element.points.filter((_, pointIndex) => pointIndex !== index),
+                                    worldPoints,
+                                    worldCenter: averagePoints(worldPoints),
+                                    modified: element.draft ? element.modified : true,
+                                    originalId: element.draft ? element.originalId : element.originalId ?? element.id,
+                                  };
+                                });
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="mt-1 text-xs text-white/55">Local: {activeRegion ? formatVec(activeRegion.points[index]) : "?"}</div>
+                          <div className="text-xs text-white/45">World: {formatVec(point)}</div>
+                        </div>
+                      ))}
+                      {!activeRegion?.worldPoints.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No polygon points found.</div> : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white">Ellipse Controls</div>
+                    <div className="mt-2">Use width, height, and rotation here. Hold Command and drag the ellipse on the map to reposition it.</div>
+                    <div className="mt-2">Local center: {localCenter ? formatVec(localCenter) : "?"}</div>
+                    <div>World center: {anchor ? formatVec(anchor) : "?"}</div>
+                  </div>
+                )}
+
+                {activeRegion ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Region Summary</div>
+                    <div className="mt-2">Anchor: {anchor ? formatVec(anchor) : "?"}</div>
+                    <div>Profile: {activeRegion.profileId}</div>
+                    <div>Visual kind: {activeRegion.visualKind}</div>
+                    <div>Materials: {activeRegion.materialPaths.length}</div>
+                    <div>Shape: {activeRegion.shape}</div>
+                    {activeRegion.shape === "polygon" ? <div>Vertices: {activeRegion.points.length}</div> : <div>Outline points: {activeRegion.worldPoints.length}</div>}
+                    <div>Sector-local data is what gets written into EnvironmentalElements.json.</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15"
+                    onClick={() => removeEnvironmentalRegion(environmentalRegionForm.originalId)}
+                  >
+                    {activeRegion?.draft ? "Remove Draft" : "Delete Region"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5"
+                    onClick={() => {
+                      setEnvironmentalRegionForm(null);
+                      setActiveEnvironmentalRegionPointAddId(null);
+                    }}
+                  >
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applyEnvironmentalRegionForm}>
+                    {environmentalRegionForm.mode === "create" ? "Apply Draft Details" : "Apply Region Details"}
                   </button>
                 </div>
               </div>
