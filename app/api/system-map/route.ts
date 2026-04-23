@@ -5,6 +5,7 @@ import { parseTolerantJsonText } from "@lib/data-tools/parse";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { DATA_FILE_PATHS, type UploadedDataFileKind } from "@lib/uploaded-data";
 import type {
+  SystemMapAsteroidBeltGate,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -33,6 +34,7 @@ const SUN_DANGER_RADIUS = 22000;
 const ASTEROID_BELT_INNER_RADIUS = 370000;
 const ASTEROID_BELT_OUTER_RADIUS = 380000;
 const ASTEROID_BELT_MID_RADIUS = 375000;
+const DEFAULT_ASTEROID_BELT_GATE_WIDTH = 2000;
 
 const SECTOR_NAMES = new Map<string, string>([
   ["-3,3", "-33"],
@@ -676,6 +678,59 @@ function buildRoutes(routesJson: unknown): SystemMapRoute[] {
   });
 }
 
+function normalizeAngleDegrees(value: number) {
+  const normalized = value % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function angleFromGate(gate: JsonRecord) {
+  if (gate.angle_degrees !== undefined) return numberValue(gate.angle_degrees);
+  if (gate.angle_radians !== undefined) return (numberValue(gate.angle_radians) * 180) / Math.PI;
+  const worldPosition = vecValue(gate.world_position, { x: 0, y: 0 });
+  if (Math.abs(worldPosition.x) > 0.001 || Math.abs(worldPosition.y) > 0.001) {
+    return (Math.atan2(worldPosition.y, worldPosition.x) * 180) / Math.PI;
+  }
+  if (gate.x !== undefined || gate.y !== undefined) {
+    const pos = {
+      x: numberValue(gate.x),
+      y: numberValue(gate.y),
+    };
+    if (Math.abs(pos.x) > 0.001 || Math.abs(pos.y) > 0.001) {
+      return (Math.atan2(pos.y, pos.x) * 180) / Math.PI;
+    }
+  }
+  return 0;
+}
+
+function gateWorldPosition(angleDegrees: number): SystemMapVec {
+  const radians = (angleDegrees * Math.PI) / 180;
+  return {
+    x: Math.cos(radians) * ASTEROID_BELT_MID_RADIUS,
+    y: Math.sin(radians) * ASTEROID_BELT_MID_RADIUS,
+  };
+}
+
+function buildAsteroidBeltGates(gatesJson: unknown): SystemMapAsteroidBeltGate[] {
+  const root = asRecord(gatesJson);
+  const defaults = asRecord(root.defaults);
+  const defaultWidth = numberValue(root.default_width_px ?? defaults.width_px, DEFAULT_ASTEROID_BELT_GATE_WIDTH);
+  return asArray(root.gates).map((entry, index) => {
+    const gate = asRecord(entry);
+    const angleDegrees = normalizeAngleDegrees(angleFromGate(gate));
+    const widthPx = Math.max(0, numberValue(gate.width_px, defaultWidth));
+    const id = stringValue(gate.id, `gate_${index + 1}`);
+    return {
+      id,
+      name: stringValue(gate.name, id),
+      enabled: boolValue(gate.enabled, true),
+      angleDegrees,
+      widthPx,
+      world: gateWorldPosition(angleDegrees),
+      originalIndex: index,
+    };
+  });
+}
+
 export async function GET() {
   const local = getLocalGameSourceState();
   if (!local.active || !local.gameRootPath || !local.available.data) {
@@ -688,13 +743,14 @@ export async function GET() {
     );
   }
 
-  const [zonesResult, stagesResult, mobsResult, poiResult, regionsResult, routesResult] = await Promise.all([
+  const [zonesResult, stagesResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "mobs", "mobs.json"),
     loadDataFile(local.gameRootPath, "poi", "poi.json"),
     loadDataFile(local.gameRootPath, "regions", "regions.json"),
     loadDataFile(local.gameRootPath, "tradeRoutes", "trade_routes.json"),
+    loadDataFile(local.gameRootPath, "asteroidBeltGates", "AsteroidBeltGates.json"),
   ]);
 
   const warnings = [
@@ -704,6 +760,7 @@ export async function GET() {
     ...poiResult.warnings,
     ...regionsResult.warnings,
     ...routesResult.warnings,
+    ...asteroidBeltGatesResult.warnings,
   ];
 
   const mobCatalog = buildMobCatalog(mobsResult.value);
@@ -730,6 +787,7 @@ export async function GET() {
     mobCatalog: buildMobCatalogEntries(mobsResult.value),
     pois: buildPois(poiResult.value, zones),
     routes: buildRoutes(routesResult.value),
+    asteroidBeltGates: buildAsteroidBeltGates(asteroidBeltGatesResult.value),
     warnings,
   };
 

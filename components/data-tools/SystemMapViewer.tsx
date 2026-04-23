@@ -6,6 +6,7 @@ import { buildIconSrc } from "@lib/icon-src";
 import { createDraftKey, createUniqueId } from "@lib/data-tools/common";
 import { parseTolerantJsonText } from "@lib/data-tools/parse";
 import type {
+  SystemMapAsteroidBeltGate,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -123,6 +124,30 @@ type RouteDragState = {
   handleStartWorld: SystemMapVec;
   moved: boolean;
 };
+type GateDraftForm = {
+  originalId: string;
+  name: string;
+  id: string;
+  enabled: boolean;
+  angleDegrees: string;
+  widthPx: string;
+};
+type GateDragState = {
+  gateId: string;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  gateStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type AsteroidVisual = {
+  key: string;
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
+  sprite: string;
+  opacity: number;
+};
 
 const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   regions: true,
@@ -140,6 +165,14 @@ const MIN_ZOOM = 0.00018;
 const MAX_ZOOM = 0.12;
 const DEFAULT_SECTOR_SIZE = 250000;
 const DEFAULT_SECTOR_HALF_EXTENT = 125000;
+const ASTEROID_SPRITES = [
+  "res://assets/environment/asteroids/ast_1.png",
+  "res://assets/environment/asteroids/ast_2.png",
+  "res://assets/environment/asteroids/ast_3.png",
+  "res://assets/environment/asteroids/ast_4.png",
+  "res://assets/environment/asteroids/ast_5.png",
+  "res://assets/environment/asteroids/ast_6.png",
+];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -219,6 +252,47 @@ function mobIdentity(mob: SystemMapMobSpawn) {
 
 function routeIdentity(route: SystemMapRoute) {
   return route.originalId ?? route.id;
+}
+
+function gateIdentity(gate: SystemMapAsteroidBeltGate) {
+  return gate.originalId ?? gate.id;
+}
+
+function sanitizeGateId(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/['"]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "new_gate"
+  );
+}
+
+function normalizeAngleDegrees(value: number) {
+  const normalized = value % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function angleRadiansFromWorld(world: SystemMapVec) {
+  return Math.atan2(world.y, world.x);
+}
+
+function angleDegreesFromWorld(world: SystemMapVec) {
+  return normalizeAngleDegrees((angleRadiansFromWorld(world) * 180) / Math.PI);
+}
+
+function asteroidGateWorld(angleDegrees: number, midRadius: number): SystemMapVec {
+  const radians = (angleDegrees * Math.PI) / 180;
+  return {
+    x: Math.cos(radians) * midRadius,
+    y: Math.sin(radians) * midRadius,
+  };
+}
+
+function angularDistance(a: number, b: number) {
+  const delta = Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  return delta;
 }
 
 function rectCenter(rect: SystemMapRect): SystemMapVec {
@@ -413,6 +487,121 @@ function cameraForBounds(bounds: SystemMapRect, viewport: Viewport): Camera {
 
 function safeIconSrc(icon: string, id: string, name: string) {
   return icon ? buildIconSrc(icon, id, name) : undefined;
+}
+
+function gateToForm(gate: SystemMapAsteroidBeltGate): GateDraftForm {
+  return {
+    originalId: gateIdentity(gate),
+    name: gate.name || gate.id,
+    id: gate.id,
+    enabled: gate.enabled,
+    angleDegrees: numberInputValue(gate.angleDegrees),
+    widthPx: numberInputValue(gate.widthPx),
+  };
+}
+
+function withGatePosition(gate: SystemMapAsteroidBeltGate, world: SystemMapVec, midRadius: number): SystemMapAsteroidBeltGate {
+  const angleDegrees = angleDegreesFromWorld(world);
+  return {
+    ...gate,
+    originalId: gate.originalId ?? gate.id,
+    modified: true,
+    angleDegrees,
+    world: asteroidGateWorld(angleDegrees, midRadius),
+  };
+}
+
+function applyGateFormToGate(form: GateDraftForm, gate: SystemMapAsteroidBeltGate, gates: SystemMapAsteroidBeltGate[], midRadius: number): { error: string; gate: null; form: null } | { error: ""; gate: SystemMapAsteroidBeltGate; form: GateDraftForm } {
+  const id = sanitizeGateId(form.id);
+  const angleDegrees = Number(form.angleDegrees);
+  const widthPx = Number(form.widthPx);
+  if (!form.name.trim()) return { error: "Gate name is required.", gate: null, form: null };
+  if (!id) return { error: "Gate ID is required.", gate: null, form: null };
+  if (!Number.isFinite(angleDegrees) || !Number.isFinite(widthPx) || widthPx < 0) {
+    return { error: "Gate angle and width must be valid numbers, and width cannot be negative.", gate: null, form: null };
+  }
+  const idTaken = gates.some((entry) => gateIdentity(entry) !== form.originalId && entry.id === id);
+  if (idTaken) return { error: `Gate ID "${id}" already exists.`, gate: null, form: null };
+  const normalizedAngle = normalizeAngleDegrees(angleDegrees);
+  return {
+    error: "",
+    form: {
+      ...form,
+      id,
+      angleDegrees: numberInputValue(normalizedAngle),
+      widthPx: numberInputValue(widthPx),
+    },
+    gate: {
+      ...gate,
+      id,
+      name: form.name.trim(),
+      enabled: form.enabled,
+      angleDegrees: normalizedAngle,
+      widthPx,
+      world: asteroidGateWorld(normalizedAngle, midRadius),
+      originalId: gate.originalId ?? gate.id,
+      modified: true,
+    },
+  };
+}
+
+function gateToAsteroidBeltJson(gate: SystemMapAsteroidBeltGate, baseGate?: unknown): Record<string, unknown> {
+  const base = isPlainRecord(baseGate) ? { ...baseGate } : {};
+  for (const key of ["angle_radians", "world_position", "x", "y"]) {
+    delete base[key];
+  }
+  return {
+    ...base,
+    id: gate.id,
+    name: gate.name || gate.id,
+    enabled: gate.enabled,
+    angle_degrees: normalizeAngleDegrees(gate.angleDegrees),
+    width_px: gate.widthPx,
+  };
+}
+
+function seededUnit(seed: number) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function isAngleInsideGateGap(angle: number, gates: SystemMapAsteroidBeltGate[], midRadius: number) {
+  for (const gate of gates) {
+    if (!gate.enabled || gate.widthPx <= 0) continue;
+    const gateAngle = (gate.angleDegrees * Math.PI) / 180;
+    const halfWidthRadians = (gate.widthPx * 0.5) / midRadius;
+    if (angularDistance(angle, gateAngle) <= halfWidthRadians * 1.15) return true;
+  }
+  return false;
+}
+
+function buildAsteroidVisuals(payload: SystemMapPayload, gates: SystemMapAsteroidBeltGate[]): AsteroidVisual[] {
+  const visuals: AsteroidVisual[] = [];
+  const rows = 8;
+  const columns = 176;
+  const radialStep = (payload.config.asteroidBeltOuterRadius - payload.config.asteroidBeltInnerRadius) / Math.max(1, rows - 1);
+  for (let row = 0; row < rows; row += 1) {
+    const baseRadius = payload.config.asteroidBeltInnerRadius + row * radialStep;
+    for (let column = 0; column < columns; column += 1) {
+      const seed = row * 1009 + column * 37 + 1337;
+      const angle = ((column + seededUnit(seed) * 0.6 - 0.3) / columns) * Math.PI * 2;
+      if (isAngleInsideGateGap(angle, gates, payload.config.asteroidBeltMidRadius)) continue;
+      const jitter = (seededUnit(seed + 4) - 0.5) * radialStep * 0.72;
+      const radius = baseRadius + jitter;
+      const spriteIndex = Math.floor(seededUnit(seed + 8) * ASTEROID_SPRITES.length) % ASTEROID_SPRITES.length;
+      const size = 950 + seededUnit(seed + 12) * 1900;
+      visuals.push({
+        key: `${row}:${column}`,
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        size,
+        rotation: seededUnit(seed + 16) * 360,
+        sprite: ASTEROID_SPRITES[spriteIndex],
+        opacity: 0.42 + seededUnit(seed + 20) * 0.36,
+      });
+    }
+  }
+  return visuals;
 }
 
 function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: string): SystemMapZone {
@@ -929,6 +1118,7 @@ export default function SystemMapViewer() {
   const zoneDragRef = useRef<ZoneDragState | null>(null);
   const mobDragRef = useRef<MobDragState | null>(null);
   const routeDragRef = useRef<RouteDragState | null>(null);
+  const gateDragRef = useRef<GateDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -944,20 +1134,24 @@ export default function SystemMapViewer() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
   const [routeForm, setRouteForm] = useState<RouteDraftForm | null>(null);
+  const [gateForm, setGateForm] = useState<GateDraftForm | null>(null);
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
   const [routeIdManuallyEdited, setRouteIdManuallyEdited] = useState(false);
   const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
   const [editedRouteIds, setEditedRouteIds] = useState<string[]>([]);
+  const [editedGateIds, setEditedGateIds] = useState<string[]>([]);
   const [pendingRouteStart, setPendingRouteStart] = useState(false);
   const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
   const [draggingRouteHandle, setDraggingRouteHandle] = useState<string | null>(null);
+  const [draggingGateId, setDraggingGateId] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
+  const [savingGates, setSavingGates] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
 
   useEffect(() => {
@@ -1008,6 +1202,7 @@ export default function SystemMapViewer() {
 
   const mapZones = useMemo(() => (payload ? [...payload.zones, ...draftZones] : []), [draftZones, payload]);
   const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
+  const mapGates = useMemo(() => payload?.asteroidBeltGates ?? [], [payload]);
   const existingZoneIds = useMemo(() => mapZones.map((zone) => zone.id).filter(Boolean), [mapZones]);
   const existingRouteIds = useMemo(() => mapRoutes.map((route) => route.id).filter(Boolean), [mapRoutes]);
   const bounds = useMemo(() => (payload ? computeWorldBounds(payload, mapZones, mapRoutes) : null), [mapRoutes, mapZones, payload]);
@@ -1081,6 +1276,15 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findGateAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 18 / camera.zoom;
+    for (let index = filteredGates.length - 1; index >= 0; index -= 1) {
+      const gate = filteredGates[index];
+      if (distance(world, gate.world) <= screenHitRadius) return gate;
+    }
+    return null;
+  }
+
   function findMobSpawnAtWorld(world: SystemMapVec) {
     const screenHitRadius = 14 / camera.zoom;
     for (let zoneIndex = filteredZones.length - 1; zoneIndex >= 0; zoneIndex -= 1) {
@@ -1136,6 +1340,20 @@ export default function SystemMapViewer() {
     setEditedRouteIds((current) => (current.includes(routeId) ? current : [...current, routeId]));
   }
 
+  function updateGateInMap(gateId: string, updater: (gate: SystemMapAsteroidBeltGate) => SystemMapAsteroidBeltGate) {
+    setPayload((current) => {
+      if (!current) return current;
+      const existing = current.asteroidBeltGates.find((gate) => gateIdentity(gate) === gateId);
+      if (!existing) return current;
+      const nextGate = updater(existing);
+      return {
+        ...current,
+        asteroidBeltGates: current.asteroidBeltGates.map((gate) => (gateIdentity(gate) === gateId ? nextGate : gate)),
+      };
+    });
+    setEditedGateIds((current) => (current.includes(gateId) ? current : [...current, gateId]));
+  }
+
   function updateMobSpawnPosition(zoneId: string, mobKey: string, world: SystemMapVec) {
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
@@ -1146,6 +1364,11 @@ export default function SystemMapViewer() {
 
   function updateRouteHandlePosition(routeId: string, handleKey: RouteHandleKey, world: SystemMapVec) {
     updateRouteInMap(routeId, (route) => withRouteHandle(route, handleKey, world));
+  }
+
+  function updateGatePosition(gateId: string, world: SystemMapVec) {
+    if (!payload) return;
+    updateGateInMap(gateId, (gate) => withGatePosition(gate, world, payload.config.asteroidBeltMidRadius));
   }
 
   function setRouteEndpointB(routeId: string, world: SystemMapVec) {
@@ -1197,6 +1420,8 @@ export default function SystemMapViewer() {
   }
 
   function openZoneEditor(zone: SystemMapZone) {
+    setGateForm(null);
+    setRouteForm(null);
     setZoneForm({
       mode: "edit",
       originalId: zone.originalId ?? zone.id,
@@ -1221,10 +1446,20 @@ export default function SystemMapViewer() {
   }
 
   function openRouteEditor(route: SystemMapRoute) {
+    setGateForm(null);
+    setZoneForm(null);
     setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
     setRouteIdManuallyEdited(true);
     setActiveRouteAddId(null);
     setPendingRouteStart(false);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openGateEditor(gate: SystemMapAsteroidBeltGate) {
+    setRouteForm(null);
+    setZoneForm(null);
+    setGateForm(gateToForm(gate));
     setContextMenu(null);
     setStatus(null);
   }
@@ -1312,6 +1547,25 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
+    const targetGate = toggles.environment ? findGateAtWorld(world) : null;
+    if (targetGate && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      gateDragRef.current = {
+        gateId: gateIdentity(targetGate),
+        startScreen: screen,
+        startWorld: world,
+        gateStartWorld: targetGate.world,
+        moved: false,
+      };
+      setDraggingGateId(gateIdentity(targetGate));
+      clearHover();
+      return;
+    }
+    if (targetGate) {
+      openGateEditor(targetGate);
+      clearHover();
+      return;
+    }
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1388,10 +1642,21 @@ export default function SystemMapViewer() {
       const zone = mapZones.find((entry) => entry.id === zoneDrag.zoneId);
       setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Zone Changes To Build to write the new coordinates into Zones.json.` });
     }
+    const gateDrag = gateDragRef.current;
+    if (gateDrag) {
+      const gate = mapGates.find((entry) => gateIdentity(entry) === gateDrag.gateId);
+      if (gateDrag.moved) {
+        setStatus({ tone: "success", message: `Moved "${gate?.name || gateDrag.gateId}". Use Save Gate Changes To Build to write the new angle into AsteroidBeltGates.json.` });
+      } else if (gate) {
+        openGateEditor(gate);
+      }
+    }
     mobDragRef.current = null;
     setDraggingMobKey(null);
     routeDragRef.current = null;
     setDraggingRouteHandle(null);
+    gateDragRef.current = null;
+    setDraggingGateId(null);
     zoneDragRef.current = null;
     setDraggingZoneId(null);
     dragRef.current = null;
@@ -1622,6 +1887,23 @@ export default function SystemMapViewer() {
     }
 
     if (toggles.environment) {
+      for (const gate of filteredGates) {
+        if (distance(world, gate.world) <= screenHitRadius) {
+          return {
+            x: screen.x,
+            y: screen.y,
+            title: gate.name || gate.id,
+            subtitle: `${gate.enabled ? "Enabled" : "Disabled"} asteroid belt gate`,
+            lines: [
+              `Gate ID: ${gate.id}`,
+              `Angle: ${numberInputValue(gate.angleDegrees)} deg`,
+              `Position: ${formatVec(gate.world)}`,
+              `Width: ${formatNumber(gate.widthPx)} px`,
+              `Save state: ${gate.modified ? "unsaved edit" : "live source"}`,
+            ],
+          };
+        }
+      }
       const originDistance = distance(world, { x: 0, y: 0 });
       if (originDistance <= payload.config.sunDangerRadius) {
         return {
@@ -1689,6 +1971,26 @@ export default function SystemMapViewer() {
         routeDrag.moved = true;
       }
       updateRouteHandlePosition(routeDrag.routeId, routeDrag.handleKey, nextWorld);
+      clearHover();
+      return;
+    }
+
+    const gateDrag = gateDragRef.current;
+    if (gateDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: gateDrag.gateStartWorld.x + world.x - gateDrag.startWorld.x,
+        y: gateDrag.gateStartWorld.y + world.y - gateDrag.startWorld.y,
+      };
+      if (!gateDrag.moved && distance(screen, gateDrag.startScreen) > 4) {
+        gateDrag.moved = true;
+      }
+      updateGatePosition(gateDrag.gateId, nextWorld);
       clearHover();
       return;
     }
@@ -1880,6 +2182,23 @@ export default function SystemMapViewer() {
     updateRouteInMap(routeForm.originalId, () => applied.route);
     setRouteForm(applied.form);
     setStatus({ tone: "success", message: `Applied route details for "${routeForm.name.trim()}". Use Save Route Changes To Build to write trade_routes.json.` });
+  }
+
+  function applyGateForm() {
+    if (!gateForm || !payload) return;
+    const gate = mapGates.find((entry) => gateIdentity(entry) === gateForm.originalId);
+    if (!gate) {
+      setStatus({ tone: "error", message: "Could not find the gate being edited." });
+      return;
+    }
+    const applied = applyGateFormToGate(gateForm, gate, mapGates, payload.config.asteroidBeltMidRadius);
+    if (applied.error || !applied.gate || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+    updateGateInMap(gateForm.originalId, () => applied.gate);
+    setGateForm(applied.form);
+    setStatus({ tone: "success", message: `Applied gate details for "${applied.gate.name}". Use Save Gate Changes To Build to write AsteroidBeltGates.json.` });
   }
 
   function removeDraftRoute(routeId: string) {
@@ -2201,14 +2520,104 @@ export default function SystemMapViewer() {
     }
   }
 
+  async function handleSaveGateChangesToBuild() {
+    if (!editedGateIds.length || savingGates || !payload) return;
+    setSavingGates(true);
+    setStatus(null);
+    try {
+      let gatesForSave = mapGates;
+      let editedGateIdsForSave = editedGateIds;
+      if (gateForm) {
+        const gate = gatesForSave.find((entry) => gateIdentity(entry) === gateForm.originalId);
+        if (gate) {
+          const applied = applyGateFormToGate(gateForm, gate, gatesForSave, payload.config.asteroidBeltMidRadius);
+          if (applied.error || !applied.gate || !applied.form) {
+            setStatus({ tone: "error", message: applied.error });
+            return;
+          }
+          gatesForSave = gatesForSave.map((entry) => (gateIdentity(entry) === gateForm.originalId ? applied.gate : entry));
+          if (!editedGateIdsForSave.includes(gateForm.originalId)) {
+            editedGateIdsForSave = [...editedGateIdsForSave, gateForm.originalId];
+          }
+          setGateForm(applied.form);
+        }
+      }
+
+      const sourceResponse = await fetch("/api/settings/data/source?kind=asteroidBeltGates", { cache: "no-store" });
+      const sourcePayload = await sourceResponse.json().catch(() => ({}));
+      if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
+        setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current AsteroidBeltGates.json before saving." });
+        return;
+      }
+
+      const parsed = parseTolerantJsonText(sourcePayload.text);
+      if (!parsed.value || !isPlainRecord(parsed.value)) {
+        setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse AsteroidBeltGates.json before saving." });
+        return;
+      }
+      const sourceGates = Array.isArray(parsed.value.gates) ? parsed.value.gates : [];
+      const editedGates = gatesForSave.filter((gate) => editedGateIdsForSave.includes(gateIdentity(gate)));
+      const updatedGates = sourceGates.map((gateValue, index) => {
+        const gateRecord = isPlainRecord(gateValue) ? gateValue : {};
+        const sourceGateId = typeof gateRecord.id === "string" ? gateRecord.id : "";
+        const editedGate = editedGates.find((gate) => gate.originalIndex === index || gateIdentity(gate) === sourceGateId);
+        return editedGate ? gateToAsteroidBeltJson(editedGate, gateRecord) : gateValue;
+      });
+
+      const asteroidBeltGates = {
+        ...parsed.value,
+        gates: updatedGates,
+      };
+      const saveResponse = await fetch("/api/asteroid-belt-gates/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ asteroidBeltGates }),
+      });
+      const savePayload = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok || !savePayload?.ok) {
+        setStatus({ tone: "error", message: savePayload?.error || "Could not save gate changes into AsteroidBeltGates.json." });
+        return;
+      }
+
+      const savedGates = gatesForSave.map((gate) => ({
+        ...gate,
+        modified: false,
+        originalId: undefined,
+      }));
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              asteroidBeltGates: savedGates,
+            }
+          : current,
+      );
+      setEditedGateIds([]);
+      setGateForm((current) => (current ? { ...current, originalId: sanitizeGateId(current.id) } : current));
+      setStatus({ tone: "success", message: `Saved ${editedGates.length} asteroid belt gate change${editedGates.length === 1 ? "" : "s"} into the live AsteroidBeltGates.json file.` });
+    } catch (saveError) {
+      setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+    } finally {
+      setSavingGates(false);
+    }
+  }
+
   const filteredZones = mapZones.filter((zone) => zoneMatches(zone, normalizedQuery));
   const filteredPois = payload?.pois.filter((poi) => poiMatches(poi, normalizedQuery)) ?? [];
   const filteredRoutes = mapRoutes.filter((route) => routeMatches(route, normalizedQuery));
+  const filteredGates = mapGates.filter((gate) => {
+    if (!normalizedQuery) return true;
+    return [gate.id, gate.name, gate.enabled ? "enabled" : "disabled", gate.angleDegrees, gate.widthPx].join(" ").toLowerCase().includes(normalizedQuery);
+  });
+  const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
   const sceneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneSpawns.length, 0), 0);
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
+  const hasGateChanges = editedGateIds.length > 0;
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
@@ -2243,8 +2652,56 @@ export default function SystemMapViewer() {
           <g transform={transform}>
             {toggles.environment ? (
               <>
-                <circle cx={0} cy={0} r={payload.config.asteroidBeltOuterRadius} fill="rgba(117,99,64,0.04)" stroke="rgba(251,191,36,0.30)" strokeWidth={2 / camera.zoom} />
-                <circle cx={0} cy={0} r={payload.config.asteroidBeltInnerRadius} fill="none" stroke="rgba(251,191,36,0.20)" strokeWidth={2 / camera.zoom} />
+                <circle cx={0} cy={0} r={payload.config.asteroidBeltOuterRadius} fill="none" stroke="rgba(251,191,36,0.13)" strokeWidth={1.5 / camera.zoom} />
+                <circle cx={0} cy={0} r={payload.config.asteroidBeltInnerRadius} fill="none" stroke="rgba(251,191,36,0.10)" strokeWidth={1.5 / camera.zoom} />
+                {asteroidVisuals.map((asteroid) => (
+                  <image
+                    key={asteroid.key}
+                    href={buildIconSrc(asteroid.sprite, asteroid.key, "Asteroid")}
+                    x={asteroid.x - asteroid.size / 2}
+                    y={asteroid.y - asteroid.size / 2}
+                    width={asteroid.size}
+                    height={asteroid.size}
+                    opacity={asteroid.opacity}
+                    transform={`rotate(${asteroid.rotation} ${asteroid.x} ${asteroid.y})`}
+                    style={{ pointerEvents: "none" }}
+                  />
+                ))}
+                {filteredGates.map((gate) => {
+                  const angle = (gate.angleDegrees * Math.PI) / 180;
+                  const inner = {
+                    x: Math.cos(angle) * payload.config.asteroidBeltInnerRadius,
+                    y: Math.sin(angle) * payload.config.asteroidBeltInnerRadius,
+                  };
+                  const outer = {
+                    x: Math.cos(angle) * payload.config.asteroidBeltOuterRadius,
+                    y: Math.sin(angle) * payload.config.asteroidBeltOuterRadius,
+                  };
+                  const changed = gate.modified;
+                  const gateColor = gate.enabled ? (changed ? "#facc15" : "#34d399") : "#94a3b8";
+                  return (
+                    <g key={`asteroid-gate:${gateIdentity(gate)}`}>
+                      <line
+                        x1={inner.x}
+                        y1={inner.y}
+                        x2={outer.x}
+                        y2={outer.y}
+                        stroke={gate.enabled ? "rgba(52,211,153,0.50)" : "rgba(148,163,184,0.28)"}
+                        strokeWidth={Math.max(gate.widthPx, 400)}
+                        strokeLinecap="round"
+                        strokeDasharray={!gate.enabled || changed ? `${12 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                      />
+                      <circle
+                        cx={gate.world.x}
+                        cy={gate.world.y}
+                        r={(draggingGateId === gateIdentity(gate) ? 10 : 7) / camera.zoom}
+                        fill={gateColor}
+                        stroke="rgba(255,255,255,0.82)"
+                        strokeWidth={(draggingGateId === gateIdentity(gate) ? 2 : 1) / camera.zoom}
+                      />
+                    </g>
+                  );
+                })}
                 <circle cx={0} cy={0} r={payload.config.sunDangerRadius} fill="rgba(249,115,22,0.10)" stroke="rgba(253,186,116,0.55)" strokeWidth={2 / camera.zoom} />
                 <circle cx={0} cy={0} r={payload.config.sunRadius} fill="url(#system-map-sun)" stroke="rgba(254,240,138,0.8)" strokeWidth={2 / camera.zoom} />
               </>
@@ -2521,6 +2978,27 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
+          {toggles.environment
+            ? filteredGates.map((gate) => {
+                const point = worldToScreen(gate.world);
+                return (
+                  <div
+                    key={`${gateIdentity(gate)}:gate-label`}
+                    className={`absolute translate-x-3 -translate-y-1/2 whitespace-nowrap rounded border px-2 py-1 text-xs shadow-lg ${
+                      gate.modified
+                        ? "border-yellow-300/35 bg-yellow-950/80 text-yellow-100"
+                        : gate.enabled
+                          ? "border-emerald-300/30 bg-emerald-950/80 text-emerald-100"
+                          : "border-white/10 bg-slate-950/80 text-white/55"
+                    }`}
+                    style={{ left: point.x, top: point.y }}
+                  >
+                    {gate.name || gate.id}
+                    {gate.modified ? " (edited)" : ""}
+                  </div>
+                );
+              })
+            : null}
           {toggles.pois
             ? filteredPois.map((poi) => {
                 const point = worldToScreen(poi.world);
@@ -2549,7 +3027,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} barriers`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -2559,6 +3037,9 @@ export default function SystemMapViewer() {
             </button>
             <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasRouteChanges || savingRoutes} onClick={() => void handleSaveRouteChangesToBuild()}>
               {savingRoutes ? "Saving..." : "Save Route Changes To Build"}
+            </button>
+            <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!hasGateChanges || savingGates} onClick={() => void handleSaveGateChangesToBuild()}>
+              {savingGates ? "Saving..." : "Save Gate Changes To Build"}
             </button>
             <button
               type="button"
@@ -2584,7 +3065,7 @@ export default function SystemMapViewer() {
         </div>
 
         <div className="mt-4">
-          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, stages, or mobs..." />
+          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, stages, or mobs..." />
         </div>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -2611,7 +3092,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates` : "0 zones"}</div>
           </div>
         </div>
 
@@ -2641,7 +3122,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone or route to edit details. Hold Command and drag a zone to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone, route, or asteroid belt gate to edit details. Hold Command and drag a zone or gate to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
       </div>
 
       {contextMenu ? (
@@ -2685,6 +3166,73 @@ export default function SystemMapViewer() {
           </button>
         </div>
       ) : null}
+
+      {gateForm
+        ? (() => {
+            const gate = mapGates.find((entry) => gateIdentity(entry) === gateForm.originalId);
+            const position = gate ? gate.world : asteroidGateWorld(Number(gateForm.angleDegrees) || 0, payload?.config.asteroidBeltMidRadius ?? DEFAULT_SECTOR_SIZE);
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(420px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">Edit Asteroid Belt Gate</div>
+                    <div className="mt-1 text-sm text-white/55">Adjust the gate gap used by the belt wall and asteroid visuals.</div>
+                  </div>
+                  <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setGateForm(null)}>
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Gate Name
+                    <input className="input mt-1" value={gateForm.name} onChange={(event) => setGateForm((current) => (current ? { ...current, name: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Gate ID
+                    <input className="input mt-1 font-mono" value={gateForm.id} onChange={(event) => setGateForm((current) => (current ? { ...current, id: sanitizeGateId(event.target.value) } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                    <span>Enabled</span>
+                    <input type="checkbox" checked={gateForm.enabled} onChange={(event) => setGateForm((current) => (current ? { ...current, enabled: event.target.checked } : current))} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Angle Degrees
+                    <input className="input mt-1" type="number" value={gateForm.angleDegrees} onChange={(event) => setGateForm((current) => (current ? { ...current, angleDegrees: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Width
+                    <input className="input mt-1" type="number" min="0" value={gateForm.widthPx} onChange={(event) => setGateForm((current) => (current ? { ...current, widthPx: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                  <div className="font-semibold text-white/80">Derived Position</div>
+                  <div className="mt-1 font-mono">{formatVec(position)}</div>
+                  <div className="mt-2 text-xs leading-5 text-white/45">The game file stores the gate as an angle. Command-drag the gate marker on the map to move this position around the belt.</div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setGateForm(null)}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applyGateForm}>
+                    Apply Gate Details
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
 
       {routeForm
         ? (() => {

@@ -170,6 +170,18 @@ export type SystemMapRoute = {
   points: SystemMapVec[];
 };
 
+export type SystemMapAsteroidBeltGate = {
+  id: string;
+  name: string;
+  originalId?: string;
+  enabled: boolean;
+  angleDegrees: number;
+  widthPx: number;
+  world: SystemMapVec;
+  originalIndex: number;
+  modified?: boolean;
+};
+
 export type SystemMapPayload = {
   ok: true;
   sourceRoot: string;
@@ -181,5 +193,6 @@ export type SystemMapPayload = {
   mobCatalog: SystemMapMobCatalogEntry[];
   pois: SystemMapPoi[];
   routes: SystemMapRoute[];
+  asteroidBeltGates: SystemMapAsteroidBeltGate[];
   warnings: string[];
 };

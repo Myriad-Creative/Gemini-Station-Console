@@ -37,8 +37,8 @@ const DATA_SECTIONS = [
   {
     href: "/data/system-map",
     title: "System Map",
-    description: "Open a full-screen visual map of sectors, zones, stage placements, POIs, routes, the Sun, asteroid belt, and known mob spawns.",
-    keys: ["zones", "stages", "mobs", "poi", "routes"],
+    description: "Open a full-screen visual map of sectors, zones, stage placements, POIs, routes, the Sun, asteroid belt gates, and known mob spawns.",
+    keys: ["zones", "stages", "mobs", "poi", "routes", "asteroidBeltGates"],
     newTab: true,
   },
   {
@@ -64,6 +64,12 @@ const DATA_SECTIONS = [
     title: "Zones",
     description: "Manage zone layouts, stage placements, mob spawns, and save live Zones.json updates back into the game root.",
     keys: ["zones"],
+  },
+  {
+    href: "/data/asteroid-belt-gates",
+    title: "Asteroid Belt Gates",
+    description: "Manage the enabled gate gaps, angles, and widths used by the procedural asteroid belt wall and visuals.",
+    keys: ["asteroidBeltGates"],
   },
   {
     href: "/data/systems",
