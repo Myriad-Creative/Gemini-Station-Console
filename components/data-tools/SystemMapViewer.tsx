@@ -173,6 +173,7 @@ const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
 
 const MIN_ZOOM = 0.00018;
 const MAX_ZOOM = 0.12;
+const KEYBOARD_ZOOM_STEP = 1.2;
 const DEFAULT_SECTOR_SIZE = 250000;
 const DEFAULT_SECTOR_HALF_EXTENT = 125000;
 const ASTEROID_LOW_DETAIL_ZOOM = 0.0007;
@@ -1392,6 +1393,10 @@ function isMapUiTarget(target: EventTarget | null) {
   return target instanceof Element && !!target.closest("[data-system-map-ui]");
 }
 
+function isTypingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
 export default function SystemMapViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; center: SystemMapVec } | null>(null);
@@ -1479,6 +1484,24 @@ export default function SystemMapViewer() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTypingTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "+" && event.key !== "-") return;
+      event.preventDefault();
+      applyZoomAtScreen(
+        {
+          x: viewport.width / 2,
+          y: viewport.height / 2,
+        },
+        event.key === "+" ? KEYBOARD_ZOOM_STEP : 1 / KEYBOARD_ZOOM_STEP,
+      );
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [viewport.height, viewport.width]);
 
   const mapZones = useMemo(() => (payload ? [...payload.zones, ...draftZones] : []), [draftZones, payload]);
   const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
@@ -1713,7 +1736,7 @@ export default function SystemMapViewer() {
       boundsShape: normalizeBoundsShape(zone.bounds.shape),
       boundsWidth: numberInputValue(zone.bounds.width),
       boundsHeight: numberInputValue(zone.bounds.height),
-      active: zone.active,
+      active: true,
       showHudOnEnter: zone.showHudOnEnter,
       poiMap: zone.poiMap,
       poiHidden: zone.poiHidden,
@@ -1768,20 +1791,13 @@ export default function SystemMapViewer() {
     });
   }
 
-  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (isMapUiTarget(event.target)) return;
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const screen = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    };
+  function applyZoomAtScreen(screen: SystemMapVec, zoomFactor: number) {
     setCamera((current) => {
       const before = {
         x: (screen.x - viewport.width / 2) / current.zoom + current.center.x,
         y: (screen.y - viewport.height / 2) / current.zoom + current.center.y,
       };
-      const nextZoom = clamp(current.zoom * (event.deltaY < 0 ? 1.2 : 1 / 1.2), MIN_ZOOM, MAX_ZOOM);
+      const nextZoom = clamp(current.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM);
       return {
         zoom: nextZoom,
         center: {
@@ -1790,6 +1806,17 @@ export default function SystemMapViewer() {
         },
       };
     });
+  }
+
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (isMapUiTarget(event.target)) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const screen = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+    applyZoomAtScreen(screen, event.deltaY < 0 ? KEYBOARD_ZOOM_STEP : 1 / KEYBOARD_ZOOM_STEP);
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -2358,7 +2385,7 @@ export default function SystemMapViewer() {
       boundsShape: "ellipse",
       boundsWidth: "15000",
       boundsHeight: "15000",
-      active: false,
+      active: true,
       showHudOnEnter: true,
       poiMap: false,
       poiHidden: false,
@@ -3402,7 +3429,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor. Click a zone, route, or asteroid belt gate to edit details. Hold Command and drag a zone or gate to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, or asteroid belt gate to edit details. Hold Command and drag a zone or gate to move it. Drag trade route endpoints or curve handles to reshape routes without adding extra anchors. Right-click the map to add zones, mob spawns, or trade routes.</div>
       </div>
 
       {contextMenu ? (

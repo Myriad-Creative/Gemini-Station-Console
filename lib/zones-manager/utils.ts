@@ -187,7 +187,7 @@ export function createBlankZone(existingIds: string[] = []): ZoneDraft {
   const id = createUniqueId("new_zone", existingIds);
   return createZoneDraft(id, {
     name: "New Zone",
-    active: false,
+    active: true,
     show_hud_on_enter: true,
     poi_map: false,
     poi_hidden: false,
