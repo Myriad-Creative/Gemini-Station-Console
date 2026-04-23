@@ -177,6 +177,8 @@ const DEFAULT_SECTOR_SIZE = 250000;
 const DEFAULT_SECTOR_HALF_EXTENT = 125000;
 const ASTEROID_LOW_DETAIL_ZOOM = 0.0007;
 const ASTEROID_MEDIUM_DETAIL_ZOOM = 0.0015;
+const ASTEROID_SPRITE_DETAIL_ZOOM = 0.004;
+const BARRIER_SPRITE_DETAIL_ZOOM = 0.006;
 const ASTEROID_VIEW_PADDING = 90000;
 const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_1.png",
@@ -676,6 +678,54 @@ const AsteroidFieldLayer = memo(function AsteroidFieldLayer({ asteroids }: { ast
   );
 });
 
+const AsteroidBeltBand = memo(function AsteroidBeltBand({
+  innerRadius,
+  outerRadius,
+  midRadius,
+  camera,
+}: {
+  innerRadius: number;
+  outerRadius: number;
+  midRadius: number;
+  camera: Camera;
+}) {
+  const labelSize = 13 / camera.zoom;
+  const labelOffset = 18 / camera.zoom;
+  const bandWidth = Math.max(1, outerRadius - innerRadius);
+  const labelRadius = midRadius + bandWidth * 0.85 + labelOffset;
+  const labelPositions = [
+    { key: "east", x: labelRadius, y: 0, anchor: "start" as const },
+    { key: "west", x: -labelRadius, y: 0, anchor: "end" as const },
+    { key: "north", x: 0, y: -labelRadius, anchor: "middle" as const },
+    { key: "south", x: 0, y: labelRadius + labelSize, anchor: "middle" as const },
+  ];
+
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <circle cx={0} cy={0} r={midRadius} fill="none" stroke="rgba(180,134,68,0.16)" strokeWidth={bandWidth} />
+      <circle cx={0} cy={0} r={outerRadius} fill="none" stroke="rgba(251,191,36,0.22)" strokeWidth={1.5 / camera.zoom} />
+      <circle cx={0} cy={0} r={innerRadius} fill="none" stroke="rgba(251,191,36,0.16)" strokeWidth={1.5 / camera.zoom} />
+      {labelPositions.map((label) => (
+        <text
+          key={label.key}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.anchor}
+          fill="rgba(253,224,151,0.76)"
+          fontSize={labelSize}
+          fontWeight={700}
+          letterSpacing={1.8 / camera.zoom}
+          paintOrder="stroke"
+          stroke="rgba(3,8,18,0.82)"
+          strokeWidth={3 / camera.zoom}
+        >
+          Asteroid Belt
+        </text>
+      ))}
+    </g>
+  );
+});
+
 function hashString(value: string) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -779,7 +829,7 @@ function buildBarrierVisuals(barrier: SystemMapSceneBarrier, keyBase: string): B
   return visuals;
 }
 
-const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query }: { zones: SystemMapZone[]; query: string }) {
+const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query, showSprites }: { zones: SystemMapZone[]; query: string; showSprites: boolean }) {
   const entries = useMemo(
     () =>
       zones.flatMap((zone) =>
@@ -791,12 +841,12 @@ const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query }: { 
               return {
                 barrier,
                 key,
-                visuals: buildBarrierVisuals(barrier, key),
+                visuals: showSprites ? buildBarrierVisuals(barrier, key) : [],
               };
             }),
         ),
       ),
-    [query, zones],
+    [query, showSprites, zones],
   );
 
   return (
@@ -813,18 +863,20 @@ const HazardBarrierLayer = memo(function HazardBarrierLayer({ zones, query }: { 
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {visuals.map((visual) => (
-              <use
-                key={visual.key}
-                href={`#${barrierSymbolId(visual.sprite)}`}
-                x={visual.x - visual.size / 2}
-                y={visual.y - visual.size / 2}
-                width={visual.size}
-                height={visual.size}
-                opacity={visual.opacity}
-                transform={`rotate(${visual.rotation} ${visual.x} ${visual.y})`}
-              />
-            ))}
+            {showSprites
+              ? visuals.map((visual) => (
+                  <use
+                    key={visual.key}
+                    href={`#${barrierSymbolId(visual.sprite)}`}
+                    x={visual.x - visual.size / 2}
+                    y={visual.y - visual.size / 2}
+                    width={visual.size}
+                    height={visual.size}
+                    opacity={visual.opacity}
+                    transform={`rotate(${visual.rotation} ${visual.x} ${visual.y})`}
+                  />
+                ))
+              : null}
           </g>
         );
       })}
@@ -2842,8 +2894,10 @@ export default function SystemMapViewer() {
     if (!normalizedQuery) return true;
     return [gate.id, gate.name, gate.enabled ? "enabled" : "disabled", gate.angleDegrees, gate.widthPx].join(" ").toLowerCase().includes(normalizedQuery);
   }), [mapGates, normalizedQuery]);
+  const showAsteroidSprites = camera.zoom >= ASTEROID_SPRITE_DETAIL_ZOOM;
+  const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
-  const visibleAsteroids = useMemo(() => filterAsteroidsForCamera(asteroidVisuals, camera, viewport), [asteroidVisuals, camera, viewport]);
+  const visibleAsteroids = useMemo(() => (showAsteroidSprites ? filterAsteroidsForCamera(asteroidVisuals, camera, viewport) : []), [asteroidVisuals, camera, showAsteroidSprites, viewport]);
   const barrierSpritePaths = useMemo(() => {
     const paths = new Set<string>([...ASTEROID_SPRITES, ...BARRIER_DEBRIS_SPRITES, ...BARRIER_GAS_SPRITES]);
     for (const zone of mapZones) {
@@ -2907,9 +2961,8 @@ export default function SystemMapViewer() {
           <g transform={transform}>
             {toggles.environment ? (
               <>
-                <circle cx={0} cy={0} r={payload.config.asteroidBeltOuterRadius} fill="none" stroke="rgba(251,191,36,0.13)" strokeWidth={1.5 / camera.zoom} />
-                <circle cx={0} cy={0} r={payload.config.asteroidBeltInnerRadius} fill="none" stroke="rgba(251,191,36,0.10)" strokeWidth={1.5 / camera.zoom} />
-                <AsteroidFieldLayer asteroids={visibleAsteroids} />
+                <AsteroidBeltBand innerRadius={payload.config.asteroidBeltInnerRadius} outerRadius={payload.config.asteroidBeltOuterRadius} midRadius={payload.config.asteroidBeltMidRadius} camera={camera} />
+                {showAsteroidSprites ? <AsteroidFieldLayer asteroids={visibleAsteroids} /> : null}
                 {filteredGates.map((gate) => {
                   const angle = (gate.angleDegrees * Math.PI) / 180;
                   const inner = {
@@ -3084,7 +3137,7 @@ export default function SystemMapViewer() {
                 })
               : null}
 
-            {toggles.barriers ? <HazardBarrierLayer zones={filteredZones} query={normalizedQuery} /> : null}
+            {toggles.barriers ? <HazardBarrierLayer zones={filteredZones} query={normalizedQuery} showSprites={showBarrierSprites} /> : null}
 
             {toggles.stages
               ? filteredZones.flatMap((zone) =>
