@@ -49,12 +49,22 @@ type MapStatus = {
   tone: "success" | "error" | "neutral";
   message: string;
 };
+type ContextMenuEditTarget =
+  | { kind: "zone"; zoneId: string }
+  | { kind: "stage"; zoneId: string; stageKey: string }
+  | { kind: "mob"; zoneId: string; mobKey: string }
+  | { kind: "route"; routeId: string }
+  | { kind: "gate"; gateId: string }
+  | { kind: "environmental_barrier"; elementId: string }
+  | { kind: "environmental_region"; elementId: string }
+  | { kind: "mineable_asteroid"; elementId: string };
 type ContextMenuState = {
   x: number;
   y: number;
   world: SystemMapVec;
   zoneId: string | null;
   routeId: string | null;
+  editTarget: ContextMenuEditTarget | null;
 };
 type EnvironmentalBarrierForm = {
   mode: "create" | "edit";
@@ -246,6 +256,7 @@ type EnvironmentalDragState = {
   elementId: string;
   startScreen: SystemMapVec;
   startWorld: SystemMapVec;
+  elementStart: SystemMapEnvironmentalElement;
   moved: boolean;
 };
 type EnvironmentalPointDragState = {
@@ -2820,6 +2831,15 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findZoneDotAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let index = filteredZones.length - 1; index >= 0; index -= 1) {
+      const zone = filteredZones[index];
+      if (distance(world, zone.world) <= screenHitRadius) return zone;
+    }
+    return null;
+  }
+
   function routeEditHandles(route: SystemMapRoute): Array<{ key: RouteHandleKey; point: SystemMapVec; label: string; kind: "endpoint" | "control" }> {
     const [endpointA, endpointB] = routeEndpoints(route);
     const handles: Array<{ key: RouteHandleKey; point: SystemMapVec; label: string; kind: "endpoint" | "control" }> = [{ key: "endpointA", point: endpointA, label: "A", kind: "endpoint" }];
@@ -2875,6 +2895,20 @@ export default function SystemMapViewer() {
         const mob = zone.mobs[mobIndex];
         if (distance(world, mob.world) <= screenHitRadius) {
           return { zone, mob };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findStageDotAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let zoneIndex = filteredZones.length - 1; zoneIndex >= 0; zoneIndex -= 1) {
+      const zone = filteredZones[zoneIndex];
+      for (let stageIndex = zone.stages.length - 1; stageIndex >= 0; stageIndex -= 1) {
+        const stage = zone.stages[stageIndex];
+        if (distance(world, stage.world) <= screenHitRadius) {
+          return { zone, stage };
         }
       }
     }
@@ -3099,6 +3133,15 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findMineableAsteroidDotAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let index = filteredMineableAsteroids.length - 1; index >= 0; index -= 1) {
+      const asteroid = filteredMineableAsteroids[index];
+      if (distance(world, asteroid.world) <= screenHitRadius) return asteroid;
+    }
+    return null;
+  }
+
   function updateEnvironmentalBarrierPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
@@ -3115,12 +3158,12 @@ export default function SystemMapViewer() {
     });
   }
 
-  function updateEnvironmentalElementPosition(elementId: string, delta: SystemMapVec) {
+  function updateEnvironmentalElementPosition(elementId: string, startElement: SystemMapEnvironmentalElement, delta: SystemMapVec) {
     if (!payload) return;
-    updateEnvironmentalElementInMap(elementId, (element) => {
-      if (element.type === "hazard_barrier") return moveEnvironmentalBarrierByDelta(element, delta, payload);
-      if (element.type === "mineable_asteroid") return moveMineableAsteroidByDelta(element, delta, payload);
-      return moveEnvironmentalRegionByDelta(element, delta, payload);
+    updateEnvironmentalElementInMap(elementId, () => {
+      if (startElement.type === "hazard_barrier") return moveEnvironmentalBarrierByDelta(startElement, delta, payload);
+      if (startElement.type === "mineable_asteroid") return moveMineableAsteroidByDelta(startElement, delta, payload);
+      return moveEnvironmentalRegionByDelta(startElement, delta, payload);
     });
   }
 
@@ -3504,7 +3547,7 @@ export default function SystemMapViewer() {
       return;
     }
     const targetGate = toggles.environment ? findGateAtWorld(world) : null;
-    if (targetGate && event.metaKey) {
+    if (targetGate) {
       event.currentTarget.setPointerCapture(event.pointerId);
       gateDragRef.current = {
         gateId: gateIdentity(targetGate),
@@ -3517,26 +3560,17 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
-    if (targetGate) {
-      openGateEditor(targetGate);
-      clearHover();
-      return;
-    }
-    const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidAtWorld(world) : null;
-    if (targetMineableAsteroid && event.metaKey) {
+    const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidDotAtWorld(world) : null;
+    if (targetMineableAsteroid) {
       event.currentTarget.setPointerCapture(event.pointerId);
       environmentalDragRef.current = {
         elementId: environmentalElementIdentity(targetMineableAsteroid),
         startScreen: screen,
         startWorld: world,
+        elementStart: targetMineableAsteroid,
         moved: false,
       };
       setDraggingEnvironmentalId(environmentalElementIdentity(targetMineableAsteroid));
-      clearHover();
-      return;
-    }
-    if (targetMineableAsteroid) {
-      openMineableAsteroidEditor(targetMineableAsteroid);
       clearHover();
       return;
     }
@@ -3547,14 +3581,10 @@ export default function SystemMapViewer() {
         elementId: environmentalElementIdentity(targetEnvironmentalBarrier),
         startScreen: screen,
         startWorld: world,
+        elementStart: targetEnvironmentalBarrier,
         moved: false,
       };
       setDraggingEnvironmentalId(environmentalElementIdentity(targetEnvironmentalBarrier));
-      clearHover();
-      return;
-    }
-    if (targetEnvironmentalBarrier) {
-      openEnvironmentalBarrierEditor(targetEnvironmentalBarrier);
       clearHover();
       return;
     }
@@ -3565,14 +3595,10 @@ export default function SystemMapViewer() {
         elementId: environmentalElementIdentity(targetEnvironmentalRegion),
         startScreen: screen,
         startWorld: world,
+        elementStart: targetEnvironmentalRegion,
         moved: false,
       };
       setDraggingEnvironmentalId(environmentalElementIdentity(targetEnvironmentalRegion));
-      clearHover();
-      return;
-    }
-    if (targetEnvironmentalRegion) {
-      openEnvironmentalRegionEditor(targetEnvironmentalRegion);
       clearHover();
       return;
     }
@@ -3591,8 +3617,8 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
-    const targetStagePlacement = toggles.stages ? findStagePlacementAtWorld(world) : null;
-    if (targetStagePlacement && event.metaKey) {
+    const targetStagePlacement = toggles.stages ? findStageDotAtWorld(world) : null;
+    if (targetStagePlacement) {
       event.currentTarget.setPointerCapture(event.pointerId);
       stageDragRef.current = {
         zoneId: zoneIdentity(targetStagePlacement.zone),
@@ -3606,27 +3632,18 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
-    if (targetStagePlacement) {
-      openStagePlacementEditor(targetStagePlacement.zone, targetStagePlacement.stage);
-      clearHover();
-      return;
-    }
-    const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
-    if (targetZone && event.metaKey) {
+    const targetZone = toggles.zones ? findZoneDotAtWorld(world) : null;
+    if (targetZone) {
+      const targetZoneId = zoneIdentity(targetZone);
       event.currentTarget.setPointerCapture(event.pointerId);
       zoneDragRef.current = {
-        zoneId: targetZone.id,
+        zoneId: targetZoneId,
         startScreen: screen,
         startWorld: world,
         zoneStartWorld: targetZone.world,
         moved: false,
       };
-      setDraggingZoneId(targetZone.id);
-      clearHover();
-      return;
-    }
-    if (targetZone) {
-      openZoneEditor(targetZone);
+      setDraggingZoneId(targetZoneId);
       clearHover();
       return;
     }
@@ -3681,8 +3698,6 @@ export default function SystemMapViewer() {
       const mob = zone?.mobs.find((entry) => mobIdentity(entry) === mobDrag.mobKey);
       if (mobDrag.moved) {
         setStatus({ tone: "success", message: `Moved "${mob?.displayName || mobDrag.mobKey}". Use Save Changes To Build to write the spawn position into Zones.json.` });
-      } else if (zone && mob) {
-        openMobSpawnEditor(zone, mob);
       }
     }
     const stageDrag = stageDragRef.current;
@@ -3691,13 +3706,11 @@ export default function SystemMapViewer() {
       const stage = zone?.stages.find((entry) => stageIdentity(entry) === stageDrag.stageKey);
       if (stageDrag.moved) {
         setStatus({ tone: "success", message: `Moved "${stage?.name || stageDrag.stageKey}". Use Save Changes To Build to write the stage position into Zones.json.` });
-      } else if (zone && stage) {
-        openStagePlacementEditor(zone, stage);
       }
     }
     const zoneDrag = zoneDragRef.current;
     if (zoneDrag?.moved) {
-      const zone = mapZones.find((entry) => entry.id === zoneDrag.zoneId);
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === zoneDrag.zoneId);
       setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Changes To Build to write the new coordinates into Zones.json.` });
     }
     const gateDrag = gateDragRef.current;
@@ -3705,8 +3718,6 @@ export default function SystemMapViewer() {
       const gate = mapGates.find((entry) => gateIdentity(entry) === gateDrag.gateId);
       if (gateDrag.moved) {
         setStatus({ tone: "success", message: `Moved "${gate?.name || gateDrag.gateId}". Use Save Changes To Build to write the new angle into AsteroidBeltGates.json.` });
-      } else if (gate) {
-        openGateEditor(gate);
       }
     }
     const environmentalDrag = environmentalDragRef.current;
@@ -3718,8 +3729,6 @@ export default function SystemMapViewer() {
         openEnvironmentalBarrierEditor(element);
       } else if (element?.type === "environment_region") {
         openEnvironmentalRegionEditor(element);
-      } else if (element?.type === "mineable_asteroid") {
-        openMineableAsteroidEditor(element);
       }
     }
     mobDragRef.current = null;
@@ -3750,16 +3759,97 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
+    const targetStagePlacement = toggles.stages ? findStagePlacementAtWorld(world) : null;
+    const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidAtWorld(world) : null;
+    const targetGate = toggles.environment ? findGateAtWorld(world) : null;
+    const targetEnvironmentalBarrier = toggles.barriers ? findEnvironmentalBarrierAtWorld(world) : null;
+    const targetEnvironmentalRegion = toggles.barriers ? findEnvironmentalRegionAtWorld(world) : null;
     const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
     const targetRoute = toggles.routes ? findRouteAtWorld(world) : null;
+    const zoneForAdd = targetMobSpawn?.zone ?? targetStagePlacement?.zone ?? targetZone;
+    const editTarget: ContextMenuEditTarget | null = targetMobSpawn
+      ? { kind: "mob", zoneId: zoneIdentity(targetMobSpawn.zone), mobKey: mobIdentity(targetMobSpawn.mob) }
+      : targetStagePlacement
+        ? { kind: "stage", zoneId: zoneIdentity(targetStagePlacement.zone), stageKey: stageIdentity(targetStagePlacement.stage) }
+        : targetMineableAsteroid
+          ? { kind: "mineable_asteroid", elementId: environmentalElementIdentity(targetMineableAsteroid) }
+          : targetGate
+            ? { kind: "gate", gateId: gateIdentity(targetGate) }
+            : targetEnvironmentalBarrier
+              ? { kind: "environmental_barrier", elementId: environmentalElementIdentity(targetEnvironmentalBarrier) }
+              : targetEnvironmentalRegion
+                ? { kind: "environmental_region", elementId: environmentalElementIdentity(targetEnvironmentalRegion) }
+                : targetRoute
+                  ? { kind: "route", routeId: routeIdentity(targetRoute) }
+                  : targetZone
+                    ? { kind: "zone", zoneId: zoneIdentity(targetZone) }
+                    : null;
     setContextMenu({
       x: screen.x,
       y: screen.y,
       world,
-      zoneId: targetZone ? zoneIdentity(targetZone) : null,
+      zoneId: zoneForAdd ? zoneIdentity(zoneForAdd) : null,
       routeId: targetRoute ? routeIdentity(targetRoute) : null,
+      editTarget,
     });
     clearHover();
+  }
+
+  function contextMenuEditLabel(target: ContextMenuEditTarget) {
+    switch (target.kind) {
+      case "zone":
+        return "Edit Zone";
+      case "stage":
+        return "Edit Stage";
+      case "mob":
+        return "Edit Mob Spawn";
+      case "route":
+        return "Edit Trade Route";
+      case "gate":
+        return "Edit Belt Gate";
+      case "environmental_barrier":
+        return "Edit Hazard Barrier";
+      case "environmental_region":
+        return "Edit Region";
+      case "mineable_asteroid":
+        return "Edit Mineable Asteroid Field";
+    }
+  }
+
+  function openContextMenuEditTarget(target: ContextMenuEditTarget) {
+    if (target.kind === "zone") {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === target.zoneId);
+      if (zone) openZoneEditor(zone);
+      return;
+    }
+    if (target.kind === "stage") {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === target.zoneId);
+      const stage = zone?.stages.find((entry) => stageIdentity(entry) === target.stageKey);
+      if (zone && stage) openStagePlacementEditor(zone, stage);
+      return;
+    }
+    if (target.kind === "mob") {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === target.zoneId);
+      const mob = zone?.mobs.find((entry) => mobIdentity(entry) === target.mobKey);
+      if (zone && mob) openMobSpawnEditor(zone, mob);
+      return;
+    }
+    if (target.kind === "route") {
+      const route = mapRoutes.find((entry) => routeIdentity(entry) === target.routeId);
+      if (route) openRouteEditor(route);
+      return;
+    }
+    if (target.kind === "gate") {
+      const gate = mapGates.find((entry) => gateIdentity(entry) === target.gateId);
+      if (gate) openGateEditor(gate);
+      return;
+    }
+    const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === target.elementId);
+    if (!element) return;
+    if (target.kind === "mineable_asteroid" && element.type === "mineable_asteroid") openMineableAsteroidEditor(element);
+    if (target.kind === "environmental_barrier" && element.type === "hazard_barrier") openEnvironmentalBarrierEditor(element);
+    if (target.kind === "environmental_region" && element.type === "environment_region") openEnvironmentalRegionEditor(element);
   }
 
   function clearHover() {
@@ -4154,7 +4244,7 @@ export default function SystemMapViewer() {
       if (!environmentalDrag.moved && distance(screen, environmentalDrag.startScreen) > 4) {
         environmentalDrag.moved = true;
       }
-      updateEnvironmentalElementPosition(environmentalDrag.elementId, delta);
+      updateEnvironmentalElementPosition(environmentalDrag.elementId, environmentalDrag.elementStart, delta);
       clearHover();
       return;
     }
@@ -5606,7 +5696,7 @@ export default function SystemMapViewer() {
                           fill={zoneFill}
                           stroke={zoneColor}
                           strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={(draggingZoneId === zone.id ? 4 : 2) / camera.zoom}
+                          strokeWidth={(draggingZoneId === zoneIdentity(zone) ? 4 : 2) / camera.zoom}
                         />
                       ) : (
                         <ellipse
@@ -5617,10 +5707,10 @@ export default function SystemMapViewer() {
                           fill={zoneFill}
                           stroke={zoneColor}
                           strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={(draggingZoneId === zone.id ? 4 : 2) / camera.zoom}
+                          strokeWidth={(draggingZoneId === zoneIdentity(zone) ? 4 : 2) / camera.zoom}
                         />
                       )}
-                      <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zone.id ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
+                      <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zoneIdentity(zone) ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
                     </g>
                   );
                 })
@@ -6138,22 +6228,22 @@ export default function SystemMapViewer() {
       {contextMenu ? (
         <div
           data-system-map-ui="true"
-          className="absolute z-[120] min-w-56 cursor-default rounded-xl border border-white/10 bg-[#08111f]/95 p-2 text-sm shadow-2xl backdrop-blur"
-          style={{ left: Math.min(contextMenu.x, viewport.width - 240), top: Math.min(contextMenu.y, viewport.height - 220) }}
+          className="absolute z-[120] w-72 max-w-[calc(100vw-1rem)] cursor-default rounded-xl border border-white/10 bg-[#08111f]/95 p-1.5 text-sm shadow-2xl backdrop-blur"
+          style={{ left: Math.max(8, Math.min(contextMenu.x, viewport.width - 296)), top: Math.max(8, Math.min(contextMenu.y, viewport.height - 300)) }}
           onPointerDown={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
           <div className="px-3 py-2 text-xs text-white/50">World {formatVec(contextMenu.world)}</div>
-          {contextMenu.routeId ? (
+          {contextMenu.editTarget ? (
             <button
               type="button"
-              className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+              className="w-full rounded-lg bg-white/10 px-3 py-2 text-left font-semibold text-white hover:bg-white/15"
               onClick={() => {
-                const route = mapRoutes.find((entry) => routeIdentity(entry) === contextMenu.routeId);
-                if (route) openRouteEditor(route);
+                if (contextMenu.editTarget) openContextMenuEditTarget(contextMenu.editTarget);
+                setContextMenu(null);
               }}
             >
-              Edit Trade Route
+              {contextMenuEditLabel(contextMenu.editTarget)}
             </button>
           ) : null}
           {contextMenu.zoneId ? (
