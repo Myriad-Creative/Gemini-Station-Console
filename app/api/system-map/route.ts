@@ -39,6 +39,9 @@ const ASTEROID_BELT_MID_RADIUS = 375000;
 const DEFAULT_ASTEROID_BELT_GATE_WIDTH = 2000;
 const DEFAULT_HAZARD_BARRIER_PROFILE_ID = "wreck_plasma_orange";
 const DEFAULT_HAZARD_BARRIER_BAND_WIDTH = 480;
+const DEFAULT_MINEABLE_ASTEROID_TEXTURE = "res://assets/environment/asteroids/ast_1.png";
+const DEFAULT_MINING_LOOT_ICON = "res://assets/items/item_crate_iron_ore.png";
+const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
 
 const SECTOR_NAMES = new Map<string, string>([
   ["-3,3", "-33"],
@@ -415,8 +418,6 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
       const id = stringValue(element.id, `environmental_element_${index + 1}`);
       const type = stringValue(element.type, "hazard_barrier");
       const sector = vecValue(element.sector_id);
-      const profileId = stringValue(data.profile_id, DEFAULT_HAZARD_BARRIER_PROFILE_ID);
-      const visualProfile = resolveBarrierVisualProfile(profileId, hazardBarrierProfilesJson, stagesJson);
       const common = {
         id,
         name: stringValue(element.name, id),
@@ -426,6 +427,38 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
           .map((tag) => stringValue(tag).trim())
           .filter(Boolean),
         notes: stringValue(element.notes, ""),
+      };
+
+      if (type === "mineable_asteroid") {
+        const local = vecValue(data.position);
+        return {
+          ...common,
+          type: "mineable_asteroid" as const,
+          local,
+          world: worldFromSectorLocal(sector, local),
+          texture: stringValue(data.texture, DEFAULT_MINEABLE_ASTEROID_TEXTURE),
+          radius: Math.max(1, numberValue(data.radius, 160)),
+          visualScale: Math.max(0.01, numberValue(data.visual_scale, 1)),
+          durability: Math.max(1, numberValue(data.durability, 500)),
+          respawnSeconds: Math.max(0, numberValue(data.respawn_seconds, 300)),
+          lootboxCount: Math.max(0, numberValue(data.lootbox_count, 1)),
+          itemLootTable: stringValue(data.item_loot_table, DEFAULT_MINING_LOOT_TABLE),
+          itemDropChance: numberValue(data.item_drop_chance, 1),
+          itemRolls: Math.max(0, numberValue(data.item_rolls, 1)),
+          itemNoDuplicates: boolValue(data.item_no_duplicates, false),
+          modLootTable: stringValue(data.mod_loot_table, ""),
+          modDropChance: numberValue(data.mod_drop_chance, 0),
+          modRolls: Math.max(0, numberValue(data.mod_rolls, 0)),
+          miningLootIcon: stringValue(data.mining_loot_icon, DEFAULT_MINING_LOOT_ICON),
+          miningLootIconScale: vecValue(data.mining_loot_icon_scale, { x: 0.1, y: 0.1 }),
+          randomizeRotation: boolValue(data.randomize_rotation, true),
+        };
+      }
+
+      const profileId = stringValue(data.profile_id, DEFAULT_HAZARD_BARRIER_PROFILE_ID);
+      const visualProfile = resolveBarrierVisualProfile(profileId, hazardBarrierProfilesJson, stagesJson);
+      const visualCommon = {
+        ...common,
         profileId,
         baseStageProfile: visualProfile.baseStageProfile,
         visualKind: visualProfile.visualKind,
@@ -449,7 +482,7 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
         const rotationDeg = numberValue(data.rotation_deg);
         const outlinePoints = shape === "polygon" ? points : center ? ellipsePoints(center, width, height, rotationDeg) : [];
         return {
-          ...common,
+          ...visualCommon,
           type: "environment_region" as const,
           shape,
           points,
@@ -464,7 +497,7 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
 
       const points = asArray(data.points).map((point) => vecValue(point));
       return {
-        ...common,
+        ...visualCommon,
         type: "hazard_barrier" as const,
         bandWidth: Math.max(1, numberValue(data.band_width, DEFAULT_HAZARD_BARRIER_BAND_WIDTH)),
         closedLoop: boolValue(data.closed_loop, false),

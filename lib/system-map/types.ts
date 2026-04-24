@@ -91,17 +91,21 @@ export type SystemMapEnvironmentProfile = {
   materialPaths: string[];
 };
 
-export type SystemMapEnvironmentalElementBase = {
+export type SystemMapEnvironmentalElementCommon = {
   id: string;
   originalId?: string;
   draft?: boolean;
   modified?: boolean;
-  type: "hazard_barrier" | "environment_region";
+  type: "hazard_barrier" | "environment_region" | "mineable_asteroid";
   name: string;
   active: boolean;
   sector: SystemMapVec;
   tags: string[];
   notes: string;
+};
+
+export type SystemMapEnvironmentalElementBase = SystemMapEnvironmentalElementCommon & {
+  type: "hazard_barrier" | "environment_region";
   profileId: string;
   baseStageProfile: string;
   visualKind: SystemMapSceneBarrierVisualKind;
@@ -138,7 +142,29 @@ export type SystemMapEnvironmentalRegion = SystemMapEnvironmentalElementBase & {
   rotationDeg: number;
 };
 
-export type SystemMapEnvironmentalElement = SystemMapEnvironmentalHazardBarrier | SystemMapEnvironmentalRegion;
+export type SystemMapMineableAsteroid = SystemMapEnvironmentalElementCommon & {
+  type: "mineable_asteroid";
+  local: SystemMapVec;
+  world: SystemMapVec;
+  texture: string;
+  radius: number;
+  visualScale: number;
+  durability: number;
+  respawnSeconds: number;
+  lootboxCount: number;
+  itemLootTable: string;
+  itemDropChance: number;
+  itemRolls: number;
+  itemNoDuplicates: boolean;
+  modLootTable: string;
+  modDropChance: number;
+  modRolls: number;
+  miningLootIcon: string;
+  miningLootIconScale: SystemMapVec;
+  randomizeRotation: boolean;
+};
+
+export type SystemMapEnvironmentalElement = SystemMapEnvironmentalHazardBarrier | SystemMapEnvironmentalRegion | SystemMapMineableAsteroid;
 
 export type SystemMapMobSpawn = {
   key: string;

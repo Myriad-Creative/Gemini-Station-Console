@@ -11,6 +11,7 @@ import type {
   SystemMapEnvironmentalHazardBarrier,
   SystemMapEnvironmentalRegion,
   SystemMapEnvironmentProfile,
+  SystemMapMineableAsteroid,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -101,6 +102,36 @@ type EnvironmentalRegionForm = {
   width: string;
   height: string;
   rotationDeg: string;
+};
+type MineableAsteroidForm = {
+  mode: "create" | "edit";
+  originalId: string;
+  name: string;
+  id: string;
+  active: boolean;
+  sectorX: string;
+  sectorY: string;
+  localX: string;
+  localY: string;
+  texture: string;
+  radius: string;
+  visualScale: string;
+  durability: string;
+  respawnSeconds: string;
+  lootboxCount: string;
+  itemLootTable: string;
+  itemDropChance: string;
+  itemRolls: string;
+  itemNoDuplicates: boolean;
+  modLootTable: string;
+  modDropChance: string;
+  modRolls: string;
+  miningLootIcon: string;
+  miningLootIconScaleX: string;
+  miningLootIconScaleY: string;
+  randomizeRotation: boolean;
+  tags: string;
+  notes: string;
 };
 type RouteDraftForm = {
   mode: "create" | "edit";
@@ -262,6 +293,14 @@ const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_4.png",
   "res://assets/environment/asteroids/ast_5.png",
   "res://assets/environment/asteroids/ast_6.png",
+];
+const DEFAULT_MINEABLE_ASTEROID_TEXTURE = ASTEROID_SPRITES[0];
+const DEFAULT_MINING_LOOT_ICON = "res://assets/items/item_crate_iron_ore.png";
+const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
+const MINING_LOOT_ICON_OPTIONS = [
+  DEFAULT_MINING_LOOT_ICON,
+  "res://assets/items/item_iron_ore_crate.png",
+  "res://assets/items/item_iron_ore.png",
 ];
 const BARRIER_DEBRIS_SPRITES = [
   "res://assets/environment/debris/debris_1.png",
@@ -523,17 +562,31 @@ function defaultEnvironmentProfile(
 
 function environmentalElementMatches(element: SystemMapEnvironmentalElement, query: string) {
   if (!query) return true;
-  return [
-    element.id,
-    element.name,
-    element.type,
-    element.profileId,
-    element.baseStageProfile,
-    element.visualKind,
-    element.notes,
-    element.tags.join(" "),
-    ...(element.materialPaths ?? []),
-  ]
+  const searchable =
+    element.type === "mineable_asteroid"
+      ? [
+          element.id,
+          element.name,
+          element.type,
+          element.texture,
+          element.itemLootTable,
+          element.modLootTable,
+          element.miningLootIcon,
+          element.notes,
+          element.tags.join(" "),
+        ]
+      : [
+          element.id,
+          element.name,
+          element.type,
+          element.profileId,
+          element.baseStageProfile,
+          element.visualKind,
+          element.notes,
+          element.tags.join(" "),
+          ...(element.materialPaths ?? []),
+        ];
+  return searchable
     .join(" ")
     .toLowerCase()
     .includes(query);
@@ -594,6 +647,14 @@ function computeWorldBounds(
       for (const point of element.worldPoints) {
         bounds = expandBounds(bounds, point);
       }
+    } else if (element.type === "mineable_asteroid") {
+      const radius = Math.max(1, element.radius * element.visualScale);
+      bounds = mergeRect(bounds, {
+        x: element.world.x - radius,
+        y: element.world.y - radius,
+        w: radius * 2,
+        h: radius * 2,
+      });
     } else if (element.worldCenter) {
       bounds = mergeRect(bounds, {
         x: element.worldCenter.x - element.width / 2,
@@ -1277,6 +1338,48 @@ function createEnvironmentalEllipseDraftFromPoint(world: SystemMapVec, payload: 
   };
 }
 
+function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapMineableAsteroid {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeEnvironmentalElementId("New Mineable Asteroid"), existingIds);
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    id,
+    originalId: id,
+    draft: true,
+    modified: false,
+    type: "mineable_asteroid",
+    name: "New Mineable Asteroid",
+    active: true,
+    sector,
+    tags: ["mineable", "asteroid"],
+    notes: "",
+    local: {
+      x: Math.round(local.x),
+      y: Math.round(local.y),
+    },
+    world: roundedWorld,
+    texture: DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    radius: 160,
+    visualScale: 1,
+    durability: 500,
+    respawnSeconds: 300,
+    lootboxCount: 1,
+    itemLootTable: DEFAULT_MINING_LOOT_TABLE,
+    itemDropChance: 1,
+    itemRolls: 1,
+    itemNoDuplicates: false,
+    modLootTable: "",
+    modDropChance: 0,
+    modRolls: 0,
+    miningLootIcon: DEFAULT_MINING_LOOT_ICON,
+    miningLootIconScale: { x: 0.1, y: 0.1 },
+    randomizeRotation: true,
+  };
+}
+
 function environmentalBarrierToForm(barrier: SystemMapEnvironmentalHazardBarrier, mode: EnvironmentalBarrierForm["mode"]): EnvironmentalBarrierForm {
   return {
     mode,
@@ -1328,6 +1431,39 @@ function environmentalRegionToForm(region: SystemMapEnvironmentalRegion, mode: E
     width: numberInputValue(region.width),
     height: numberInputValue(region.height),
     rotationDeg: numberInputValue(region.rotationDeg),
+  };
+}
+
+function mineableAsteroidToForm(asteroid: SystemMapMineableAsteroid, mode: MineableAsteroidForm["mode"]): MineableAsteroidForm {
+  return {
+    mode,
+    originalId: environmentalElementIdentity(asteroid),
+    name: asteroid.name || asteroid.id,
+    id: asteroid.id,
+    active: asteroid.active,
+    sectorX: numberInputValue(asteroid.sector.x),
+    sectorY: numberInputValue(asteroid.sector.y),
+    localX: numberInputValue(asteroid.local.x),
+    localY: numberInputValue(asteroid.local.y),
+    texture: asteroid.texture || DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    radius: numberInputValue(asteroid.radius),
+    visualScale: numberInputValue(asteroid.visualScale),
+    durability: numberInputValue(asteroid.durability),
+    respawnSeconds: numberInputValue(asteroid.respawnSeconds),
+    lootboxCount: numberInputValue(asteroid.lootboxCount),
+    itemLootTable: asteroid.itemLootTable || DEFAULT_MINING_LOOT_TABLE,
+    itemDropChance: numberInputValue(asteroid.itemDropChance),
+    itemRolls: numberInputValue(asteroid.itemRolls),
+    itemNoDuplicates: asteroid.itemNoDuplicates,
+    modLootTable: asteroid.modLootTable,
+    modDropChance: numberInputValue(asteroid.modDropChance),
+    modRolls: numberInputValue(asteroid.modRolls),
+    miningLootIcon: asteroid.miningLootIcon || DEFAULT_MINING_LOOT_ICON,
+    miningLootIconScaleX: numberInputValue(asteroid.miningLootIconScale.x),
+    miningLootIconScaleY: numberInputValue(asteroid.miningLootIconScale.y),
+    randomizeRotation: asteroid.randomizeRotation,
+    tags: asteroid.tags.join(", "),
+    notes: asteroid.notes,
   };
 }
 
@@ -1536,6 +1672,104 @@ function withEnvironmentalRegionForm(
   };
 }
 
+function withMineableAsteroidForm(
+  form: MineableAsteroidForm,
+  asteroid: SystemMapMineableAsteroid,
+  sectorSize: number,
+  existingElements: SystemMapEnvironmentalElement[],
+): { error: string; asteroid: null; form: null } | { error: ""; asteroid: SystemMapMineableAsteroid; form: MineableAsteroidForm } {
+  const id = sanitizeEnvironmentalElementId(form.id);
+  const sectorX = Number(form.sectorX);
+  const sectorY = Number(form.sectorY);
+  const localX = Number(form.localX);
+  const localY = Number(form.localY);
+  const radius = Number(form.radius);
+  const visualScale = Number(form.visualScale);
+  const durability = Number(form.durability);
+  const respawnSeconds = Number(form.respawnSeconds);
+  const lootboxCount = Number(form.lootboxCount);
+  const itemDropChance = Number(form.itemDropChance);
+  const itemRolls = Number(form.itemRolls);
+  const modDropChance = Number(form.modDropChance);
+  const modRolls = Number(form.modRolls);
+  const miningLootIconScaleX = Number(form.miningLootIconScaleX);
+  const miningLootIconScaleY = Number(form.miningLootIconScaleY);
+
+  if (!form.name.trim()) return { error: "Mineable asteroid name is required.", asteroid: null, form: null };
+  if (!id) return { error: "Mineable asteroid ID is required.", asteroid: null, form: null };
+  if (![sectorX, sectorY, localX, localY].every(Number.isFinite)) {
+    return { error: "Sector and local position must be valid numbers.", asteroid: null, form: null };
+  }
+  if (![radius, visualScale, durability].every((value) => Number.isFinite(value) && value > 0)) {
+    return { error: "Radius, visual scale, and durability must be valid numbers greater than zero.", asteroid: null, form: null };
+  }
+  if (!Number.isFinite(respawnSeconds) || respawnSeconds < 0) {
+    return { error: "Respawn seconds must be a valid non-negative number.", asteroid: null, form: null };
+  }
+  if (![lootboxCount, itemRolls, modRolls].every((value) => Number.isFinite(value) && value >= 0)) {
+    return { error: "Lootbox count and loot rolls must be valid non-negative numbers.", asteroid: null, form: null };
+  }
+  if (![itemDropChance, modDropChance].every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) {
+    return { error: "Drop chances must be between 0 and 1.", asteroid: null, form: null };
+  }
+  if (![miningLootIconScaleX, miningLootIconScaleY].every((value) => Number.isFinite(value) && value > 0)) {
+    return { error: "Mining loot icon scale must use valid numbers greater than zero.", asteroid: null, form: null };
+  }
+  const idTaken = existingElements.some((element) => environmentalElementIdentity(element) !== form.originalId && element.id === id);
+  if (idTaken) return { error: `Mineable asteroid ID "${id}" already exists.`, asteroid: null, form: null };
+
+  const sector = {
+    x: Math.round(sectorX),
+    y: Math.round(sectorY),
+  };
+  const local = {
+    x: Math.round(localX),
+    y: Math.round(localY),
+  };
+  const world = sectorLocalToWorld(sector, local, sectorSize);
+  const nextAsteroid: SystemMapMineableAsteroid = {
+    ...asteroid,
+    id,
+    name: form.name.trim(),
+    active: form.active,
+    sector,
+    tags: form.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    notes: form.notes.trim(),
+    local,
+    world,
+    texture: form.texture.trim() || DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    radius,
+    visualScale,
+    durability,
+    respawnSeconds,
+    lootboxCount: Math.round(lootboxCount),
+    itemLootTable: form.itemLootTable.trim() || DEFAULT_MINING_LOOT_TABLE,
+    itemDropChance,
+    itemRolls: Math.round(itemRolls),
+    itemNoDuplicates: form.itemNoDuplicates,
+    modLootTable: form.modLootTable.trim(),
+    modDropChance,
+    modRolls: Math.round(modRolls),
+    miningLootIcon: form.miningLootIcon.trim() || DEFAULT_MINING_LOOT_ICON,
+    miningLootIconScale: {
+      x: miningLootIconScaleX,
+      y: miningLootIconScaleY,
+    },
+    randomizeRotation: form.randomizeRotation,
+    modified: asteroid.draft ? asteroid.modified : true,
+    originalId: asteroid.draft ? asteroid.originalId : asteroid.originalId ?? asteroid.id,
+  };
+
+  return {
+    error: "",
+    form: mineableAsteroidToForm(nextAsteroid, form.mode),
+    asteroid: nextAsteroid,
+  };
+}
+
 function moveEnvironmentalBarrierPoint(
   barrier: SystemMapEnvironmentalHazardBarrier,
   pointIndex: number,
@@ -1652,7 +1886,62 @@ function moveEnvironmentalRegionByDelta(
   };
 }
 
+function moveMineableAsteroidByDelta(
+  asteroid: SystemMapMineableAsteroid,
+  delta: SystemMapVec,
+  payload: SystemMapPayload,
+): SystemMapMineableAsteroid {
+  const nextWorld = translateVec(asteroid.world, delta);
+  const roundedWorld = {
+    x: Math.round(nextWorld.x),
+    y: Math.round(nextWorld.y),
+  };
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    ...asteroid,
+    sector,
+    local: {
+      x: Math.round(local.x),
+      y: Math.round(local.y),
+    },
+    world: roundedWorld,
+    modified: asteroid.draft ? asteroid.modified : true,
+    originalId: asteroid.draft ? asteroid.originalId : asteroid.originalId ?? asteroid.id,
+  };
+}
+
 function environmentalElementToJson(element: SystemMapEnvironmentalElement): Record<string, unknown> {
+  if (element.type === "mineable_asteroid") {
+    return {
+      id: element.id,
+      type: element.type,
+      name: element.name || element.id,
+      active: element.active,
+      sector_id: [Math.round(element.sector.x), Math.round(element.sector.y)],
+      tags: element.tags,
+      notes: element.notes,
+      data: {
+        position: [Math.round(element.local.x), Math.round(element.local.y)],
+        texture: element.texture,
+        radius: element.radius,
+        visual_scale: element.visualScale,
+        durability: element.durability,
+        respawn_seconds: element.respawnSeconds,
+        lootbox_count: element.lootboxCount,
+        item_loot_table: element.itemLootTable,
+        item_drop_chance: element.itemDropChance,
+        item_rolls: element.itemRolls,
+        item_no_duplicates: element.itemNoDuplicates,
+        mod_loot_table: element.modLootTable,
+        mod_drop_chance: element.modDropChance,
+        mod_rolls: element.modRolls,
+        mining_loot_icon: element.miningLootIcon,
+        mining_loot_icon_scale: [element.miningLootIconScale.x, element.miningLootIconScale.y],
+        randomize_rotation: element.randomizeRotation,
+      },
+    };
+  }
+
   if (element.type === "environment_region") {
     const regionData: Record<string, unknown> = {
       profile_id: element.profileId,
@@ -2254,6 +2543,7 @@ export default function SystemMapViewer() {
   const [gateForm, setGateForm] = useState<GateDraftForm | null>(null);
   const [environmentalBarrierForm, setEnvironmentalBarrierForm] = useState<EnvironmentalBarrierForm | null>(null);
   const [environmentalRegionForm, setEnvironmentalRegionForm] = useState<EnvironmentalRegionForm | null>(null);
+  const [environmentalAsteroidForm, setEnvironmentalAsteroidForm] = useState<MineableAsteroidForm | null>(null);
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
@@ -2516,13 +2806,25 @@ export default function SystemMapViewer() {
               }
             : current,
         );
-      } else {
+      } else if (nextElement.type === "environment_region") {
         setEnvironmentalRegionForm((current) =>
           current?.originalId === elementId
             ? {
                 ...current,
                 sectorX: numberInputValue(nextElement.sector.x),
                 sectorY: numberInputValue(nextElement.sector.y),
+              }
+            : current,
+        );
+      } else {
+        setEnvironmentalAsteroidForm((current) =>
+          current?.originalId === elementId
+            ? {
+                ...current,
+                sectorX: numberInputValue(nextElement.sector.x),
+                sectorY: numberInputValue(nextElement.sector.y),
+                localX: numberInputValue(nextElement.local.x),
+                localY: numberInputValue(nextElement.local.y),
               }
             : current,
         );
@@ -2550,13 +2852,25 @@ export default function SystemMapViewer() {
             }
           : current,
       );
-    } else {
+    } else if (nextElement.type === "environment_region") {
       setEnvironmentalRegionForm((current) =>
         current?.originalId === elementId
           ? {
               ...current,
               sectorX: numberInputValue(nextElement.sector.x),
               sectorY: numberInputValue(nextElement.sector.y),
+            }
+          : current,
+      );
+    } else {
+      setEnvironmentalAsteroidForm((current) =>
+        current?.originalId === elementId
+          ? {
+              ...current,
+              sectorX: numberInputValue(nextElement.sector.x),
+              sectorY: numberInputValue(nextElement.sector.y),
+              localX: numberInputValue(nextElement.local.x),
+              localY: numberInputValue(nextElement.local.y),
             }
           : current,
       );
@@ -2616,6 +2930,16 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findMineableAsteroidAtWorld(world: SystemMapVec) {
+    for (let index = filteredMineableAsteroids.length - 1; index >= 0; index -= 1) {
+      const asteroid = filteredMineableAsteroids[index];
+      if (distance(world, asteroid.world) <= Math.max(asteroid.radius * asteroid.visualScale, 10 / camera.zoom)) {
+        return asteroid;
+      }
+    }
+    return null;
+  }
+
   function updateEnvironmentalBarrierPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
@@ -2636,6 +2960,7 @@ export default function SystemMapViewer() {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
       if (element.type === "hazard_barrier") return moveEnvironmentalBarrierByDelta(element, delta, payload);
+      if (element.type === "mineable_asteroid") return moveMineableAsteroidByDelta(element, delta, payload);
       return moveEnvironmentalRegionByDelta(element, delta, payload);
     });
   }
@@ -2710,6 +3035,7 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setZoneForm({
@@ -2740,6 +3066,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
@@ -2755,6 +3082,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setGateForm(gateToForm(gate));
@@ -2767,6 +3095,7 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, barrier.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
@@ -2780,7 +3109,22 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalAsteroidForm(null);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, region.draft ? "create" : "edit"));
+    setEnvironmentalIdManuallyEdited(true);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openMineableAsteroidEditor(asteroid: SystemMapMineableAsteroid) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, asteroid.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
@@ -2795,6 +3139,7 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setDraftEnvironmentalElements((current) => [...current, barrier]);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -2811,6 +3156,7 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalAsteroidForm(null);
     setDraftEnvironmentalElements((current) => [...current, region]);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -2827,6 +3173,7 @@ export default function SystemMapViewer() {
     setRouteForm(null);
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
+    setEnvironmentalAsteroidForm(null);
     setDraftEnvironmentalElements((current) => [...current, region]);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -2836,11 +3183,29 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Added draft ellipse region "${region.name}". Adjust its size and profile, then save to build.` });
   }
 
+  function openCreateMineableAsteroidForm(world: SystemMapVec) {
+    if (!payload) return;
+    const asteroid = createMineableAsteroidDraftFromPoint(world, payload, existingEnvironmentalIds);
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setDraftEnvironmentalElements((current) => [...current, asteroid]);
+    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, "create"));
+    setEnvironmentalIdManuallyEdited(false);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setContextMenu(null);
+    setStatus({ tone: "success", message: `Added draft mineable asteroid "${asteroid.name}". Adjust its loot and mining settings, then save to build.` });
+  }
+
   function startRouteDraft(world: SystemMapVec) {
     if (!payload) return;
     const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setDraftRoutes((current) => [...current, route]);
@@ -2987,6 +3352,24 @@ export default function SystemMapViewer() {
     }
     if (targetGate) {
       openGateEditor(targetGate);
+      clearHover();
+      return;
+    }
+    const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidAtWorld(world) : null;
+    if (targetMineableAsteroid && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalDragRef.current = {
+        elementId: environmentalElementIdentity(targetMineableAsteroid),
+        startScreen: screen,
+        startWorld: world,
+        moved: false,
+      };
+      setDraggingEnvironmentalId(environmentalElementIdentity(targetMineableAsteroid));
+      clearHover();
+      return;
+    }
+    if (targetMineableAsteroid) {
+      openMineableAsteroidEditor(targetMineableAsteroid);
       clearHover();
       return;
     }
@@ -3138,6 +3521,8 @@ export default function SystemMapViewer() {
         openEnvironmentalBarrierEditor(element);
       } else if (element?.type === "environment_region") {
         openEnvironmentalRegionEditor(element);
+      } else if (element?.type === "mineable_asteroid") {
+        openMineableAsteroidEditor(element);
       }
     }
     mobDragRef.current = null;
@@ -3326,6 +3711,25 @@ export default function SystemMapViewer() {
                 ],
               };
             }
+          }
+        } else if (element.type === "mineable_asteroid") {
+          if (distance(world, element.world) <= Math.max(element.radius * element.visualScale, 10 / camera.zoom)) {
+            return {
+              x: screen.x,
+              y: screen.y,
+              title: element.name || element.id,
+              subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Mineable asteroid"} · sector ${element.sector.x}, ${element.sector.y}`,
+              icon: safeIconSrc(element.texture, element.id, element.name),
+              lines: [
+                `Element ID: ${element.id}`,
+                `Texture: ${element.texture}`,
+                `Radius: ${formatNumber(element.radius)}`,
+                `Durability: ${formatNumber(element.durability)}`,
+                `Respawn: ${formatNumber(element.respawnSeconds)}s`,
+                `Item loot: ${element.itemLootTable || "none"}`,
+                `Tags: ${element.tags.join(", ") || "none"}`,
+              ],
+            };
           }
         } else {
           const regionHit =
@@ -3672,6 +4076,7 @@ export default function SystemMapViewer() {
   function openCreateZoneForm(world: SystemMapVec) {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     const defaultName = "New Zone";
@@ -3811,6 +4216,23 @@ export default function SystemMapViewer() {
     setEnvironmentalRegionForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
   }
 
+  function handleMineableAsteroidNameChange(name: string) {
+    setEnvironmentalAsteroidForm((current) => {
+      if (!current) return current;
+      const reservedIds = existingEnvironmentalIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        name,
+        id: current.mode === "create" && !environmentalIdManuallyEdited ? createUniqueId(sanitizeEnvironmentalElementId(name), reservedIds) : current.id,
+      };
+    });
+  }
+
+  function handleMineableAsteroidIdChange(id: string) {
+    setEnvironmentalIdManuallyEdited(true);
+    setEnvironmentalAsteroidForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
+  }
+
   function applyRouteForm() {
     if (!routeForm) return;
     const route = mapRoutes.find((entry) => routeIdentity(entry) === routeForm.originalId);
@@ -3880,6 +4302,23 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Applied region details for "${applied.region.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
   }
 
+  function applyMineableAsteroidForm() {
+    if (!environmentalAsteroidForm || !payload) return;
+    const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalAsteroidForm.originalId);
+    if (!element || element.type !== "mineable_asteroid") {
+      setStatus({ tone: "error", message: "Could not find the mineable asteroid being edited." });
+      return;
+    }
+    const applied = withMineableAsteroidForm(environmentalAsteroidForm, element, payload.config.sectorSize, mapEnvironmentalElements);
+    if (applied.error || !applied.asteroid || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+    updateEnvironmentalElementInMap(environmentalAsteroidForm.originalId, () => applied.asteroid);
+    setEnvironmentalAsteroidForm(applied.form);
+    setStatus({ tone: "success", message: `Applied mineable asteroid details for "${applied.asteroid.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
+  }
+
   function removeDraftRoute(routeId: string) {
     setDraftRoutes((current) => current.filter((route) => routeIdentity(route) !== routeId));
     setRouteForm((current) => (current?.originalId === routeId ? null : current));
@@ -3908,7 +4347,7 @@ export default function SystemMapViewer() {
     setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
     setEnvironmentalBarrierForm(null);
     setActiveEnvironmentalPointAddId(null);
-      setStatus({ tone: "success", message: "Removed the environmental barrier from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
+    setStatus({ tone: "success", message: "Removed the environmental barrier from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
   }
 
   function removeEnvironmentalRegion(elementId: string) {
@@ -3933,6 +4372,28 @@ export default function SystemMapViewer() {
     setEnvironmentalRegionForm(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setStatus({ tone: "success", message: "Removed the environmental region from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
+  }
+
+  function removeMineableAsteroid(elementId: string) {
+    const draftElement = draftEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === elementId);
+    if (draftElement) {
+      setDraftEnvironmentalElements((current) => current.filter((entry) => environmentalElementIdentity(entry) !== elementId));
+      setEnvironmentalAsteroidForm((current) => (current?.originalId === elementId ? null : current));
+      setStatus({ tone: "neutral", message: "Removed the unsaved mineable asteroid draft." });
+      return;
+    }
+
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            environmentalElements: current.environmentalElements.filter((entry) => environmentalElementIdentity(entry) !== elementId),
+          }
+        : current,
+    );
+    setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
+    setEnvironmentalAsteroidForm(null);
+    setStatus({ tone: "success", message: "Removed the mineable asteroid from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
   }
 
   function addEnvironmentalBarrierPointAtWorld(elementId: string, world: SystemMapVec) {
@@ -4391,6 +4852,22 @@ export default function SystemMapViewer() {
       let elementsForSave = mapEnvironmentalElements;
       let editedEnvironmentalIdsForSave = editedEnvironmentalIds;
 
+      if (environmentalAsteroidForm) {
+        const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalAsteroidForm.originalId);
+        if (element?.type === "mineable_asteroid") {
+          const applied = withMineableAsteroidForm(environmentalAsteroidForm, element, payload.config.sectorSize, elementsForSave);
+          if (applied.error || !applied.asteroid || !applied.form) {
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
+          }
+          elementsForSave = elementsForSave.map((entry) => (environmentalElementIdentity(entry) === environmentalAsteroidForm.originalId ? applied.asteroid : entry));
+          if (!applied.asteroid.draft && !editedEnvironmentalIdsForSave.includes(environmentalAsteroidForm.originalId)) {
+            editedEnvironmentalIdsForSave = [...editedEnvironmentalIdsForSave, environmentalAsteroidForm.originalId];
+          }
+          setEnvironmentalAsteroidForm(applied.form);
+        }
+      }
+
       if (environmentalRegionForm) {
         const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalRegionForm.originalId);
         if (element?.type === "environment_region") {
@@ -4496,6 +4973,15 @@ export default function SystemMapViewer() {
             }
           : current,
       );
+      setEnvironmentalAsteroidForm((current) =>
+        current
+          ? {
+              ...current,
+              originalId: sanitizeEnvironmentalElementId(current.id),
+              mode: "edit",
+            }
+          : current,
+      );
       const savedCount = draftEnvironmentalElements.length + editedEnvironmentalIdsForSave.length;
       if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} environmental change${savedCount === 1 ? "" : "s"} into the live EnvironmentalElements.json file.` });
       return true;
@@ -4568,6 +5054,10 @@ export default function SystemMapViewer() {
     () => filteredEnvironmentalElements.filter((element): element is SystemMapEnvironmentalRegion => element.type === "environment_region"),
     [filteredEnvironmentalElements],
   );
+  const filteredMineableAsteroids = useMemo(
+    () => filteredEnvironmentalElements.filter((element): element is SystemMapMineableAsteroid => element.type === "mineable_asteroid"),
+    [filteredEnvironmentalElements],
+  );
   const showAsteroidSprites = camera.zoom >= ASTEROID_SPRITE_DETAIL_ZOOM;
   const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
@@ -4584,8 +5074,13 @@ export default function SystemMapViewer() {
       }
     }
     for (const element of mapEnvironmentalElements) {
-      for (const materialPath of element.materialPaths ?? []) {
-        if (materialPath) paths.add(materialPath);
+      if (element.type === "mineable_asteroid") {
+        if (element.texture) paths.add(element.texture);
+        if (element.miningLootIcon) paths.add(element.miningLootIcon);
+      } else {
+        for (const materialPath of element.materialPaths ?? []) {
+          if (materialPath) paths.add(materialPath);
+        }
       }
     }
     return Array.from(paths);
@@ -4594,8 +5089,10 @@ export default function SystemMapViewer() {
   const sceneBarrierCount = mapZones.reduce((sum, zone) => sum + zone.mobs.reduce((mobSum, mob) => mobSum + mob.sceneBarriers.length, 0), 0);
   const environmentalBarrierCount = mapEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionCount = mapEnvironmentalElements.filter((element) => element.type === "environment_region").length;
+  const mineableAsteroidCount = mapEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
   const environmentalBarrierDraftCount = draftEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionDraftCount = draftEnvironmentalElements.filter((element) => element.type === "environment_region").length;
+  const mineableAsteroidDraftCount = draftEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
@@ -4818,6 +5315,45 @@ export default function SystemMapViewer() {
                         />
                       )}
                       <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zone.id ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
+                    </g>
+                  );
+                })
+              : null}
+
+            {toggles.barriers
+              ? filteredMineableAsteroids.map((asteroid) => {
+                  const key = `mineable-asteroid:${environmentalElementIdentity(asteroid)}`;
+                  const isChanged = asteroid.draft || asteroid.modified;
+                  const renderRadius = Math.max(asteroid.radius * asteroid.visualScale, 8 / camera.zoom);
+                  const spriteSize = Math.max(asteroid.radius * 2 * asteroid.visualScale, 18 / camera.zoom);
+                  const markerColor = asteroid.draft ? "#34d399" : asteroid.modified ? "#facc15" : "#f59e0b";
+                  return (
+                    <g key={key} opacity={asteroid.active ? 1 : 0.45}>
+                      <circle
+                        cx={asteroid.world.x}
+                        cy={asteroid.world.y}
+                        r={renderRadius}
+                        fill={asteroid.draft ? "rgba(52,211,153,0.08)" : asteroid.modified ? "rgba(250,204,21,0.08)" : "rgba(245,158,11,0.07)"}
+                        stroke={asteroid.draft ? "rgba(52,211,153,0.55)" : asteroid.modified ? "rgba(250,204,21,0.55)" : "rgba(245,158,11,0.48)"}
+                        strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                        strokeWidth={1.5 / camera.zoom}
+                      />
+                      <use
+                        href={`#${barrierSymbolId(asteroid.texture || DEFAULT_MINEABLE_ASTEROID_TEXTURE)}`}
+                        x={asteroid.world.x - spriteSize / 2}
+                        y={asteroid.world.y - spriteSize / 2}
+                        width={spriteSize}
+                        height={spriteSize}
+                        opacity={0.9}
+                      />
+                      <circle
+                        cx={asteroid.world.x}
+                        cy={asteroid.world.y}
+                        r={(draggingEnvironmentalId === environmentalElementIdentity(asteroid) ? 8 : 5) / camera.zoom}
+                        fill={markerColor}
+                        stroke="rgba(255,255,255,0.76)"
+                        strokeWidth={(draggingEnvironmentalId === environmentalElementIdentity(asteroid) ? 2 : 1) / camera.zoom}
+                      />
                     </g>
                   );
                 })
@@ -5093,6 +5629,8 @@ export default function SystemMapViewer() {
                 const anchor =
                   element.type === "hazard_barrier"
                     ? barrierWorldCenter(element)
+                    : element.type === "mineable_asteroid"
+                      ? element.world
                     : environmentalRegionWorldAnchor(element);
                 const point = worldToScreen(anchor);
                 return (
@@ -5162,7 +5700,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroids${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -5194,7 +5732,7 @@ export default function SystemMapViewer() {
         </div>
 
         <div className="mt-4">
-          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, authored barriers, stages, or mobs..." />
+          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, authored barriers, regions, mineable asteroids, stages, or mobs..." />
         </div>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -5221,7 +5759,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers · ${filteredEnvironmentalRegions.length} regions` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers · ${filteredEnvironmentalRegions.length} regions · ${filteredMineableAsteroids.length} mineable` : "0 zones"}</div>
           </div>
         </div>
 
@@ -5251,7 +5789,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, or region to edit details. Hold Command and drag a zone, gate, barrier, or region to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, or ellipse regions.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, region, or mineable asteroid to edit details. Hold Command and drag a zone, gate, barrier, region, or mineable asteroid to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroids.</div>
       </div>
 
       {contextMenu ? (
@@ -5298,6 +5836,9 @@ export default function SystemMapViewer() {
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalEllipseForm(contextMenu.world)}>
             Add Ellipse Region Here
+          </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateMineableAsteroidForm(contextMenu.world)}>
+            Add Mineable Asteroid Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -5977,6 +6518,204 @@ export default function SystemMapViewer() {
                   </button>
                   <button type="button" className="btn-save-build" onClick={applyEnvironmentalRegionForm}>
                     {environmentalRegionForm.mode === "create" ? "Apply Draft Details" : "Apply Region Details"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
+
+      {environmentalAsteroidForm
+        ? (() => {
+            const asteroid = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalAsteroidForm.originalId);
+            const activeAsteroid = asteroid?.type === "mineable_asteroid" ? asteroid : null;
+            const previewIcon = safeIconSrc(environmentalAsteroidForm.texture, environmentalAsteroidForm.id, environmentalAsteroidForm.name);
+            const currentTextureOptions = ASTEROID_SPRITES.includes(environmentalAsteroidForm.texture) ? ASTEROID_SPRITES : [environmentalAsteroidForm.texture, ...ASTEROID_SPRITES].filter(Boolean);
+            const currentMiningIconOptions = MINING_LOOT_ICON_OPTIONS.includes(environmentalAsteroidForm.miningLootIcon)
+              ? MINING_LOOT_ICON_OPTIONS
+              : [environmentalAsteroidForm.miningLootIcon, ...MINING_LOOT_ICON_OPTIONS].filter(Boolean);
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">{environmentalAsteroidForm.mode === "create" ? "New Mineable Asteroid" : "Edit Mineable Asteroid"}</div>
+                    <div className="mt-1 text-sm text-white/55">Configure the MineableAsteroid2D scene data: position, sprite, mining durability, respawn, and loot tables.</div>
+                  </div>
+                  <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setEnvironmentalAsteroidForm(null)}>
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-[88px_1fr]">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-white/10 bg-black/25">
+                    {previewIcon ? <img src={previewIcon} alt="" className="h-16 w-16 object-contain" /> : null}
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Map Position</div>
+                    <div className="mt-1">Sector: {environmentalAsteroidForm.sectorX}, {environmentalAsteroidForm.sectorY}</div>
+                    <div>Local: {environmentalAsteroidForm.localX}, {environmentalAsteroidForm.localY}</div>
+                    <div>World: {activeAsteroid ? formatVec(activeAsteroid.world) : "apply details to calculate"}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Asteroid Name
+                    <input className="input mt-1" value={environmentalAsteroidForm.name} onChange={(event) => handleMineableAsteroidNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Asteroid ID
+                    <input className="input mt-1 font-mono" value={environmentalAsteroidForm.id} onChange={(event) => handleMineableAsteroidIdChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector X
+                    <input className="input mt-1" type="number" value={environmentalAsteroidForm.sectorX} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, sectorX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector Y
+                    <input className="input mt-1" type="number" value={environmentalAsteroidForm.sectorY} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, sectorY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Local X
+                    <input className="input mt-1" type="number" value={environmentalAsteroidForm.localX} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, localX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Local Y
+                    <input className="input mt-1" type="number" value={environmentalAsteroidForm.localY} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, localY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Texture
+                    <select className="input mt-1" value={environmentalAsteroidForm.texture} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, texture: event.target.value } : current))}>
+                      {currentTextureOptions.map((texture) => (
+                        <option key={texture} value={texture}>
+                          {texture}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Radius
+                    <input className="input mt-1" type="number" min="1" value={environmentalAsteroidForm.radius} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, radius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Scale
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalAsteroidForm.visualScale} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, visualScale: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Durability
+                    <input className="input mt-1" type="number" min="1" value={environmentalAsteroidForm.durability} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, durability: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Respawn Seconds
+                    <input className="input mt-1" type="number" min="0" value={environmentalAsteroidForm.respawnSeconds} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, respawnSeconds: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65">
+                    Lootbox Count
+                    <input className="input mt-1" type="number" min="0" value={environmentalAsteroidForm.lootboxCount} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, lootboxCount: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Item Rolls
+                    <input className="input mt-1" type="number" min="0" value={environmentalAsteroidForm.itemRolls} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, itemRolls: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Item Loot Table
+                    <input className="input mt-1 font-mono" value={environmentalAsteroidForm.itemLootTable} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, itemLootTable: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Item Drop Chance
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalAsteroidForm.itemDropChance} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, itemDropChance: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Mod Rolls
+                    <input className="input mt-1" type="number" min="0" value={environmentalAsteroidForm.modRolls} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, modRolls: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Mod Loot Table
+                    <input className="input mt-1 font-mono" value={environmentalAsteroidForm.modLootTable} placeholder="optional" onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, modLootTable: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Mod Drop Chance
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalAsteroidForm.modDropChance} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, modDropChance: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Mining Loot Icon
+                    <select className="input mt-1" value={environmentalAsteroidForm.miningLootIcon} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, miningLootIcon: event.target.value } : current))}>
+                      {currentMiningIconOptions.map((icon) => (
+                        <option key={icon} value={icon}>
+                          {icon}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Icon Scale X
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalAsteroidForm.miningLootIconScaleX} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, miningLootIconScaleX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Icon Scale Y
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalAsteroidForm.miningLootIconScaleY} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, miningLootIconScaleY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Active</span>
+                    <input type="checkbox" checked={environmentalAsteroidForm.active} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, active: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Randomize Rotation</span>
+                    <input type="checkbox" checked={environmentalAsteroidForm.randomizeRotation} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, randomizeRotation: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                    <span>Item No Duplicates</span>
+                    <input type="checkbox" checked={environmentalAsteroidForm.itemNoDuplicates} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, itemNoDuplicates: event.target.checked } : current))} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Tags
+                    <input className="input mt-1" value={environmentalAsteroidForm.tags} placeholder="mineable, asteroid, tutorial" onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, tags: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Notes
+                    <textarea className="input mt-1 min-h-24" value={environmentalAsteroidForm.notes} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, notes: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                {activeAsteroid ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Asteroid Summary</div>
+                    <div className="mt-2">World: {formatVec(activeAsteroid.world)}</div>
+                    <div>Texture: {activeAsteroid.texture}</div>
+                    <div>Item loot: {activeAsteroid.itemLootTable || "none"} ({activeAsteroid.itemRolls} rolls at {activeAsteroid.itemDropChance})</div>
+                    <div>Mod loot: {activeAsteroid.modLootTable || "none"} ({activeAsteroid.modRolls} rolls at {activeAsteroid.modDropChance})</div>
+                    <div>Sector-local position is what gets written into EnvironmentalElements.json.</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15"
+                    onClick={() => removeMineableAsteroid(environmentalAsteroidForm.originalId)}
+                  >
+                    {activeAsteroid?.draft ? "Remove Draft" : "Delete Asteroid"}
+                  </button>
+                  <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setEnvironmentalAsteroidForm(null)}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applyMineableAsteroidForm}>
+                    {environmentalAsteroidForm.mode === "create" ? "Apply Draft Details" : "Apply Asteroid Details"}
                   </button>
                 </div>
               </div>
