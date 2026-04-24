@@ -321,6 +321,11 @@ const ASTEROID_MEDIUM_DETAIL_ZOOM = 0.0015;
 const ASTEROID_SPRITE_DETAIL_ZOOM = 0.004;
 const BARRIER_SPRITE_DETAIL_ZOOM = 0.006;
 const ASTEROID_VIEW_PADDING = 90000;
+const MEASUREMENT_GRID_STEPS = [1000, 5000, 10000, 25000, 50000, 125000, 250000];
+const MEASUREMENT_GRID_MIN_SCREEN_SPACING = 12;
+const MEASUREMENT_GRID_MAX_DOTS = 7000;
+const MEASUREMENT_GRID_DOT_RADIUS = 0.6;
+const MEASUREMENT_GRID_DOT_FILL = "rgba(255,255,255,0.14)";
 const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_1.png",
   "res://assets/environment/asteroids/ast_2.png",
@@ -368,6 +373,28 @@ function formatNumber(value: number) {
 
 function formatVec(value: SystemMapVec) {
   return `${formatNumber(value.x)}, ${formatNumber(value.y)}`;
+}
+
+function chooseMeasurementGridStep(camera: Camera, viewport: Viewport) {
+  if (camera.zoom <= 0 || viewport.width <= 0 || viewport.height <= 0) return 50000;
+  const worldWidth = viewport.width / camera.zoom;
+  const worldHeight = viewport.height / camera.zoom;
+  for (const step of MEASUREMENT_GRID_STEPS) {
+    const screenSpacing = step * camera.zoom;
+    const columns = Math.ceil(worldWidth / step) + 3;
+    const rows = Math.ceil(worldHeight / step) + 3;
+    if (screenSpacing >= MEASUREMENT_GRID_MIN_SCREEN_SPACING && columns * rows <= MEASUREMENT_GRID_MAX_DOTS) return step;
+  }
+  return MEASUREMENT_GRID_STEPS[MEASUREMENT_GRID_STEPS.length - 1];
+}
+
+function gridValues(min: number, max: number, step: number) {
+  const values: number[] = [];
+  const start = Math.floor(min / step) * step;
+  for (let value = start; value <= max; value += step) {
+    values.push(Object.is(value, -0) ? 0 : Math.round(value));
+  }
+  return values;
 }
 
 function sanitizeZoneId(value: string) {
@@ -1066,6 +1093,41 @@ const AsteroidFieldLayer = memo(function AsteroidFieldLayer({ asteroids }: { ast
         />
       ))}
     </>
+  );
+});
+
+const WorldMeasurementGrid = memo(function WorldMeasurementGrid({
+  camera,
+  viewport,
+  gridStep,
+}: {
+  camera: Camera;
+  viewport: Viewport;
+  gridStep: number;
+}) {
+  if (camera.zoom <= 0 || viewport.width <= 0 || viewport.height <= 0) return null;
+
+  const halfWorldWidth = viewport.width / (2 * camera.zoom);
+  const halfWorldHeight = viewport.height / (2 * camera.zoom);
+  const minX = camera.center.x - halfWorldWidth - gridStep;
+  const maxX = camera.center.x + halfWorldWidth + gridStep;
+  const minY = camera.center.y - halfWorldHeight - gridStep;
+  const maxY = camera.center.y + halfWorldHeight + gridStep;
+  const xValues = gridValues(minX, maxX, gridStep);
+  const yValues = gridValues(minY, maxY, gridStep);
+  const toScreenX = (worldX: number) => (worldX - camera.center.x) * camera.zoom + viewport.width / 2;
+  const toScreenY = (worldY: number) => (worldY - camera.center.y) * camera.zoom + viewport.height / 2;
+
+  return (
+    <g aria-hidden="true" style={{ pointerEvents: "none" }}>
+      {xValues.flatMap((x) =>
+        yValues.map((y) => {
+          const screenX = toScreenX(x);
+          const screenY = toScreenY(y);
+          return <circle key={`${x}:${y}`} cx={screenX} cy={screenY} r={MEASUREMENT_GRID_DOT_RADIUS} fill={MEASUREMENT_GRID_DOT_FILL} />;
+        }),
+      )}
+    </g>
   );
 });
 
@@ -5687,6 +5749,7 @@ export default function SystemMapViewer() {
     () => filteredEnvironmentalElements.filter((element): element is SystemMapMineableAsteroid => element.type === "mineable_asteroid"),
     [filteredEnvironmentalElements],
   );
+  const measurementGridStep = useMemo(() => chooseMeasurementGridStep(camera, viewport), [camera, viewport]);
   const showAsteroidSprites = camera.zoom >= ASTEROID_SPRITE_DETAIL_ZOOM;
   const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
@@ -5759,7 +5822,6 @@ export default function SystemMapViewer() {
       onContextMenu={handleContextMenu}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(35,116,161,0.16),rgba(3,8,18,0.15)_28%,rgba(3,8,18,0.82)_72%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-35 [background-image:radial-gradient(circle,rgba(255,255,255,0.5)_1px,transparent_1px)] [background-size:38px_38px]" />
 
       {payload ? (
         <svg className="pointer-events-none absolute inset-0 h-full w-full" width={viewport.width} height={viewport.height} role="img" aria-label="Interactive system map">
@@ -5780,6 +5842,7 @@ export default function SystemMapViewer() {
               </symbol>
             ))}
           </defs>
+          <WorldMeasurementGrid camera={camera} viewport={viewport} gridStep={measurementGridStep} />
           <g transform={transform}>
             {toggles.environment ? (
               <>
@@ -6424,7 +6487,7 @@ export default function SystemMapViewer() {
           ))}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-white/60">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-white/60 sm:grid-cols-4">
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Zoom
             <div className="text-white">{camera.zoom.toFixed(5)}</div>
@@ -6432,6 +6495,10 @@ export default function SystemMapViewer() {
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Center
             <div className="truncate text-white">{formatVec(camera.center)}</div>
+          </div>
+          <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
+            Grid
+            <div className="text-white">{formatNumber(measurementGridStep)} units</div>
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
@@ -6465,7 +6532,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Background dots are faint world-space measurement points and use 1,000 units as the finest increment. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
       </div>
 
       {contextMenu ? (

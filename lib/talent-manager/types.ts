@@ -24,6 +24,7 @@ export type TalentSpecialization = JsonRecord & {
   role: string;
   description: string;
   icon?: string;
+  inherit_global_templates?: boolean;
   talent_templates?: TalentTemplate[];
   talent_overrides?: Record<string, TalentTemplateOverride>;
 };

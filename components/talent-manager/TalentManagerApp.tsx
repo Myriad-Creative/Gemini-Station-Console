@@ -51,6 +51,36 @@ function uniqueId(base: string, existingIds: string[]) {
   return `${root}_${suffix}`;
 }
 
+function uniqueLabel(base: string, existingLabels: string[]) {
+  const root = base.trim() || "New Entry";
+  if (!existingLabels.includes(root)) return root;
+  let suffix = 2;
+  while (existingLabels.includes(`${root} ${suffix}`)) suffix += 1;
+  return `${root} ${suffix}`;
+}
+
+function createEmptySpec(id: string, name = "New Spec"): TalentSpecialization {
+  return {
+    id,
+    name,
+    role: "Specialization",
+    description: "",
+    icon: "",
+    inherit_global_templates: false,
+    talent_templates: [],
+    talent_overrides: {},
+  };
+}
+
+function localTemplateFromResolvedTemplate(template: TalentTemplate): TalentTemplate {
+  const { source: _source, base_template_id: _baseTemplateId, ...localTemplate } = template;
+  return {
+    ...localTemplate,
+    id: sanitizeTalentId(localTemplate.id),
+    requires_talent: sanitizeTalentId(localTemplate.requires_talent ?? ""),
+  };
+}
+
 function iconSrc(icon: string | undefined, id: string, name: string, version: string) {
   return buildIconSrc(icon || "icon_lootbox.png", id || name || "talent", name || id || "Talent", version);
 }
@@ -65,6 +95,10 @@ function issueClass(issue: TalentValidationIssue) {
 
 function slotKey(row: number, column: number) {
   return `${row}:${column}`;
+}
+
+function formatPointCount(value: number) {
+  return `${value} pt${value === 1 ? "" : "s"}`;
 }
 
 function templateGridPosition(workspace: TalentWorkspace, template: TalentTemplate): GridPosition {
@@ -164,12 +198,16 @@ export default function TalentManagerApp() {
           setStatus({ tone: "error", message: talentsPayload.error || "Could not load TalentTrees.json." });
         } else {
           const nextWorkspace = talentsPayload.workspace;
+          const initialClass = nextWorkspace.classes[0] ?? null;
+          const initialSpec = initialClass?.specializations[0] ?? null;
+          const initialTemplate = initialSpec ? talentTemplatesForSpec(nextWorkspace, initialSpec)[0] ?? null : null;
           setWorkspace(nextWorkspace);
           setSourcePath(talentsPayload.sourcePath || "");
           setWarnings(talentsPayload.warnings ?? []);
-          setSelectedClassId(nextWorkspace.classes[0]?.id ?? "");
-          setSelectedSpecId(nextWorkspace.classes[0]?.specializations[0]?.id ?? "");
-          setSelectedTemplateId(nextWorkspace.talent_templates[0]?.id ?? "");
+          setSelectedClassId(initialClass?.id ?? "");
+          setSelectedSpecId(initialSpec?.id ?? "");
+          setSelectedTemplateId(initialTemplate?.id ?? "");
+          setIconTarget(initialTemplate ? "talent" : initialSpec ? "spec" : "class");
           setDataVersion(String(Date.now()));
           setDirty(false);
         }
@@ -232,6 +270,19 @@ export default function TalentManagerApp() {
     }
     return slots;
   }, [expandedTalents, workspace?.tree_columns, workspace?.tree_rows]);
+  const rowPointTotals = useMemo(() => {
+    const rows = Array.from({ length: workspace?.tree_rows ?? 0 }, () => ({ points: 0, running: 0 }));
+    for (const talent of expandedTalents) {
+      if (talent.row < 0 || talent.row >= rows.length) continue;
+      rows[talent.row].points += Math.max(1, Math.round(Number(talent.max_rank) || 1));
+    }
+    let running = 0;
+    return rows.map((row) => {
+      running += row.points;
+      return { ...row, running };
+    });
+  }, [expandedTalents, workspace?.tree_rows]);
+  const treePointTotal = rowPointTotals[rowPointTotals.length - 1]?.running ?? 0;
   const requireAboveCandidate = useMemo(() => (selectedTemplate ? findNearestTemplateAbove(selectedTalentTemplates, selectedTemplate) : null), [selectedTalentTemplates, selectedTemplate]);
 
   const iconCategories = useMemo(() => Array.from(new Set(icons.map((icon) => icon.category))).sort((left, right) => left.localeCompare(right)), [icons]);
@@ -359,20 +410,13 @@ export default function TalentManagerApp() {
           name: "New Class",
           description: "",
           icon: "",
-          specializations: [
-            {
-              id: "new_spec",
-              name: "New Spec",
-              role: "Specialization",
-              description: "",
-              icon: "",
-            },
-          ],
+          specializations: [createEmptySpec("new_spec")],
         },
       ],
     }));
     setSelectedClassId(id);
     setSelectedSpecId("new_spec");
+    setSelectedTemplateId("");
     setIconTarget("class");
   }
 
@@ -385,22 +429,79 @@ export default function TalentManagerApp() {
         entry.id === selectedClass.id
           ? {
               ...entry,
-              specializations: [
-                ...entry.specializations,
-                {
-                  id,
-                  name: "New Spec",
-                  role: "Specialization",
-                  description: "",
-                  icon: "",
-                },
-              ],
+              specializations: [...entry.specializations, createEmptySpec(id)],
             }
           : entry,
       ),
     }));
     setSelectedSpecId(id);
+    setSelectedTemplateId("");
     setIconTarget("spec");
+  }
+
+  function cloneSelectedSpec() {
+    if (!selectedClass || !selectedSpec) return;
+    const id = uniqueId(`${selectedSpec.id}_copy`, selectedClass.specializations.map((entry) => entry.id));
+    const name = uniqueLabel(`${selectedSpec.name || selectedSpec.id} Copy`, selectedClass.specializations.map((entry) => entry.name));
+    const clonedTemplates = selectedTalentTemplates.map(localTemplateFromResolvedTemplate);
+    const clonedSpec: TalentSpecialization = {
+      ...selectedSpec,
+      id,
+      name,
+      inherit_global_templates: false,
+      talent_templates: clonedTemplates,
+      talent_overrides: {},
+    };
+    mutateWorkspace((current) => ({
+      ...current,
+      classes: current.classes.map((entry) =>
+        entry.id === selectedClass.id
+          ? {
+              ...entry,
+              specializations: [...entry.specializations, clonedSpec],
+            }
+          : entry,
+      ),
+    }));
+    setSelectedSpecId(id);
+    setSelectedTemplateId(clonedTemplates[0]?.id ?? "");
+    setIconTarget(clonedTemplates.length ? "talent" : "spec");
+  }
+
+  function wipeSelectedSpec() {
+    if (!selectedSpec) return;
+    if (!window.confirm(`Wipe all talents from "${selectedSpec.name || selectedSpec.id}"? This keeps the spec but clears its tree when saved.`)) return;
+    mutateWorkspace((current) =>
+      mutateSelectedSpec(current, (spec) => ({
+        ...spec,
+        inherit_global_templates: false,
+        talent_templates: [],
+        talent_overrides: {},
+      })),
+    );
+    setSelectedTemplateId("");
+    setIconTarget("spec");
+  }
+
+  function deleteSelectedSpec() {
+    if (!selectedClass || !selectedSpec) return;
+    if (!window.confirm(`Delete specialization "${selectedSpec.name || selectedSpec.id}" from "${selectedClass.name || selectedClass.id}"? This removes the spec and all of its talents when saved.`)) return;
+    const remainingSpecs = selectedClass.specializations.filter((spec) => spec.id !== selectedSpec.id);
+    const nextSpecId = remainingSpecs[0]?.id ?? "";
+    mutateWorkspace((current) => ({
+      ...current,
+      classes: current.classes.map((entry) =>
+        entry.id === selectedClass.id
+          ? {
+              ...entry,
+              specializations: entry.specializations.filter((spec) => spec.id !== selectedSpec.id),
+            }
+          : entry,
+      ),
+    }));
+    setSelectedSpecId(nextSpecId);
+    setSelectedTemplateId("");
+    setIconTarget(nextSpecId ? "spec" : "class");
   }
 
   function addTalentTemplateAt(row: number, column: number) {
@@ -459,7 +560,7 @@ export default function TalentManagerApp() {
   }
 
   function addTalentTemplate() {
-    if (!workspace) return;
+    if (!workspace || !selectedSpec) return;
     const position = findBestOpenSlot(workspace);
     if (!position) {
       setStatus({ tone: "neutral", message: "No empty talent slots are available in the current tree." });
@@ -587,7 +688,7 @@ export default function TalentManagerApp() {
         <div>
           <h1 className="page-title mb-1">Talent Manager</h1>
           <p className="max-w-5xl text-sm leading-6 text-white/70">
-            Edit the visual class and talent data consumed by TalentService. Templates expand across every class specialization, so text can use {"{class}"}, {"{spec}"}, and {"{role}"} tokens.
+            Edit the visual class and talent data consumed by TalentService. Specs can inherit the global template set or use their own local talent tree, and text can use {"{class}"}, {"{spec}"}, and {"{role}"} tokens.
           </p>
           {sourcePath ? <div className="mt-2 break-all font-mono text-xs text-white/45">{sourcePath}</div> : null}
         </div>
@@ -633,9 +734,12 @@ export default function TalentManagerApp() {
               key={talentClass.id}
               className={`rounded-lg border px-3 py-3 text-left transition ${selectedClass?.id === talentClass.id ? "border-cyan-300/45 bg-cyan-300/10" : "border-white/10 bg-white/[0.03] hover:border-cyan-300/30 hover:bg-white/[0.05]"}`}
               onClick={() => {
+                const firstSpec = talentClass.specializations[0] ?? null;
+                const firstTemplate = firstSpec ? talentTemplatesForSpec(workspace, firstSpec)[0] ?? null : null;
                 setSelectedClassId(talentClass.id);
-                setSelectedSpecId(talentClass.specializations[0]?.id ?? "");
-                setIconTarget("class");
+                setSelectedSpecId(firstSpec?.id ?? "");
+                setSelectedTemplateId(firstTemplate?.id ?? "");
+                setIconTarget(firstTemplate ? "talent" : firstSpec ? "spec" : "class");
               }}
             >
               <div className="flex items-center gap-3">
@@ -649,24 +753,42 @@ export default function TalentManagerApp() {
           ))}
         </div>
         {selectedClass ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-            <div className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">Specs</div>
-            {selectedClass.specializations.map((spec) => (
-              <button
-                key={spec.id}
-                className={`rounded border px-3 py-2 text-sm ${selectedSpec?.id === spec.id ? "border-cyan-300/45 bg-cyan-300/12 text-cyan-100" : "border-white/10 bg-white/[0.03] text-white/65 hover:bg-white/[0.06] hover:text-white"}`}
-                onClick={() => {
-                  setSelectedSpecId(spec.id);
-                  setIconTarget("spec");
-                }}
-              >
-                {spec.name}
-                <span className="ml-2 text-white/45">{spec.role || "Specialization"}</span>
-              </button>
-            ))}
-            <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addSpec}>
-              Add Spec
-            </button>
+          <div className="space-y-3 border-t border-white/10 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/45">Specs</div>
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addSpec}>
+                  Add Empty Spec
+                </button>
+                <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40" disabled={!selectedSpec} onClick={cloneSelectedSpec}>
+                  Clone Spec
+                </button>
+                <button className="rounded border border-yellow-300/25 px-3 py-2 text-sm text-yellow-100 hover:bg-yellow-300/10 disabled:cursor-default disabled:opacity-40" disabled={!selectedSpec} onClick={wipeSelectedSpec}>
+                  Wipe Spec
+                </button>
+                <button className="rounded border border-red-400/25 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10 disabled:cursor-default disabled:opacity-40" disabled={!selectedSpec} onClick={deleteSelectedSpec}>
+                  Delete Spec
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedClass.specializations.map((spec) => (
+                <button
+                  key={spec.id}
+                  className={`rounded border px-3 py-2 text-sm ${selectedSpec?.id === spec.id ? "border-cyan-300/45 bg-cyan-300/12 text-cyan-100" : "border-white/10 bg-white/[0.03] text-white/65 hover:bg-white/[0.06] hover:text-white"}`}
+                  onClick={() => {
+                    const firstTemplate = talentTemplatesForSpec(workspace, spec)[0] ?? null;
+                    setSelectedSpecId(spec.id);
+                    setSelectedTemplateId(firstTemplate?.id ?? "");
+                    setIconTarget(firstTemplate ? "talent" : "spec");
+                  }}
+                >
+                  {spec.name}
+                  <span className="ml-2 text-white/45">{spec.role || "Specialization"}</span>
+                  {spec.inherit_global_templates === false ? <span className="ml-2 text-white/35">{spec.talent_templates?.length ?? 0} local</span> : null}
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
       </section>
@@ -679,51 +801,114 @@ export default function TalentManagerApp() {
                 <div className="text-xl font-semibold text-white">{selectedClass?.name || "No Class"} / {selectedSpec?.name || "No Spec"}</div>
                 <div className="mt-1 text-sm text-white/55">{selectedSpec?.description || selectedClass?.description || "Select a class and specialization to preview generated talents."}</div>
               </div>
-              <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addTalentTemplate}>
-                Add Talent
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100">
+                  Tree Total <span className="font-semibold">{formatPointCount(treePointTotal)}</span>
+                </div>
+                <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40" disabled={!selectedSpec} onClick={addTalentTemplate}>
+                  Add Talent
+                </button>
+              </div>
             </div>
 
             <div className="overflow-auto rounded-lg border border-white/10 bg-black/20 p-4">
               <div
-                className="grid min-w-[520px] gap-3"
+                className="grid min-w-[620px] gap-3"
                 style={{
-                  gridTemplateColumns: `repeat(${workspace.tree_columns}, minmax(128px, 1fr))`,
+                  gridTemplateColumns: `4.75rem repeat(${workspace.tree_columns}, minmax(128px, 1fr))`,
                   gridTemplateRows: `repeat(${workspace.tree_rows}, minmax(104px, auto))`,
                 }}
               >
-                {Array.from({ length: workspace.tree_rows * workspace.tree_columns }).map((_, index) => {
-                  const row = Math.floor(index / workspace.tree_columns);
-                  const column = index % workspace.tree_columns;
-                  const key = slotKey(row, column);
-                  const talent = occupiedSlots.get(key);
-                  const requirementPath = linkedMiddleSlots.get(key);
-                  const isDropTarget = dropTargetKey === key;
-                  if (!talent) {
-                    if (requirementPath) {
+                {Array.from({ length: workspace.tree_rows }).flatMap((_, row) => [
+                  <div key={`row-points-${row}`} className="sticky left-0 z-10 flex min-h-24 items-center justify-end">
+                    <div className="w-[4.25rem] rounded-lg border border-cyan-300/20 bg-[#07111d]/95 px-2 py-2 text-right shadow-lg">
+                      <div className="text-[10px] font-semibold uppercase text-white/45">Row {row + (workspace.layout_index_base === 1 ? 1 : 0)}</div>
+                      <div className="mt-1 text-sm font-semibold text-cyan-100">{formatPointCount(rowPointTotals[row]?.points ?? 0)}</div>
+                      <div className="mt-0.5 text-[10px] text-white/45">{formatPointCount(rowPointTotals[row]?.running ?? 0)} total</div>
+                    </div>
+                  </div>,
+                  ...Array.from({ length: workspace.tree_columns }).map((__, column) => {
+                    const key = slotKey(row, column);
+                    const talent = occupiedSlots.get(key);
+                    const requirementPath = linkedMiddleSlots.get(key);
+                    const isDropTarget = dropTargetKey === key;
+                    if (!talent) {
+                      if (requirementPath) {
+                        return (
+                          <div key={`link-${requirementPath.key}-${row}-${column}`} className="relative min-h-24" aria-hidden="true">
+                            <div className="absolute inset-y-[-12px] left-1/2 w-1 -translate-x-1/2 rounded-full bg-cyan-300/60 shadow-[0_0_16px_rgba(103,232,249,0.45)]" />
+                            <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100/55 bg-cyan-300/65 shadow-[0_0_14px_rgba(103,232,249,0.55)]" />
+                          </div>
+                        );
+                      }
                       return (
-                        <div key={`link-${requirementPath.key}-${row}-${column}`} className="relative min-h-24" aria-hidden="true">
-                          <div className="absolute inset-y-[-12px] left-1/2 w-1 -translate-x-1/2 rounded-full bg-cyan-300/60 shadow-[0_0_16px_rgba(103,232,249,0.45)]" />
-                          <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100/55 bg-cyan-300/65 shadow-[0_0_14px_rgba(103,232,249,0.55)]" />
-                        </div>
+                        <button
+                          key={`empty-${row}-${column}`}
+                          type="button"
+                          aria-label={`Add talent at row ${row + 1}, column ${column + 1}`}
+                          className={`group min-h-24 rounded-lg border border-dashed p-3 text-left transition ${
+                            isDropTarget ? "border-cyan-300/55 bg-cyan-300/12" : "border-white/10 bg-white/[0.02] hover:border-cyan-300/30 hover:bg-white/[0.04]"
+                          }`}
+                          onClick={() => addTalentTemplateAt(row, column)}
+                          onDragEnter={(event) => {
+                            if (!draggedTemplateId) return;
+                            event.preventDefault();
+                            setDropTargetKey(key);
+                          }}
+                          onDragOver={(event) => {
+                            if (!draggedTemplateId) return;
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "move";
+                            setDropTargetKey(key);
+                          }}
+                          onDragLeave={() => {
+                            if (dropTargetKey === key) setDropTargetKey("");
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            const templateId = event.dataTransfer.getData("text/plain") || draggedTemplateId;
+                            if (templateId) moveTalentTemplateTo(templateId, row, column);
+                            setDraggedTemplateId("");
+                            setDropTargetKey("");
+                          }}
+                        >
+                          <div className="flex h-full min-h-16 items-center justify-center rounded border border-transparent text-2xl text-white/20 transition group-hover:text-cyan-100/70">+</div>
+                        </button>
                       );
                     }
+                    const isSelected = selectedTemplate?.id === talent.template_id;
+                    const isDragging = draggedTemplateId === talent.template_id;
+                    const linkedEndpoint = linkedTalentEndpoints.get(talent.template_id);
                     return (
                       <button
-                        key={`empty-${row}-${column}`}
+                        key={talent.talent_id}
                         type="button"
-                        aria-label={`Add talent at row ${row + 1}, column ${column + 1}`}
-                        className={`group min-h-24 rounded-lg border border-dashed p-3 text-left transition ${
-                          isDropTarget ? "border-cyan-300/55 bg-cyan-300/12" : "border-white/10 bg-white/[0.02] hover:border-cyan-300/30 hover:bg-white/[0.04]"
-                        }`}
-                        onClick={() => addTalentTemplateAt(row, column)}
+                        draggable
+                        className={`relative min-h-24 overflow-visible rounded-lg border p-3 text-left transition ${
+                          isSelected
+                            ? "border-cyan-300/55 bg-cyan-300/12"
+                            : isDropTarget
+                              ? "border-cyan-300/40 bg-cyan-300/10"
+                              : "border-white/10 bg-white/[0.04] hover:border-cyan-300/30 hover:bg-white/[0.06]"
+                        } ${isDragging ? "opacity-45" : ""}`}
+                        onClick={() => {
+                          setSelectedTemplateId(talent.template_id);
+                          setIconTarget("talent");
+                        }}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", talent.template_id);
+                          setDraggedTemplateId(talent.template_id);
+                          setSelectedTemplateId(talent.template_id);
+                          setIconTarget("talent");
+                        }}
                         onDragEnter={(event) => {
-                          if (!draggedTemplateId) return;
+                          if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
                           event.preventDefault();
                           setDropTargetKey(key);
                         }}
                         onDragOver={(event) => {
-                          if (!draggedTemplateId) return;
+                          if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "move";
                           setDropTargetKey(key);
@@ -734,80 +919,29 @@ export default function TalentManagerApp() {
                         onDrop={(event) => {
                           event.preventDefault();
                           const templateId = event.dataTransfer.getData("text/plain") || draggedTemplateId;
-                          if (templateId) moveTalentTemplateTo(templateId, row, column);
+                          if (templateId && templateId !== talent.template_id) moveTalentTemplateTo(templateId, row, column);
+                          setDraggedTemplateId("");
+                          setDropTargetKey("");
+                        }}
+                        onDragEnd={() => {
                           setDraggedTemplateId("");
                           setDropTargetKey("");
                         }}
                       >
-                        <div className="flex h-full min-h-16 items-center justify-center rounded border border-transparent text-2xl text-white/20 transition group-hover:text-cyan-100/70">+</div>
+                        {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
+                        {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
+                        <div className="flex items-start gap-3">
+                          <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-12 w-12 rounded border border-white/10 bg-black/30 object-cover" />
+                          <div className="min-w-0">
+                            <div className="line-clamp-2 text-sm font-semibold text-white">{talent.name}</div>
+                            <div className="mt-1 text-xs text-white/45">Max {formatPointCount(Math.max(1, Math.round(Number(talent.max_rank) || 1)))} · Row {talent.display_row}, Col {talent.display_column}</div>
+                          </div>
+                        </div>
+                        <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div>
                       </button>
                     );
-                  }
-                  const isSelected = selectedTemplate?.id === talent.template_id;
-                  const isDragging = draggedTemplateId === talent.template_id;
-                  const linkedEndpoint = linkedTalentEndpoints.get(talent.template_id);
-                  return (
-                    <button
-                      key={talent.talent_id}
-                      type="button"
-                      draggable
-                      className={`relative min-h-24 overflow-visible rounded-lg border p-3 text-left transition ${
-                        isSelected
-                          ? "border-cyan-300/55 bg-cyan-300/12"
-                          : isDropTarget
-                            ? "border-cyan-300/40 bg-cyan-300/10"
-                            : "border-white/10 bg-white/[0.04] hover:border-cyan-300/30 hover:bg-white/[0.06]"
-                      } ${isDragging ? "opacity-45" : ""}`}
-                      onClick={() => {
-                        setSelectedTemplateId(talent.template_id);
-                        setIconTarget("talent");
-                      }}
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", talent.template_id);
-                        setDraggedTemplateId(talent.template_id);
-                        setSelectedTemplateId(talent.template_id);
-                        setIconTarget("talent");
-                      }}
-                      onDragEnter={(event) => {
-                        if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
-                        event.preventDefault();
-                        setDropTargetKey(key);
-                      }}
-                      onDragOver={(event) => {
-                        if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                        setDropTargetKey(key);
-                      }}
-                      onDragLeave={() => {
-                        if (dropTargetKey === key) setDropTargetKey("");
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        const templateId = event.dataTransfer.getData("text/plain") || draggedTemplateId;
-                        if (templateId && templateId !== talent.template_id) moveTalentTemplateTo(templateId, row, column);
-                        setDraggedTemplateId("");
-                        setDropTargetKey("");
-                      }}
-                      onDragEnd={() => {
-                        setDraggedTemplateId("");
-                        setDropTargetKey("");
-                      }}
-                    >
-                      {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
-                      {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
-                      <div className="flex items-start gap-3">
-                        <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-12 w-12 rounded border border-white/10 bg-black/30 object-cover" />
-                        <div className="min-w-0">
-                          <div className="line-clamp-2 text-sm font-semibold text-white">{talent.name}</div>
-                          <div className="mt-1 text-xs text-white/45">Rank {talent.max_rank} · Row {talent.display_row}, Col {talent.display_column}</div>
-                        </div>
-                      </div>
-                      <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div>
-                    </button>
-                  );
-                })}
+                  }),
+                ])}
               </div>
             </div>
           </section>
@@ -890,6 +1024,13 @@ export default function TalentManagerApp() {
                   Spec Description
                   <textarea className="input mt-1 min-h-24" value={selectedSpec.description} onChange={(event) => updateSelectedSpec({ description: event.target.value })} />
                 </label>
+                <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                  <span>
+                    <span className="block">Inherit Global Talents</span>
+                    <span className="mt-0.5 block text-xs text-white/45">Turn this off for a local-only spec tree.</span>
+                  </span>
+                  <input type="checkbox" checked={selectedSpec.inherit_global_templates !== false} onChange={(event) => updateSelectedSpec({ inherit_global_templates: event.target.checked })} />
+                </label>
               </div>
             ) : null}
           </section>
@@ -939,11 +1080,11 @@ export default function TalentManagerApp() {
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.column} onChange={(event) => updateSelectedTemplatePosition({ column: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
-                    Max Rank
+                    Max Rank / Points
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.max_rank} onChange={(event) => updateSelectedTemplate({ max_rank: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
-                    Tree Points
+                    Tree Points Required
                     <input className="input mt-1" type="number" min="0" value={selectedTemplate.requires_tree_points} onChange={(event) => updateSelectedTemplate({ requires_tree_points: Number(event.target.value) })} />
                   </label>
                 </div>
@@ -980,7 +1121,7 @@ export default function TalentManagerApp() {
                     <input type="checkbox" checked={!!selectedTemplate.requires_talent_full} onChange={(event) => updateSelectedTemplate({ requires_talent_full: event.target.checked })} />
                   </label>
                   <label className="text-sm text-white/65">
-                    Required Rank
+                    Prereq Rank
                     <input className="input mt-1" type="number" min="1" disabled={!!selectedTemplate.requires_talent_full} value={selectedTemplate.requires_rank ?? 1} onChange={(event) => updateSelectedTemplate({ requires_rank: Number(event.target.value) })} />
                   </label>
                 </div>

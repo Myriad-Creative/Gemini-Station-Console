@@ -108,6 +108,7 @@ function normalizeSpec(entry: unknown, index: number): TalentSpecialization {
     role: stringValue(spec.role, "Specialization"),
     description: stringValue(spec.description, ""),
     icon: stringValue(spec.icon, ""),
+    inherit_global_templates: hasOwn(spec, "inherit_global_templates") ? boolValue(spec.inherit_global_templates, true) : true,
     talent_templates: asArray(spec.talent_templates).map(normalizeTemplate),
     talent_overrides: normalizeTemplateOverrideMap(spec.talent_overrides),
   };
@@ -161,16 +162,19 @@ export function formatTemplateText(template: TalentTemplate, talentClass: Talent
 
 export function talentTemplatesForSpec(workspace: TalentWorkspace, spec: TalentSpecialization) {
   const overrides = spec.talent_overrides ?? {};
-  const inheritedTemplates = workspace.talent_templates.map((template) => {
-    const override = overrides[template.id] ?? {};
-    return {
-      ...template,
-      ...override,
-      id: template.id,
-      source: "global" as const,
-      base_template_id: template.id,
-    };
-  });
+  const inheritedTemplates =
+    spec.inherit_global_templates === false
+      ? []
+      : workspace.talent_templates.map((template) => {
+          const override = overrides[template.id] ?? {};
+          return {
+            ...template,
+            ...override,
+            id: template.id,
+            source: "global" as const,
+            base_template_id: template.id,
+          };
+        });
   const localTemplates = (spec.talent_templates ?? []).map((template) => ({
     ...template,
     source: "spec" as const,
@@ -350,9 +354,10 @@ export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
         specializations: talentClass.specializations.map((spec) => {
           const nextSpec: TalentSpecialization = { ...spec };
           if (!stringValue(nextSpec.icon, "").trim()) delete nextSpec.icon;
+          if (nextSpec.inherit_global_templates !== false) delete nextSpec.inherit_global_templates;
           nextSpec.talent_templates = (nextSpec.talent_templates ?? []).map((template) => cleanTalentTemplate(template) as TalentTemplate);
           if (!nextSpec.talent_templates.length) delete nextSpec.talent_templates;
-          nextSpec.talent_overrides = cleanTalentOverrides(nextSpec.talent_overrides);
+          nextSpec.talent_overrides = nextSpec.inherit_global_templates === false ? {} : cleanTalentOverrides(nextSpec.talent_overrides);
           if (!Object.keys(nextSpec.talent_overrides).length) delete nextSpec.talent_overrides;
           return nextSpec;
         }),
