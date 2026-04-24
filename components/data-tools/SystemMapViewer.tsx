@@ -5019,9 +5019,8 @@ export default function SystemMapViewer() {
       }
     }
     if (hasEnvironmentalChanges) {
-      const ok = await handleSaveEnvironmentalChangesToBuild(true);
+      const ok = await handleSaveEnvironmentalChangesToBuild(false);
       if (ok === false) {
-        setStatus({ tone: "error", message: "Could not save environmental changes into EnvironmentalElements.json." });
         return;
       }
     }

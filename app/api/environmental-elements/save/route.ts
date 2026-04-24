@@ -25,6 +25,18 @@ function validateVecArray(value: unknown, minCount: number, label: string) {
   return "";
 }
 
+function validateOptionalFiniteNumber(value: unknown, min: number, label: string) {
+  if (value === undefined || value === null || value === "") return "";
+  if (!isFiniteNumber(value) || Number(value) < min) return `${label} must be a valid number greater than or equal to ${min}.`;
+  return "";
+}
+
+function validateDropChance(value: unknown, label: string) {
+  if (value === undefined || value === null || value === "") return "";
+  if (!isFiniteNumber(value) || Number(value) < 0 || Number(value) > 1) return `${label} must be between 0 and 1.`;
+  return "";
+}
+
 function validateEnvironmentalElements(value: unknown) {
   if (!isRecord(value)) return "EnvironmentalElements.json must be a JSON object.";
   if (!Array.isArray(value.elements)) return "EnvironmentalElements.json must contain an elements array.";
@@ -40,7 +52,7 @@ function validateEnvironmentalElements(value: unknown) {
 
     const type = typeof rawElement.type === "string" ? rawElement.type.trim() : "";
     if (!type) return `Element "${id}" is missing a type.`;
-    if (!["hazard_barrier", "environment_region"].includes(type)) {
+    if (!["hazard_barrier", "environment_region", "mineable_asteroid"].includes(type)) {
       return `Element "${id}" has unsupported type "${type}".`;
     }
 
@@ -54,10 +66,10 @@ function validateEnvironmentalElements(value: unknown) {
 
     const data = isRecord(rawElement.data) ? rawElement.data : null;
     if (!data) return `Element "${id}" must contain a data object.`;
-    const profileId = typeof data.profile_id === "string" ? data.profile_id.trim() : "";
-    if (!profileId) return `Element "${id}" is missing data.profile_id.`;
 
     if (type === "hazard_barrier") {
+      const profileId = typeof data.profile_id === "string" ? data.profile_id.trim() : "";
+      if (!profileId) return `Element "${id}" is missing data.profile_id.`;
       if (!isFiniteNumber(data.band_width) || Number(data.band_width) <= 0) {
         return `Hazard barrier "${id}" must have a valid positive band_width.`;
       }
@@ -66,6 +78,8 @@ function validateEnvironmentalElements(value: unknown) {
     }
 
     if (type === "environment_region") {
+      const profileId = typeof data.profile_id === "string" ? data.profile_id.trim() : "";
+      if (!profileId) return `Element "${id}" is missing data.profile_id.`;
       const shape = typeof data.shape === "string" ? data.shape.trim().toLowerCase() : "";
       if (!["polygon", "ellipse"].includes(shape)) {
         return `Environment region "${id}" must use shape "polygon" or "ellipse".`;
@@ -81,6 +95,32 @@ function validateEnvironmentalElements(value: unknown) {
         if (!isFiniteNumber(data.width) || Number(data.width) <= 0 || !isFiniteNumber(data.height) || Number(data.height) <= 0) {
           return `Environment region "${id}" ellipse width and height must be valid positive numbers.`;
         }
+      }
+    }
+
+    if (type === "mineable_asteroid") {
+      const positionError = validateVecArray([data.position], 1, `Mineable asteroid "${id}" position`);
+      if (positionError) return positionError;
+      if (!isFiniteNumber(data.radius) || Number(data.radius) <= 0) {
+        return `Mineable asteroid "${id}" must have a valid positive radius.`;
+      }
+      if (!isFiniteNumber(data.durability) || Number(data.durability) <= 0) {
+        return `Mineable asteroid "${id}" must have valid positive durability.`;
+      }
+      const optionalNumberError =
+        validateOptionalFiniteNumber(data.visual_scale, 0, `Mineable asteroid "${id}" visual_scale`) ||
+        validateOptionalFiniteNumber(data.respawn_seconds, 0, `Mineable asteroid "${id}" respawn_seconds`) ||
+        validateOptionalFiniteNumber(data.lootbox_count, 0, `Mineable asteroid "${id}" lootbox_count`) ||
+        validateOptionalFiniteNumber(data.item_rolls, 0, `Mineable asteroid "${id}" item_rolls`) ||
+        validateOptionalFiniteNumber(data.mod_rolls, 0, `Mineable asteroid "${id}" mod_rolls`);
+      if (optionalNumberError) return optionalNumberError;
+      const dropChanceError =
+        validateDropChance(data.item_drop_chance, `Mineable asteroid "${id}" item_drop_chance`) ||
+        validateDropChance(data.mod_drop_chance, `Mineable asteroid "${id}" mod_drop_chance`);
+      if (dropChanceError) return dropChanceError;
+      if (data.mining_loot_icon_scale !== undefined) {
+        const scaleError = validateVecArray([data.mining_loot_icon_scale], 1, `Mineable asteroid "${id}" mining_loot_icon_scale`);
+        if (scaleError) return scaleError;
       }
     }
   }
