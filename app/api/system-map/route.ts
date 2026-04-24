@@ -442,11 +442,13 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
       const id = stringValue(element.id, `environmental_element_${index + 1}`);
       const type = stringValue(element.type, "hazard_barrier");
       const sector = vecValue(element.sector_id);
+      const zoneId = stringValue(element.zone_id ?? data.zone_id, "").trim();
       const common = {
         id,
         name: stringValue(element.name, id),
         active: boolValue(element.active, true),
         sector,
+        zoneId: zoneId || null,
         tags: asArray(element.tags)
           .map((tag) => stringValue(tag).trim())
           .filter(Boolean),

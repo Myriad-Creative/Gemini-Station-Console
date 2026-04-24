@@ -560,6 +560,20 @@ function pointInStageBounds(point: SystemMapVec, stage: SystemMapStagePlacement)
   return (dx * dx) / (halfWidth * halfWidth) + (dy * dy) / (halfHeight * halfHeight) <= 1;
 }
 
+function mineableAsteroidZoneId(asteroid: SystemMapMineableAsteroid) {
+  return asteroid.zoneId?.trim() || null;
+}
+
+function zoneOwnsMineableAsteroid(zone: SystemMapZone, asteroid: SystemMapMineableAsteroid) {
+  const ownerZoneId = mineableAsteroidZoneId(asteroid);
+  if (ownerZoneId) return ownerZoneId === zone.id || ownerZoneId === zoneIdentity(zone);
+  return pointInZoneBounds(asteroid.world, zone);
+}
+
+function mineableAsteroidsForZone(zone: SystemMapZone, elements: SystemMapEnvironmentalElement[]) {
+  return elements.filter((element): element is SystemMapMineableAsteroid => element.type === "mineable_asteroid" && zoneOwnsMineableAsteroid(zone, element));
+}
+
 function pointInPolygon(point: SystemMapVec, polygon: SystemMapVec[]) {
   if (polygon.length < 3) return false;
   let inside = false;
@@ -630,6 +644,7 @@ function environmentalElementMatches(element: SystemMapEnvironmentalElement, que
           element.itemLootTable,
           element.modLootTable,
           element.miningLootIcon,
+          element.zoneId ?? "",
           element.notes,
           element.tags.join(" "),
         ]
@@ -1404,7 +1419,7 @@ function createEnvironmentalEllipseDraftFromPoint(world: SystemMapVec, payload: 
   };
 }
 
-function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapMineableAsteroid {
+function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[], ownerZone?: SystemMapZone | null): SystemMapMineableAsteroid {
   const roundedWorld = {
     x: Math.round(world.x),
     y: Math.round(world.y),
@@ -1416,6 +1431,7 @@ function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: Syst
     originalId: id,
     draft: true,
     modified: false,
+    zoneId: ownerZone ? zoneIdentity(ownerZone) : null,
     type: "mineable_asteroid",
     name: "New Mineable Asteroid",
     active: true,
@@ -2001,6 +2017,7 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
       name: element.name || element.id,
       active: element.active,
       sector_id: [Math.round(element.sector.x), Math.round(element.sector.y)],
+      ...(element.zoneId ? { zone_id: element.zoneId } : {}),
       tags: element.tags,
       notes: element.notes,
       data: {
@@ -3167,6 +3184,23 @@ export default function SystemMapViewer() {
     });
   }
 
+  function moveMineableAsteroidsForZone(zone: SystemMapZone, delta: SystemMapVec, nextZoneId = zoneIdentity(zone)) {
+    if (!payload) return 0;
+    if (delta.x === 0 && delta.y === 0 && nextZoneId === zoneIdentity(zone)) return 0;
+    const associatedAsteroids = mineableAsteroidsForZone(zone, mapEnvironmentalElements);
+    for (const asteroid of associatedAsteroids) {
+      const asteroidId = environmentalElementIdentity(asteroid);
+      updateEnvironmentalElementInMap(asteroidId, (element) => {
+        if (element.type !== "mineable_asteroid") return element;
+        return {
+          ...moveMineableAsteroidByDelta(element, delta, payload),
+          zoneId: nextZoneId,
+        };
+      });
+    }
+    return associatedAsteroids.length;
+  }
+
   function updateStagePlacementPosition(zoneId: string, stageKey: string, world: SystemMapVec) {
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
@@ -3218,14 +3252,24 @@ export default function SystemMapViewer() {
       x: Math.round(world.x),
       y: Math.round(world.y),
     };
-    const draftZone = draftZones.find((zone) => zone.id === zoneId);
+    const draftZone = draftZones.find((zone) => zoneIdentity(zone) === zoneId);
     if (draftZone) {
-      setDraftZones((current) => current.map((zone) => (zone.id === zoneId ? moveZoneToWorld(zone, roundedWorld, payload) : zone)));
+      const delta = {
+        x: roundedWorld.x - draftZone.world.x,
+        y: roundedWorld.y - draftZone.world.y,
+      };
+      moveMineableAsteroidsForZone(draftZone, delta, zoneIdentity(draftZone));
+      setDraftZones((current) => current.map((zone) => (zoneIdentity(zone) === zoneId ? moveZoneToWorld(zone, roundedWorld, payload) : zone)));
       return;
     }
 
     const existingZone = payload.zones.find((zone) => (zone.originalId ?? zone.id) === zoneId || zone.id === zoneId);
     if (!existingZone) return;
+    const delta = {
+      x: roundedWorld.x - existingZone.world.x,
+      y: roundedWorld.y - existingZone.world.y,
+    };
+    moveMineableAsteroidsForZone(existingZone, delta, zoneIdentity(existingZone));
     const movedZone = moveZoneToWorld(existingZone, roundedWorld, payload);
     const originalId = movedZone.originalId ?? existingZone.id;
     setPayload((current) =>
@@ -3393,9 +3437,9 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Added draft ellipse region "${region.name}". Adjust its size and profile, then save to build.` });
   }
 
-  function openCreateMineableAsteroidForm(world: SystemMapVec) {
+  function openCreateMineableAsteroidForm(world: SystemMapVec, ownerZone?: SystemMapZone | null) {
     if (!payload) return;
-    const asteroid = createMineableAsteroidDraftFromPoint(world, payload, existingEnvironmentalIds);
+    const asteroid = createMineableAsteroidDraftFromPoint(world, payload, existingEnvironmentalIds, ownerZone);
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
@@ -3407,7 +3451,10 @@ export default function SystemMapViewer() {
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setContextMenu(null);
-    setStatus({ tone: "success", message: `Added draft mineable asteroid "${asteroid.name}". Adjust its loot and mining settings, then save to build.` });
+    setStatus({
+      tone: "success",
+      message: `Added draft mineable asteroid "${asteroid.name}"${ownerZone ? ` to "${ownerZone.name || ownerZone.id}"` : ""}. Adjust its loot and mining settings, then save to build.`,
+    });
   }
 
   function startRouteDraft(world: SystemMapVec) {
@@ -3995,14 +4042,16 @@ export default function SystemMapViewer() {
           }
         } else if (element.type === "mineable_asteroid") {
           if (distance(world, element.world) <= Math.max(element.radius * element.visualScale, element.spawnRadius, 10 / camera.zoom)) {
+            const ownerZone = mapZones.find((zone) => zoneOwnsMineableAsteroid(zone, element)) ?? null;
             return {
               x: screen.x,
               y: screen.y,
               title: element.name || element.id,
-              subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Mineable asteroid"} · sector ${element.sector.x}, ${element.sector.y}`,
+              subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Mineable asteroid"}${ownerZone ? ` · zone ${ownerZone.name || ownerZone.id}` : ` · sector ${element.sector.x}, ${element.sector.y}`}`,
               icon: safeIconSrc(element.texture, element.id, element.name),
               lines: [
                 `Element ID: ${element.id}`,
+                ownerZone ? `Zone: ${ownerZone.name || ownerZone.id}` : `Zone: none`,
                 `Count: ${formatNumber(element.count)}`,
                 `Spawn radius: ${formatNumber(element.spawnRadius)}`,
                 `Texture: ${element.texture}`,
@@ -4076,19 +4125,23 @@ export default function SystemMapViewer() {
       for (const zone of mapZones) {
         if (!zoneMatches(zone, normalizedQuery)) continue;
         if (pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) {
+          const zoneMineableAsteroids = mineableAsteroidsForZone(zone, mapEnvironmentalElements);
+          const zoneMineableInstanceCount = zoneMineableAsteroids.reduce((sum, asteroid) => sum + asteroid.count, 0);
           return {
             x: screen.x,
-              y: screen.y,
-              title: zone.name || zone.id,
-              subtitle: `${zone.draft ? "Unsaved draft" : zone.modified ? "Unsaved coordinate edit" : zone.active ? "Active" : "Inactive"} zone · sector ${zone.sector.x}, ${zone.sector.y}`,
-              lines: [
-                `Zone ID: ${zone.id}`,
+            y: screen.y,
+            title: zone.name || zone.id,
+            subtitle: `${zone.draft ? "Unsaved draft" : zone.modified ? "Unsaved coordinate edit" : zone.active ? "Active" : "Inactive"} zone · sector ${zone.sector.x}, ${zone.sector.y}`,
+            lines: [
+              `Zone ID: ${zone.id}`,
               `POI: ${zone.poiMap ? zone.poiLabel || zone.name : "not shown on map"}`,
               `Activation radius: ${formatNumber(zone.activationRadius)}`,
               `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
               `Stages: ${zone.stages.length}`,
               `Zone mob rows: ${zone.mobs.length}`,
               `Scene mob markers: ${zone.mobs.reduce((sum, mob) => sum + mob.sceneSpawns.length, 0)}`,
+              `Mineable fields: ${zoneMineableAsteroids.length}`,
+              `Mineable asteroids: ${zoneMineableInstanceCount}`,
               `World: ${formatVec(zone.world)}`,
             ],
           };
@@ -4838,6 +4891,14 @@ export default function SystemMapViewer() {
       ...applyZoneFormToZone(normalizedForm, baseZone, payload, id),
       originalId,
     };
+    moveMineableAsteroidsForZone(
+      baseZone,
+      {
+        x: nextZone.world.x - baseZone.world.x,
+        y: nextZone.world.y - baseZone.world.y,
+      },
+      nextZone.id,
+    );
     if (baseZone.draft) {
       setDraftZones((current) => current.map((zone) => ((zone.originalId ?? zone.id) === originalId ? nextZone : zone)));
     } else {
@@ -6222,7 +6283,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, stage, mob spawn, route, gate, authored barrier, region, or mineable asteroid field to edit details. Hold Command and drag a zone, stage, mob spawn, gate, barrier, region, or mineable asteroid field to move it. Drag barrier points or polygon vertices to reshape them. Right-click a zone to add stage and mob placements; right-click the map to add zones, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroid fields.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
       </div>
 
       {contextMenu ? (
@@ -6282,8 +6343,15 @@ export default function SystemMapViewer() {
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalEllipseForm(contextMenu.world)}>
             Add Ellipse Region Here
           </button>
-          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateMineableAsteroidForm(contextMenu.world)}>
-            Add Mineable Asteroid Field Here
+          <button
+            type="button"
+            className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+            onClick={() => {
+              const zone = contextMenu.zoneId ? mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId) : null;
+              openCreateMineableAsteroidForm(contextMenu.world, zone);
+            }}
+          >
+            {contextMenu.zoneId ? "Add Mineable Asteroid Field To Zone" : "Add Mineable Asteroid Field Here"}
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -6974,6 +7042,7 @@ export default function SystemMapViewer() {
         ? (() => {
             const asteroid = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalAsteroidForm.originalId);
             const activeAsteroid = asteroid?.type === "mineable_asteroid" ? asteroid : null;
+            const ownerZone = activeAsteroid ? (mapZones.find((zone) => zoneOwnsMineableAsteroid(zone, activeAsteroid)) ?? null) : null;
             const previewIcon = safeIconSrc(environmentalAsteroidForm.texture, environmentalAsteroidForm.id, environmentalAsteroidForm.name);
             const currentTextureOptions = ASTEROID_SPRITES.includes(environmentalAsteroidForm.texture) ? ASTEROID_SPRITES : [environmentalAsteroidForm.texture, ...ASTEROID_SPRITES].filter(Boolean);
             const currentMiningIconOptions = MINING_LOOT_ICON_OPTIONS.includes(environmentalAsteroidForm.miningLootIcon)
@@ -7006,7 +7075,8 @@ export default function SystemMapViewer() {
                   </div>
                   <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
                     <div className="font-semibold text-white/80">Map Position</div>
-                    <div className="mt-1">Sector: {environmentalAsteroidForm.sectorX}, {environmentalAsteroidForm.sectorY}</div>
+                    <div className="mt-1">Zone: {ownerZone ? ownerZone.name || ownerZone.id : "none"}</div>
+                    <div>Sector: {environmentalAsteroidForm.sectorX}, {environmentalAsteroidForm.sectorY}</div>
                     <div>Local: {environmentalAsteroidForm.localX}, {environmentalAsteroidForm.localY}</div>
                     <div>World: {activeAsteroid ? formatVec(activeAsteroid.world) : "apply details to calculate"}</div>
                   </div>

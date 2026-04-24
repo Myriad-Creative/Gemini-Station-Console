@@ -109,6 +109,7 @@ export type SystemMapEnvironmentalElementCommon = {
   originalId?: string;
   draft?: boolean;
   modified?: boolean;
+  zoneId?: string | null;
   type: "hazard_barrier" | "environment_region" | "mineable_asteroid";
   name: string;
   active: boolean;

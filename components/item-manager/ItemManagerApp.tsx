@@ -112,6 +112,7 @@ export default function ItemManagerApp() {
   const [issueFilter, setIssueFilter] = useState<ItemIssueFilter>("all");
   const [dashboardFilter, setDashboardFilter] = useState<ItemDashboardFilter>("");
   const [status, setStatus] = useState<TimedStatusState>(EMPTY_TIMED_STATUS);
+  const [savingToBuild, setSavingToBuild] = useState(false);
   const clearStatus = () => setStatus(EMPTY_TIMED_STATUS);
   const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
@@ -325,6 +326,50 @@ export default function ItemManagerApp() {
     });
   }
 
+  async function handleSaveAllItemsToBuild() {
+    if (!workspace || savingToBuild) return;
+    const errors = validation.filter((issue) => issue.level === "error");
+    if (errors.length) {
+      setStatus({
+        tone: "error",
+        message: `Resolve ${errors.length} item error${errors.length === 1 ? "" : "s"} before saving to build.`,
+      });
+      return;
+    }
+
+    setSavingToBuild(true);
+    try {
+      const response = await fetch("/api/items/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workspace }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        setStatus({
+          tone: "error",
+          message: payload?.error || "Could not save items.json into the configured game build.",
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "success",
+        message: `Saved all ${payload.savedCount ?? workspace.items.length} items into the live items.json file.`,
+        dismissAfterMs: 7000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setSavingToBuild(false);
+    }
+  }
+
   const previewIcon = buildIconSrc(
     selectedItem ? resolvedItemIconPath(selectedItem.icon) : "icon_lootbox.png",
     selectedItem?.id || "item",
@@ -335,6 +380,20 @@ export default function ItemManagerApp() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-3xl font-semibold text-white">Item Manager</div>
+          <div className="mt-1 text-sm text-white/55">Edit item definitions and write the full items workspace back into the configured game build.</div>
+        </div>
+        <button
+          className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40"
+          disabled={!workspace || summary.errorCount > 0 || savingToBuild}
+          onClick={() => void handleSaveAllItemsToBuild()}
+        >
+          {savingToBuild ? "Saving..." : "Save to build"}
+        </button>
+      </div>
+
       {status.message ? (
         status.tone === "neutral" ? (
           <StatusBanner tone={status.tone} message={status.message} />
