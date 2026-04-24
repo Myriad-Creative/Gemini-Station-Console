@@ -8,6 +8,7 @@ import type {
   SystemMapAsteroidBeltGate,
   SystemMapEnvironmentalElement,
   SystemMapEnvironmentProfile,
+  SystemMapMineableOreItem,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -43,6 +44,17 @@ const DEFAULT_HAZARD_BARRIER_BAND_WIDTH = 480;
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = "res://assets/environment/asteroids/ast_1.png";
 const DEFAULT_MINING_LOOT_ICON = "res://assets/items/item_crate_iron_ore.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
+
+const MINEABLE_ORE_NAMES = [
+  "Compacted Gold Ore",
+  "Compacted Iron Ore",
+  "Copper Ore",
+  "Iron Ore",
+  "Nickel Ore",
+  "Platinum Ore",
+  "Rhodium Ore",
+  "Tin Ore",
+];
 
 const SECTOR_NAMES = new Map<string, string>([
   ["-3,3", "-33"],
@@ -169,6 +181,31 @@ function boolValue(value: unknown, fallback = false) {
     if (normalized === "false") return false;
   }
   return fallback;
+}
+
+function itemIdValue(value: unknown) {
+  const raw = stringValue(value).trim();
+  if (!raw) return "";
+  if (/^-?\d+(?:\.0+)?$/.test(raw)) return String(Math.trunc(Number(raw)));
+  return raw;
+}
+
+function normalizedSearchText(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function itemIconResPath(value: unknown) {
+  const icon = stringValue(value).trim();
+  if (!icon) return "";
+  if (icon.startsWith("res://")) return icon;
+  if (icon.startsWith("assets/")) return `res://${icon}`;
+  if (icon.startsWith("/")) return icon;
+  return `res://assets/items/${icon}`;
 }
 
 function vecValue(value: unknown, fallback: SystemMapVec = { x: 0, y: 0 }): SystemMapVec {
@@ -433,6 +470,37 @@ function buildEnvironmentProfiles(hazardBarrierProfilesJson: unknown, stagesJson
   return Array.from(profiles.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function buildMineableOreItems(itemsJson: unknown): SystemMapMineableOreItem[] {
+  const itemValues = Array.isArray(itemsJson) ? itemsJson : Object.values(asRecord(itemsJson));
+  const catalog = itemValues
+    .map((value) => {
+      const item = asRecord(value);
+      const id = itemIdValue(item.id);
+      const name = stringValue(item.name ?? item.display_name, id).trim();
+      if (!id || !name) return null;
+      return {
+        id,
+        name,
+        icon: itemIconResPath(item.icon ?? item.icon_path ?? item.sprite ?? item.texture),
+        normalizedName: normalizedSearchText(name),
+      };
+    })
+    .filter((item): item is SystemMapMineableOreItem & { normalizedName: string } => !!item);
+
+  const oreItems: SystemMapMineableOreItem[] = [];
+  for (const oreName of MINEABLE_ORE_NAMES) {
+    const normalizedOreName = normalizedSearchText(oreName);
+    const item = catalog.find((candidate) => candidate.normalizedName === normalizedOreName);
+    if (!item || oreItems.some((entry) => entry.id === item.id)) continue;
+    oreItems.push({
+      id: item.id,
+      name: item.name,
+      icon: item.icon,
+    });
+  }
+  return oreItems;
+}
+
 function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfilesJson: unknown, stagesJson: unknown): SystemMapEnvironmentalElement[] {
   const root = asRecord(elementsJson);
   return asArray(root.elements)
@@ -462,6 +530,9 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
           type: "mineable_asteroid" as const,
           local,
           world: worldFromSectorLocal(sector, local),
+          oreItemId: itemIdValue(data.ore_item_id ?? data.ore_id) || null,
+          oreItemName: stringValue(data.ore_item_name ?? data.ore_name, "").trim() || null,
+          oreItemIcon: itemIconResPath(data.ore_item_icon ?? data.ore_icon) || null,
           count: Math.max(1, Math.round(numberValue(data.count ?? data.spawn_count, 1))),
           spawnRadius: Math.max(0, numberValue(data.spawn_radius ?? data.field_radius, 0)),
           texture: stringValue(data.texture, DEFAULT_MINEABLE_ASTEROID_TEXTURE),
@@ -1003,7 +1074,7 @@ export async function GET() {
     );
   }
 
-  const [zonesResult, stagesResult, hazardBarrierProfilesResult, environmentalElementsResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult] = await Promise.all([
+  const [zonesResult, stagesResult, hazardBarrierProfilesResult, environmentalElementsResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult, itemsResult] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
@@ -1013,6 +1084,7 @@ export async function GET() {
     loadDataFile(local.gameRootPath, "regions", "regions.json"),
     loadDataFile(local.gameRootPath, "tradeRoutes", "trade_routes.json"),
     loadDataFile(local.gameRootPath, "asteroidBeltGates", "AsteroidBeltGates.json"),
+    loadDataFile(local.gameRootPath, "items", "items.json"),
   ]);
 
   const warnings = [
@@ -1025,6 +1097,7 @@ export async function GET() {
     ...regionsResult.warnings,
     ...routesResult.warnings,
     ...asteroidBeltGatesResult.warnings,
+    ...itemsResult.warnings,
   ];
 
   const mobCatalog = buildMobCatalog(mobsResult.value);
@@ -1055,6 +1128,7 @@ export async function GET() {
     asteroidBeltGates: buildAsteroidBeltGates(asteroidBeltGatesResult.value),
     environmentProfiles: buildEnvironmentProfiles(hazardBarrierProfilesResult.value, stagesResult.value),
     environmentalElements: buildEnvironmentalElements(environmentalElementsResult.value, hazardBarrierProfilesResult.value, stagesResult.value),
+    mineableOreItems: buildMineableOreItems(itemsResult.value),
     warnings,
   };
 

@@ -12,6 +12,7 @@ import type {
   SystemMapEnvironmentalRegion,
   SystemMapEnvironmentProfile,
   SystemMapMineableAsteroid,
+  SystemMapMineableOreItem,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -119,6 +120,9 @@ type MineableAsteroidForm = {
   originalId: string;
   name: string;
   id: string;
+  oreItemId: string;
+  oreItemName: string;
+  oreItemIcon: string;
   active: boolean;
   sectorX: string;
   sectorY: string;
@@ -475,6 +479,34 @@ function sanitizeEnvironmentalElementId(value: string) {
   );
 }
 
+function mineableOreNameBase(ore: SystemMapMineableOreItem) {
+  return ore.name.replace(/\s+ore$/i, "").trim() || ore.name;
+}
+
+function mineableAsteroidNameForOre(ore: SystemMapMineableOreItem) {
+  return `${mineableOreNameBase(ore)} Mineable Asteroid`;
+}
+
+function mineableAsteroidIdForOre(ore: SystemMapMineableOreItem, existingIds: string[]) {
+  return createUniqueId(sanitizeEnvironmentalElementId(mineableAsteroidNameForOre(ore)), existingIds);
+}
+
+function findMineableOreItem(oreItems: SystemMapMineableOreItem[], oreItemId: string | null | undefined) {
+  const normalizedId = String(oreItemId ?? "").trim();
+  if (!normalizedId) return null;
+  return oreItems.find((ore) => ore.id === normalizedId) ?? null;
+}
+
+function inferMineableOreItem(asteroid: SystemMapMineableAsteroid, oreItems: SystemMapMineableOreItem[]) {
+  const explicitOre = findMineableOreItem(oreItems, asteroid.oreItemId);
+  if (explicitOre) return explicitOre;
+  const normalizedName = `${asteroid.name} ${asteroid.id}`.toLowerCase();
+  const byName = oreItems.find((ore) => normalizedName.includes(mineableOreNameBase(ore).toLowerCase()));
+  if (byName) return byName;
+  const icon = String(asteroid.oreItemIcon || asteroid.miningLootIcon || "").toLowerCase();
+  return oreItems.find((ore) => ore.icon && icon.endsWith(ore.icon.toLowerCase().replace(/^res:\/\//, ""))) ?? null;
+}
+
 function sanitizeGateId(value: string) {
   return (
     value
@@ -641,6 +673,9 @@ function environmentalElementMatches(element: SystemMapEnvironmentalElement, que
           element.type,
           element.texture,
           ...element.textures,
+          element.oreItemId ?? "",
+          element.oreItemName ?? "",
+          element.oreItemIcon ?? "",
           element.itemLootTable,
           element.modLootTable,
           element.miningLootIcon,
@@ -1434,6 +1469,9 @@ function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: Syst
     zoneId: ownerZone ? zoneIdentity(ownerZone) : null,
     type: "mineable_asteroid",
     name: "New Mineable Asteroid",
+    oreItemId: null,
+    oreItemName: null,
+    oreItemIcon: null,
     active: true,
     sector,
     tags: ["mineable", "asteroid"],
@@ -1519,12 +1557,16 @@ function environmentalRegionToForm(region: SystemMapEnvironmentalRegion, mode: E
   };
 }
 
-function mineableAsteroidToForm(asteroid: SystemMapMineableAsteroid, mode: MineableAsteroidForm["mode"]): MineableAsteroidForm {
+function mineableAsteroidToForm(asteroid: SystemMapMineableAsteroid, mode: MineableAsteroidForm["mode"], oreItems: SystemMapMineableOreItem[] = []): MineableAsteroidForm {
+  const oreItem = inferMineableOreItem(asteroid, oreItems);
   return {
     mode,
     originalId: environmentalElementIdentity(asteroid),
     name: asteroid.name || asteroid.id,
     id: asteroid.id,
+    oreItemId: asteroid.oreItemId || oreItem?.id || "",
+    oreItemName: asteroid.oreItemName || oreItem?.name || "",
+    oreItemIcon: asteroid.oreItemIcon || oreItem?.icon || "",
     active: asteroid.active,
     sectorX: numberInputValue(asteroid.sector.x),
     sectorY: numberInputValue(asteroid.sector.y),
@@ -1827,6 +1869,9 @@ function withMineableAsteroidForm(
     ...asteroid,
     id,
     name: form.name.trim(),
+    oreItemId: form.oreItemId.trim() || null,
+    oreItemName: form.oreItemName.trim() || null,
+    oreItemIcon: form.oreItemIcon.trim() || null,
     active: form.active,
     sector,
     tags: form.tags
@@ -2022,6 +2067,9 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
       notes: element.notes,
       data: {
         position: [Math.round(element.local.x), Math.round(element.local.y)],
+        ...(element.oreItemId ? { ore_item_id: element.oreItemId } : {}),
+        ...(element.oreItemName ? { ore_item_name: element.oreItemName } : {}),
+        ...(element.oreItemIcon ? { ore_item_icon: element.oreItemIcon } : {}),
         count: Math.max(1, Math.round(element.count)),
         spawn_radius: Math.max(0, element.spawnRadius),
         texture: element.texture,
@@ -3378,7 +3426,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
-    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, asteroid.draft ? "create" : "edit"));
+    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, asteroid.draft ? "create" : "edit", payload?.mineableOreItems ?? []));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
@@ -3446,7 +3494,7 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setDraftEnvironmentalElements((current) => [...current, asteroid]);
-    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, "create"));
+    setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, "create", payload.mineableOreItems));
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
@@ -4052,6 +4100,7 @@ export default function SystemMapViewer() {
               lines: [
                 `Element ID: ${element.id}`,
                 ownerZone ? `Zone: ${ownerZone.name || ownerZone.id}` : `Zone: none`,
+                `Ore: ${element.oreItemName || element.oreItemId || "unset"}`,
                 `Count: ${formatNumber(element.count)}`,
                 `Spawn radius: ${formatNumber(element.spawnRadius)}`,
                 `Texture: ${element.texture}`,
@@ -4621,6 +4670,32 @@ export default function SystemMapViewer() {
   function handleMineableAsteroidIdChange(id: string) {
     setEnvironmentalIdManuallyEdited(true);
     setEnvironmentalAsteroidForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
+  }
+
+  function handleMineableAsteroidOreChange(oreItemId: string) {
+    const ore = findMineableOreItem(payload?.mineableOreItems ?? [], oreItemId);
+    setEnvironmentalAsteroidForm((current) => {
+      if (!current) return current;
+      if (!ore) {
+        return {
+          ...current,
+          oreItemId: "",
+          oreItemName: "",
+          oreItemIcon: "",
+        };
+      }
+      const reservedIds = existingEnvironmentalIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        oreItemId: ore.id,
+        oreItemName: ore.name,
+        oreItemIcon: ore.icon,
+        miningLootIcon: ore.icon || current.miningLootIcon,
+        name: mineableAsteroidNameForOre(ore),
+        id: mineableAsteroidIdForOre(ore, reservedIds),
+      };
+    });
+    if (ore) setEnvironmentalIdManuallyEdited(false);
   }
 
   function applyRouteForm() {
@@ -7048,6 +7123,7 @@ export default function SystemMapViewer() {
             const currentMiningIconOptions = MINING_LOOT_ICON_OPTIONS.includes(environmentalAsteroidForm.miningLootIcon)
               ? MINING_LOOT_ICON_OPTIONS
               : [environmentalAsteroidForm.miningLootIcon, ...MINING_LOOT_ICON_OPTIONS].filter(Boolean);
+            const oreOptions = payload?.mineableOreItems ?? [];
             return (
               <div
                 data-system-map-ui="true"
@@ -7083,6 +7159,17 @@ export default function SystemMapViewer() {
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Ore Type
+                    <select className="input mt-1" value={environmentalAsteroidForm.oreItemId} onChange={(event) => handleMineableAsteroidOreChange(event.target.value)}>
+                      <option value="">{oreOptions.length ? "Select ore type" : "No ore items found in items.json"}</option>
+                      {oreOptions.map((ore) => (
+                        <option key={ore.id} value={ore.id}>
+                          {ore.name} (item {ore.id})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="text-sm text-white/65 sm:col-span-2">
                     Asteroid Name
                     <input className="input mt-1" value={environmentalAsteroidForm.name} onChange={(event) => handleMineableAsteroidNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
@@ -7223,6 +7310,7 @@ export default function SystemMapViewer() {
                   <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
                     <div className="font-semibold text-white/80">Asteroid Summary</div>
                     <div className="mt-2">World: {formatVec(activeAsteroid.world)}</div>
+                    <div>Ore: {activeAsteroid.oreItemName || activeAsteroid.oreItemId || "unset"}</div>
                     <div>Field: {activeAsteroid.count} asteroid{activeAsteroid.count === 1 ? "" : "s"} inside {formatNumber(activeAsteroid.spawnRadius)} units</div>
                     <div>Texture: {activeAsteroid.texture}</div>
                     <div>Variants: {activeAsteroid.textures.length ? activeAsteroid.textures.length : "none"}</div>

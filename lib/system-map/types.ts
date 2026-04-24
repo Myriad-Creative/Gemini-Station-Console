@@ -160,6 +160,9 @@ export type SystemMapMineableAsteroid = SystemMapEnvironmentalElementCommon & {
   type: "mineable_asteroid";
   local: SystemMapVec;
   world: SystemMapVec;
+  oreItemId?: string | null;
+  oreItemName?: string | null;
+  oreItemIcon?: string | null;
   count: number;
   spawnRadius: number;
   texture: string;
@@ -289,6 +292,12 @@ export type SystemMapAsteroidBeltGate = {
   modified?: boolean;
 };
 
+export type SystemMapMineableOreItem = {
+  id: string;
+  name: string;
+  icon: string;
+};
+
 export type SystemMapPayload = {
   ok: true;
   sourceRoot: string;
@@ -304,5 +313,6 @@ export type SystemMapPayload = {
   asteroidBeltGates: SystemMapAsteroidBeltGate[];
   environmentProfiles: SystemMapEnvironmentProfile[];
   environmentalElements: SystemMapEnvironmentalElement[];
+  mineableOreItems: SystemMapMineableOreItem[];
   warnings: string[];
 };
