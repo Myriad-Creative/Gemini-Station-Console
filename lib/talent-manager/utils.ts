@@ -1,5 +1,7 @@
 import type { ExpandedTalent, JsonRecord, TalentClass, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "./types";
 
+export const MAX_TALENT_POINTS = 5;
+
 function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -25,6 +27,10 @@ function numberValue(value: unknown, fallback = 0) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
+}
+
+export function clampTalentMaxPoints(value: unknown) {
+  return Math.min(MAX_TALENT_POINTS, Math.max(1, Math.round(numberValue(value, 1))));
 }
 
 function stringArrayValue(value: unknown) {
@@ -65,7 +71,7 @@ function normalizeTemplate(entry: unknown, index: number): TalentTemplate {
     rank_descriptions: stringArrayValue(template.rank_descriptions),
     row: Math.max(1, Math.round(numberValue(template.row, index + 1))),
     column: Math.max(1, Math.round(numberValue(template.column, 1))),
-    max_rank: Math.max(1, Math.round(numberValue(template.max_rank, 1))),
+    max_rank: clampTalentMaxPoints(template.max_rank),
     requires_tree_points: Math.max(0, Math.round(numberValue(template.requires_tree_points, 0))),
     requires_talent: sanitizeTalentId(stringValue(template.requires_talent, "")),
     requires_talent_full: boolValue(template.requires_talent_full, false),
@@ -85,7 +91,7 @@ function normalizeTemplateOverride(entry: unknown): TalentTemplateOverride {
   if (hasOwn(raw, "rank_descriptions")) out.rank_descriptions = stringArrayValue(raw.rank_descriptions);
   if (hasOwn(raw, "row")) out.row = Math.max(1, Math.round(numberValue(raw.row, 1)));
   if (hasOwn(raw, "column")) out.column = Math.max(1, Math.round(numberValue(raw.column, 1)));
-  if (hasOwn(raw, "max_rank")) out.max_rank = Math.max(1, Math.round(numberValue(raw.max_rank, 1)));
+  if (hasOwn(raw, "max_rank")) out.max_rank = clampTalentMaxPoints(raw.max_rank);
   if (hasOwn(raw, "requires_tree_points")) out.requires_tree_points = Math.max(0, Math.round(numberValue(raw.requires_tree_points, 0)));
   if (hasOwn(raw, "requires_talent")) out.requires_talent = sanitizeTalentId(stringValue(raw.requires_talent, ""));
   if (hasOwn(raw, "requires_talent_full")) out.requires_talent_full = boolValue(raw.requires_talent_full, false);
@@ -247,7 +253,7 @@ export function expandTalentTemplate(workspace: TalentWorkspace, talentClass: Ta
   const requiredTemplateId = sanitizeTalentId(stringValue(template.requires_talent, ""));
   const specTemplates = talentTemplatesForSpec(workspace, spec);
   const requiredTemplate = specTemplates.find((entry) => entry.id === requiredTemplateId);
-  const requiresRank = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(0, Math.round(numberValue(template.requires_rank, 1)));
+  const requiresRank = template.requires_talent_full && requiredTemplate ? clampTalentMaxPoints(requiredTemplate.max_rank) : Math.max(0, Math.round(numberValue(template.requires_rank, 1)));
 
   return {
     ...template,
@@ -285,7 +291,7 @@ export function templateRequirementText(workspace: TalentWorkspace, template: Ta
   if (!requiredId) return "";
   const requiredTemplate = availableTemplates.find((entry) => entry.id === requiredId);
   const requiredName = requiredTemplate?.name || requiredId;
-  const points = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
+  const points = template.requires_talent_full && requiredTemplate ? clampTalentMaxPoints(requiredTemplate.max_rank) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
   return `Requires ${points} point${points === 1 ? "" : "s"} in ${requiredName}`;
 }
 
@@ -305,6 +311,7 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
     if (template.row < 1 || template.row > workspace.tree_rows) issues.push({ level: "warning", message: `Talent "${template.id}" is outside the configured row range.` });
     if (template.column < 1 || template.column > workspace.tree_columns) issues.push({ level: "warning", message: `Talent "${template.id}" is outside the configured column range.` });
     if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${template.id}" max points must be at least 1.` });
+    if (template.max_rank > MAX_TALENT_POINTS) issues.push({ level: "error", message: `Talent "${template.id}" max points cannot exceed ${MAX_TALENT_POINTS}.` });
     if (template.requires_talent) {
       if (template.requires_talent === template.id) issues.push({ level: "error", message: `Talent "${template.id}" cannot require itself.` });
       if (!templateIds.has(template.requires_talent) && !workspace.talent_templates.some((entry) => entry.id === template.requires_talent)) {
@@ -345,6 +352,7 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
         if (template.row < 1 || template.row > workspace.tree_rows) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured row range.` });
         if (template.column < 1 || template.column > workspace.tree_columns) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured column range.` });
         if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${label}" max points must be at least 1.` });
+        if (template.max_rank > MAX_TALENT_POINTS) issues.push({ level: "error", message: `Talent "${label}" max points cannot exceed ${MAX_TALENT_POINTS}.` });
       }
 
       for (const template of mergedTemplates) {
@@ -369,7 +377,8 @@ export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
     const next: TalentTemplateOverride = { ...template };
     delete next.source;
     delete next.base_template_id;
-    const rankDescriptions = stringArrayValue(next.rank_descriptions).slice(0, Math.max(1, Math.round(numberValue(next.max_rank, 1))));
+    next.max_rank = clampTalentMaxPoints(next.max_rank);
+    const rankDescriptions = stringArrayValue(next.rank_descriptions).slice(0, clampTalentMaxPoints(next.max_rank));
     while (rankDescriptions.length && !rankDescriptions[rankDescriptions.length - 1].trim()) {
       rankDescriptions.pop();
     }

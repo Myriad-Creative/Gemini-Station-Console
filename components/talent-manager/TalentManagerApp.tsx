@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildIconSrc } from "@lib/icon-src";
 import type { TalentClass, TalentIconOption, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "@lib/talent-manager/types";
-import { expandedTalentsForSpec, normalizeTalentRowRequirements, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, treePointsRequiredForGridRow, validateTalentWorkspace } from "@lib/talent-manager/utils";
+import { MAX_TALENT_POINTS, clampTalentMaxPoints, expandedTalentsForSpec, normalizeTalentRowRequirements, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, treePointsRequiredForGridRow, validateTalentWorkspace } from "@lib/talent-manager/utils";
 
 type LoadResponse = {
   ok: boolean;
@@ -106,7 +106,7 @@ function formatPointCount(value: number) {
 }
 
 function talentMaxPoints(template: TalentTemplate) {
-  return Math.max(1, Math.round(Number(template.max_rank) || 1));
+  return clampTalentMaxPoints(template.max_rank);
 }
 
 function rankDescriptionValue(template: TalentTemplate, rankIndex: number) {
@@ -305,7 +305,7 @@ export default function TalentManagerApp() {
     const rows = Array.from({ length: workspace?.tree_rows ?? 0 }, () => ({ points: 0, running: 0 }));
     for (const talent of expandedTalents) {
       if (talent.row < 0 || talent.row >= rows.length) continue;
-      rows[talent.row].points += Math.max(1, Math.round(Number(talent.max_rank) || 1));
+      rows[talent.row].points += talentMaxPoints(talent);
     }
     let running = 0;
     return rows.map((row) => {
@@ -672,7 +672,7 @@ export default function TalentManagerApp() {
     updateSelectedTemplate({
       requires_talent: requireAboveCandidate.id,
       requires_talent_full: true,
-      requires_rank: Math.max(1, Math.round(requireAboveCandidate.max_rank)),
+      requires_rank: talentMaxPoints(requireAboveCandidate),
     });
   }
 
@@ -984,7 +984,7 @@ export default function TalentManagerApp() {
                         {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
                         {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
                         <div className="absolute right-3 top-3 rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-xs font-semibold text-cyan-100">
-                          {formatPointCount(Math.max(1, Math.round(Number(talent.max_rank) || 1)))}
+                          {formatPointCount(talentMaxPoints(talent))}
                         </div>
                         <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-14 w-14 rounded border border-white/10 bg-black/30 object-cover" />
                         <div className="mt-3 line-clamp-3 w-full text-base font-semibold leading-snug text-white">{talent.name}</div>
@@ -1172,7 +1172,7 @@ export default function TalentManagerApp() {
                   </label>
                   <label className="text-sm text-white/65">
                     Max Points
-                    <input className="input mt-1" type="number" min="1" value={selectedTemplate.max_rank} onChange={(event) => updateSelectedTemplate({ max_rank: Number(event.target.value) })} />
+                    <input className="input mt-1" type="number" min="1" max={MAX_TALENT_POINTS} value={selectedTemplateMaxPoints} onChange={(event) => updateSelectedTemplate({ max_rank: clampTalentMaxPoints(event.target.value) })} />
                   </label>
                 </div>
                 <label className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${requireAboveCandidate ? "border-white/10 bg-black/20 text-white/80" : "border-white/10 bg-black/10 text-white/35"}`}>
