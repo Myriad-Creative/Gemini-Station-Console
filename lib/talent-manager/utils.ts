@@ -230,10 +230,10 @@ export function templateRequirementText(workspace: TalentWorkspace, template: Ta
   if (requiredId) {
     const requiredTemplate = availableTemplates.find((entry) => entry.id === requiredId);
     const requiredName = requiredTemplate?.name || requiredId;
-    const rank = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
-    parts.push(`${rank} rank${rank === 1 ? "" : "s"} in ${requiredName}`);
+    const points = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
+    parts.push(`${points} point${points === 1 ? "" : "s"} in ${requiredName}`);
   }
-  return parts.length ? `Requires ${parts.join(" and ")}` : "Available at the start of the tree";
+  return parts.length ? `Requires ${parts.join(" and ")}` : "";
 }
 
 export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValidationIssue[] {
@@ -251,7 +251,7 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
     if (!template.name.trim()) issues.push({ level: "error", message: `Talent template "${template.id}" needs a name.` });
     if (template.row < 1 || template.row > workspace.tree_rows) issues.push({ level: "warning", message: `Talent "${template.id}" is outside the configured row range.` });
     if (template.column < 1 || template.column > workspace.tree_columns) issues.push({ level: "warning", message: `Talent "${template.id}" is outside the configured column range.` });
-    if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${template.id}" max rank must be at least 1.` });
+    if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${template.id}" max points must be at least 1.` });
     if (template.requires_talent) {
       if (template.requires_talent === template.id) issues.push({ level: "error", message: `Talent "${template.id}" cannot require itself.` });
       if (!templateIds.has(template.requires_talent) && !workspace.talent_templates.some((entry) => entry.id === template.requires_talent)) {
@@ -291,7 +291,7 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
         if (!template.name.trim()) issues.push({ level: "error", message: `Talent "${label}" needs a name.` });
         if (template.row < 1 || template.row > workspace.tree_rows) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured row range.` });
         if (template.column < 1 || template.column > workspace.tree_columns) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured column range.` });
-        if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${label}" max rank must be at least 1.` });
+        if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${label}" max points must be at least 1.` });
       }
 
       for (const template of mergedTemplates) {

@@ -85,6 +85,10 @@ function iconSrc(icon: string | undefined, id: string, name: string, version: st
   return buildIconSrc(icon || "icon_lootbox.png", id || name || "talent", name || id || "Talent", version);
 }
 
+function hasTalentRequirement(template: TalentTemplate) {
+  return Math.max(0, Math.round(Number(template.requires_tree_points) || 0)) > 0 || !!String(template.requires_talent ?? "").trim();
+}
+
 function requirementBadgeClass(template: TalentTemplate) {
   return template.requires_tree_points > 0 || template.requires_talent ? "border-amber-300/25 bg-amber-300/10 text-amber-100" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100";
 }
@@ -935,7 +939,7 @@ export default function TalentManagerApp() {
                         </div>
                         <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-14 w-14 rounded border border-white/10 bg-black/30 object-cover" />
                         <div className="mt-3 line-clamp-3 w-full text-base font-semibold leading-snug text-white">{talent.name}</div>
-                        <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div>
+                        {hasTalentRequirement(talent) ? <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div> : null}
                       </button>
                     );
                   }),
@@ -1078,7 +1082,7 @@ export default function TalentManagerApp() {
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.column} onChange={(event) => updateSelectedTemplatePosition({ column: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
-                    Max Rank / Points
+                    Max Points
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.max_rank} onChange={(event) => updateSelectedTemplate({ max_rank: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
@@ -1115,15 +1119,15 @@ export default function TalentManagerApp() {
                 </label>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
-                    <span>Require Full Rank</span>
+                    <span>Require All Points</span>
                     <input type="checkbox" checked={!!selectedTemplate.requires_talent_full} onChange={(event) => updateSelectedTemplate({ requires_talent_full: event.target.checked })} />
                   </label>
                   <label className="text-sm text-white/65">
-                    Prereq Rank
+                    Prereq Points
                     <input className="input mt-1" type="number" min="1" disabled={!!selectedTemplate.requires_talent_full} value={selectedTemplate.requires_rank ?? 1} onChange={(event) => updateSelectedTemplate({ requires_rank: Number(event.target.value) })} />
                   </label>
                 </div>
-                <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass(selectedTemplate)}`}>{templateRequirementText(workspace, selectedTemplate, selectedTalentTemplates)}</div>
+                {hasTalentRequirement(selectedTemplate) ? <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass(selectedTemplate)}`}>{templateRequirementText(workspace, selectedTemplate, selectedTalentTemplates)}</div> : null}
               </div>
             ) : null}
           </section>
