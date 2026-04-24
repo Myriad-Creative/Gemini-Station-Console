@@ -930,13 +930,11 @@ export default function TalentManagerApp() {
                       >
                         {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
                         {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
-                        <div className="flex items-start gap-3">
-                          <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-12 w-12 rounded border border-white/10 bg-black/30 object-cover" />
-                          <div className="min-w-0">
-                            <div className="line-clamp-2 text-sm font-semibold text-white">{talent.name}</div>
-                            <div className="mt-1 text-xs text-white/45">Max {formatPointCount(Math.max(1, Math.round(Number(talent.max_rank) || 1)))} · Row {talent.display_row}, Col {talent.display_column}</div>
-                          </div>
+                        <div className="absolute right-3 top-3 rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-xs font-semibold text-cyan-100">
+                          {formatPointCount(Math.max(1, Math.round(Number(talent.max_rank) || 1)))}
                         </div>
+                        <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-14 w-14 rounded border border-white/10 bg-black/30 object-cover" />
+                        <div className="mt-3 line-clamp-3 w-full text-base font-semibold leading-snug text-white">{talent.name}</div>
                         <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div>
                       </button>
                     );
