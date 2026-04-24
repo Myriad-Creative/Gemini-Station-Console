@@ -139,6 +139,23 @@ type OrphanStatusEffectOption = {
   isBuff: boolean;
 };
 
+type AbilityIconOption = {
+  fileName: string;
+  relativePath: string;
+  resPath: string;
+  folder: string;
+  folderLabel: string;
+};
+
+type AbilityIconResponse = {
+  ok?: boolean;
+  data?: AbilityIconOption[];
+  message?: string;
+  error?: string;
+};
+
+const DEFAULT_ABILITY_ICON = "icon_lootbox.png";
+
 const THREAT_TYPE_OPTIONS: AbilityValueOption[] = [
   { value: "0", label: "None", description: "No threat is generated when this ability resolves." },
   { value: "1", label: "Damage", description: "Threat is based on damage dealt, then scaled by the threat multiplier." },
@@ -196,6 +213,15 @@ function withCurrentAbilityValueOption(value: string, options: AbilityValueOptio
   ];
 }
 
+function matchesAbilityIconValue(option: AbilityIconOption, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed === option.resPath || trimmed === option.fileName || trimmed === option.relativePath) return true;
+
+  const cleaned = trimmed.replace(/^res:\/\//i, "").replace(/^\/+/, "");
+  return cleaned === `assets/${option.relativePath}` || cleaned === option.relativePath || cleaned.endsWith(`/${option.fileName}`);
+}
+
 export default function AbilityManagerApp() {
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
@@ -211,6 +237,9 @@ export default function AbilityManagerApp() {
   const [dashboardFilter, setDashboardFilter] = useState<AbilityDashboardFilter>("");
   const [statusEffectSearch, setStatusEffectSearch] = useState("");
   const [linkedModSearch, setLinkedModSearch] = useState("");
+  const [availableAbilityIcons, setAvailableAbilityIcons] = useState<AbilityIconOption[]>([]);
+  const [abilityIconsLoading, setAbilityIconsLoading] = useState(false);
+  const [abilityIconStatus, setAbilityIconStatus] = useState("");
   const [status, setStatus] = useState<StatusState>({ tone: "neutral", message: "", dismissAfterMs: null });
   const [statusCountdown, setStatusCountdown] = useState<number | null>(null);
   const statusTopRef = useRef<HTMLDivElement | null>(null);
@@ -225,6 +254,32 @@ export default function AbilityManagerApp() {
     setDatabase(syncedDatabase);
     setSelectedAbilityKey(syncedDatabase?.abilities[0]?.key ?? null);
   }, [loadedDatabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAbilityIcons() {
+      setAbilityIconsLoading(true);
+      try {
+        const response = await fetch(`/api/ability-icons?_v=${sharedDataVersion}`, { cache: "no-store" });
+        const json = (await response.json().catch(() => ({}))) as AbilityIconResponse;
+        if (cancelled) return;
+        setAvailableAbilityIcons(Array.isArray(json.data) ? json.data : []);
+        setAbilityIconStatus(typeof json.message === "string" ? json.message : typeof json.error === "string" ? json.error : "");
+      } catch {
+        if (cancelled) return;
+        setAvailableAbilityIcons([]);
+        setAbilityIconStatus("Ability icon catalog could not be loaded from the active local game root.");
+      } finally {
+        if (!cancelled) setAbilityIconsLoading(false);
+      }
+    }
+
+    void loadAbilityIcons();
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedDataVersion]);
 
   const statusEffectOptions = useMemo(() => statusEffectOptionsFromDatabase(database), [database]);
   const abilityIssues = useMemo(
@@ -484,7 +539,7 @@ export default function AbilityManagerApp() {
     return "";
   }, [dashboardFilter]);
   const previewIcon = buildIconSrc(
-    selectedAbility?.icon || "icon_lootbox.png",
+    selectedAbility?.icon || DEFAULT_ABILITY_ICON,
     selectedAbility?.id || "ability",
     selectedAbility?.name || "Ability",
     sharedDataVersion,
@@ -1337,10 +1392,6 @@ export default function AbilityManagerApp() {
                     <input className="input mt-1" value={selectedAbility.projectileScene} onChange={(event) => updateSelectedAbility((current) => ({ ...current, projectileScene: event.target.value }))} />
                   </div>
                   <div>
-                    <div className="label">Icon</div>
-                    <input className="input mt-1" value={selectedAbility.icon} onChange={(event) => updateSelectedAbility((current) => ({ ...current, icon: event.target.value }))} />
-                  </div>
-                  <div>
                     <div className="label">Description</div>
                     <textarea className="input mt-1 min-h-24" value={selectedAbility.description} onChange={(event) => updateSelectedAbility((current) => ({ ...current, description: event.target.value }))} />
                   </div>
@@ -1412,17 +1463,6 @@ export default function AbilityManagerApp() {
                 </div>
               </Section>
 
-              <Section title="Export Preview" description="The full ability bundle still exports as indexed per-file JSON, matching the real game data layout.">
-                <div className="flex flex-wrap gap-2">
-                  <button className="btn" onClick={() => void handleCopyIndexJson()}>
-                    Copy Updated _AbilityIndex.json
-                  </button>
-                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40" disabled={workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
-                    Download abilities bundle.zip
-                  </button>
-                </div>
-                <pre className="max-h-[28rem] overflow-auto rounded-xl border border-white/10 bg-[#08101c] p-4 text-sm text-white/80">{abilityIndexJson}</pre>
-              </Section>
             </>
           ) : (
             <Section title="No Ability Selected" description="Create a new ability or pick one from the left sidebar to start editing.">
@@ -1456,8 +1496,13 @@ export default function AbilityManagerApp() {
                 </div>
               </div>
             </Section>
+          </aside>
+        ) : null}
 
-            <Section title="Validation" description="Review the current draft warnings and errors before exporting or saving it.">
+        {selectedAbility ? (
+          <>
+            <aside className="space-y-6 xl:min-w-0">
+              <Section title="Validation" description="Review the current draft warnings and errors before exporting or saving it.">
               {selectedIssues.length ? (
                 <div className="space-y-3">
                   {selectedIssues.map((issue, index) => (
@@ -1472,9 +1517,37 @@ export default function AbilityManagerApp() {
                   no issues
                 </div>
               )}
-            </Section>
+              </Section>
 
-            <Section title="Mods Using This Ability" description="Review every mod that currently points at this ability from the live mod workspace.">
+              <Section title="Export Preview" description="The full ability bundle still exports as indexed per-file JSON, matching the real game data layout.">
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn" onClick={() => void handleCopyIndexJson()}>
+                    Copy Updated _AbilityIndex.json
+                  </button>
+                  <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40" disabled={workspaceHasErrors} onClick={() => void handleDownloadBundle()}>
+                    Download abilities bundle.zip
+                  </button>
+                </div>
+                <pre className="max-h-[28rem] overflow-auto rounded-xl border border-white/10 bg-[#08101c] p-4 text-xs text-white/80">{abilityIndexJson}</pre>
+              </Section>
+            </aside>
+
+            <div className="space-y-6 xl:col-span-2 xl:min-w-0">
+              <Section title="Icon" description="Choose from the local assets/abilities and assets/status_effects catalogs.">
+                <AbilityIconField
+                  label="Icon"
+                  value={selectedAbility.icon}
+                  onChange={(value) => updateSelectedAbility((current) => ({ ...current, icon: value }))}
+                  iconOptions={availableAbilityIcons}
+                  loading={abilityIconsLoading}
+                  status={abilityIconStatus}
+                  version={sharedDataVersion}
+                />
+              </Section>
+            </div>
+
+            <div className="grid gap-6 xl:col-span-3 xl:grid-cols-2">
+              <Section title="Mods Using This Ability" description="Review every mod that currently points at this ability from the live mod workspace.">
               {!database?.modCatalogAvailable ? (
                 <div className="text-sm text-white/45">No mod data is currently available from the local game root.</div>
               ) : selectedAbilityExcludedFromModChecks ? (
@@ -1571,9 +1644,9 @@ export default function AbilityManagerApp() {
               ) : (
                 <div className="text-sm text-white/45">No mods currently include this ability.</div>
               )}
-            </Section>
+              </Section>
 
-            <Section title="JSON Link Status Effects" description="Manage JSON-linked status effects and compare them against the resolved runtime links for this ability.">
+              <Section title="JSON Link Status Effects" description="Manage JSON-linked status effects and compare them against the resolved runtime links for this ability.">
               <div className="space-y-4">
                 <div className="space-y-3">
                   <div className="label">JSON-linked Status Effects</div>
@@ -1651,9 +1724,99 @@ export default function AbilityManagerApp() {
                   </div>
                 </div>
               </div>
-            </Section>
-          </aside>
+              </Section>
+            </div>
+          </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AbilityIconField({
+  label,
+  value,
+  onChange,
+  iconOptions,
+  loading,
+  status,
+  version,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  iconOptions: AbilityIconOption[];
+  loading: boolean;
+  status: string;
+  version?: string;
+}) {
+  const selectedOption = iconOptions.find((option) => matchesAbilityIconValue(option, value)) ?? null;
+  const previewSrc = buildIconSrc(value || DEFAULT_ABILITY_ICON, selectedOption?.fileName || "ability", selectedOption?.fileName || "Ability icon", version);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="label mb-2">{label}</div>
+          <div className="text-xs text-white/50">Choose from the local assets/abilities and assets/status_effects catalogs.</div>
+        </div>
+        <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+          {loading ? "Loading icons…" : `${iconOptions.length} icon option(s)`}
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[96px,minmax(0,1fr)]">
+        <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewSrc} alt={selectedOption?.fileName || "Ability icon preview"} className="h-full w-full object-cover" />
+        </div>
+        <div className="space-y-2">
+          <input className="input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="res://assets/abilities/icon_AutoCannon.png" />
+          <div className="text-xs text-white/50">
+            {selectedOption ? `Selected file: ${selectedOption.fileName}` : "Choose an ability icon below, or edit the path directly if needed."}
+          </div>
+        </div>
+      </div>
+
+      {status ? <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">{status}</div> : null}
+
+      <div className="max-h-72 overflow-auto pr-1">
+        {iconOptions.length ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {iconOptions.map((option) => {
+              const selected = matchesAbilityIconValue(option, value);
+              return (
+                <button
+                  key={option.resPath}
+                  type="button"
+                  className={`rounded border p-2 text-left transition ${
+                    selected ? "border-accent bg-white/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                  }`}
+                  onClick={() => onChange(option.resPath)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={buildIconSrc(option.resPath, option.fileName, option.fileName, version)}
+                        alt={option.fileName}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                      <div className="truncate text-xs text-white/50">{option.folderLabel}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
+            No ability icons were found in assets/abilities or assets/status_effects.
+          </div>
+        )}
       </div>
     </div>
   );
