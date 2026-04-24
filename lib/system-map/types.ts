@@ -38,6 +38,10 @@ export type SystemMapRegion = {
 };
 
 export type SystemMapStagePlacement = {
+  key: string;
+  originalIndex: number | null;
+  draft?: boolean;
+  modified?: boolean;
   stageId: string;
   name: string;
   local: SystemMapVec;
@@ -47,6 +51,15 @@ export type SystemMapStagePlacement = {
   height: number;
   materialCount: number;
   missing: boolean;
+};
+
+export type SystemMapStageCatalogEntry = {
+  id: string;
+  name: string;
+  shape: string;
+  width: number;
+  height: number;
+  materialCount: number;
 };
 
 export type SystemMapSceneMobSpawn = {
@@ -283,6 +296,7 @@ export type SystemMapPayload = {
   sectors: SystemMapSector[];
   regions: SystemMapRegion[];
   zones: SystemMapZone[];
+  stageCatalog: SystemMapStageCatalogEntry[];
   mobCatalog: SystemMapMobCatalogEntry[];
   pois: SystemMapPoi[];
   routes: SystemMapRoute[];

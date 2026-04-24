@@ -20,12 +20,13 @@ import type {
   SystemMapRoute,
   SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
+  SystemMapStageCatalogEntry,
   SystemMapStagePlacement,
   SystemMapVec,
   SystemMapZone,
 } from "@lib/system-map/types";
-import type { ZoneDraft, ZoneMobSpawnDraft, ZonesManagerWorkspace } from "@lib/zones-manager/types";
-import { createBlankZone, createBlankZoneMobSpawn, importZonesManagerWorkspace } from "@lib/zones-manager/utils";
+import type { ZoneDraft, ZoneMobSpawnDraft, ZoneStagePlacementDraft, ZonesManagerWorkspace } from "@lib/zones-manager/types";
+import { createBlankZone, createBlankZoneMobSpawn, createBlankZoneStagePlacement, importZonesManagerWorkspace } from "@lib/zones-manager/utils";
 
 type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "barriers" | "labels";
 type Viewport = {
@@ -171,11 +172,27 @@ type ZoneDraftForm = {
   poiLabel: string;
   activationRadiusBorder: boolean;
 };
+type StagePlacementForm = {
+  mode: "create" | "edit";
+  zoneId: string;
+  stageKey: string | null;
+  stageId: string;
+  localX: string;
+  localY: string;
+};
 type ZoneDragState = {
   zoneId: string;
   startScreen: SystemMapVec;
   startWorld: SystemMapVec;
   zoneStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type StageDragState = {
+  zoneId: string;
+  stageKey: string;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  stageStartWorld: SystemMapVec;
   moved: boolean;
 };
 type MobSpawnForm = {
@@ -416,6 +433,10 @@ function zoneIdentity(zone: SystemMapZone) {
   return zone.originalId ?? zone.id;
 }
 
+function stageIdentity(stage: SystemMapStagePlacement) {
+  return stage.key || `zone-stage-${stage.originalIndex ?? "new"}`;
+}
+
 function mobIdentity(mob: SystemMapMobSpawn) {
   return mob.key || `zone-mob-${mob.originalIndex ?? "new"}`;
 }
@@ -512,6 +533,17 @@ function pointInZoneBounds(point: SystemMapVec, zone: SystemMapZone) {
   const dx = point.x - zone.world.x;
   const dy = point.y - zone.world.y;
   if (zone.bounds.shape.toLowerCase() === "rect" || zone.bounds.shape.toLowerCase() === "rectangle") {
+    return Math.abs(dx) <= halfWidth && Math.abs(dy) <= halfHeight;
+  }
+  return (dx * dx) / (halfWidth * halfWidth) + (dy * dy) / (halfHeight * halfHeight) <= 1;
+}
+
+function pointInStageBounds(point: SystemMapVec, stage: SystemMapStagePlacement) {
+  const halfWidth = Math.max(1, stage.width / 2);
+  const halfHeight = Math.max(1, stage.height / 2);
+  const dx = point.x - stage.world.x;
+  const dy = point.y - stage.world.y;
+  if (stage.shape.toLowerCase() === "rect" || stage.shape.toLowerCase() === "rectangle") {
     return Math.abs(dx) <= halfWidth && Math.abs(dy) <= halfHeight;
   }
   return (dx * dx) / (halfWidth * halfWidth) + (dy * dy) / (halfHeight * halfHeight) <= 1;
@@ -641,6 +673,14 @@ function computeWorldBounds(
   for (const zone of zones) {
     const radius = Math.max(zone.bounds.width / 2, zone.bounds.height / 2, 5000);
     bounds = mergeRect(bounds, { x: zone.world.x - radius, y: zone.world.y - radius, w: radius * 2, h: radius * 2 });
+    for (const stage of zone.stages) {
+      bounds = mergeRect(bounds, {
+        x: stage.world.x - Math.max(250, stage.width / 2),
+        y: stage.world.y - Math.max(250, stage.height / 2),
+        w: Math.max(500, stage.width),
+        h: Math.max(500, stage.height),
+      });
+    }
     for (const mob of zone.mobs) {
       for (const barrier of mob.sceneBarriers) {
         for (const point of barrier.worldPoints) {
@@ -2115,7 +2155,7 @@ function zoneToManagerDraft(zone: SystemMapZone, existingIds: string[]): ZoneDra
     boundsShape: zone.bounds.shape,
     boundsWidth: numberInputValue(zone.bounds.width),
     boundsHeight: numberInputValue(zone.bounds.height),
-    stages: [],
+    stages: zone.stages.map((stage) => systemMapStageToManagerDraft(stage)),
     mobs: zone.mobs.map((mob) => systemMapMobToManagerDraft(mob)),
   };
 }
@@ -2139,7 +2179,18 @@ function applyZoneDetailsToManagerDraft(draft: ZoneDraft, zone: SystemMapZone): 
     boundsShape: zone.bounds.shape,
     boundsWidth: numberInputValue(zone.bounds.width),
     boundsHeight: numberInputValue(zone.bounds.height),
+    stages: zone.stages.map((stage, index) => systemMapStageToManagerDraft(stage, draft.stages[stage.originalIndex ?? index])),
     mobs: zone.mobs.map((mob, index) => systemMapMobToManagerDraft(mob, draft.mobs[mob.originalIndex ?? index])),
+  };
+}
+
+function systemMapStageToManagerDraft(stage: SystemMapStagePlacement, existingDraft?: ZoneStagePlacementDraft): ZoneStagePlacementDraft {
+  const draft = existingDraft ?? createBlankZoneStagePlacement();
+  return {
+    ...draft,
+    stageId: stage.stageId,
+    posX: numberInputValue(stage.local.x),
+    posY: numberInputValue(stage.local.y),
   };
 }
 
@@ -2160,8 +2211,35 @@ function systemMapMobToManagerDraft(mob: SystemMapMobSpawn, existingDraft?: Zone
   };
 }
 
+function stageCatalogEntryForId(catalog: SystemMapStageCatalogEntry[], stageId: string) {
+  return catalog.find((entry) => entry.id === stageId) ?? null;
+}
+
 function mobCatalogEntryForId(catalog: SystemMapMobCatalogEntry[], mobId: string) {
   return catalog.find((entry) => entry.id === mobId) ?? null;
+}
+
+function createStagePlacementFromForm(form: StagePlacementForm, zone: SystemMapZone, catalog: SystemMapStageCatalogEntry[]): SystemMapStagePlacement {
+  const entry = stageCatalogEntryForId(catalog, form.stageId);
+  const local = {
+    x: Number(form.localX),
+    y: Number(form.localY),
+  };
+  return {
+    key: form.stageKey ?? createDraftKey("map-zone-stage"),
+    originalIndex: null,
+    draft: form.mode === "create",
+    modified: form.mode === "edit",
+    stageId: form.stageId,
+    name: entry?.name || form.stageId,
+    local,
+    world: translateVec(zone.world, local),
+    shape: entry?.shape || "ellipse",
+    width: entry?.width ?? 0,
+    height: entry?.height ?? 0,
+    materialCount: entry?.materialCount ?? 0,
+    missing: !entry,
+  };
 }
 
 function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog: SystemMapMobCatalogEntry[]): SystemMapMobSpawn {
@@ -2340,6 +2418,23 @@ function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: Syst
   };
 }
 
+function moveStagePlacementToWorld(stage: SystemMapStagePlacement, world: SystemMapVec, zone: SystemMapZone): SystemMapStagePlacement {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const local = {
+    x: Math.round(roundedWorld.x - zone.world.x),
+    y: Math.round(roundedWorld.y - zone.world.y),
+  };
+  return {
+    ...stage,
+    local,
+    world: translateVec(zone.world, local),
+    modified: stage.draft ? stage.modified : true,
+  };
+}
+
 function moveMobSpawnToWorld(mob: SystemMapMobSpawn, world: SystemMapVec, zone: SystemMapZone): SystemMapMobSpawn {
   const delta = {
     x: world.x - mob.world.x,
@@ -2493,7 +2588,18 @@ function routeToTradeRouteJson(route: SystemMapRoute, sectorSize: number, baseRo
 
 function zoneMatches(zone: SystemMapZone, query: string) {
   if (!query) return true;
-  return [zone.id, zone.name, zone.poiLabel, zone.sector.x, zone.sector.y].join(" ").toLowerCase().includes(query);
+  return [
+    zone.id,
+    zone.name,
+    zone.poiLabel,
+    zone.sector.x,
+    zone.sector.y,
+    ...zone.stages.flatMap((stage) => [stage.stageId, stage.name, stage.shape]),
+    ...zone.mobs.flatMap((mob) => [mob.mobId, mob.displayName, mob.faction]),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
 }
 
 function poiMatches(poi: SystemMapPoi, query: string) {
@@ -2553,6 +2659,7 @@ export default function SystemMapViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; center: SystemMapVec } | null>(null);
   const zoneDragRef = useRef<ZoneDragState | null>(null);
+  const stageDragRef = useRef<StageDragState | null>(null);
   const mobDragRef = useRef<MobDragState | null>(null);
   const routeDragRef = useRef<RouteDragState | null>(null);
   const gateDragRef = useRef<GateDragState | null>(null);
@@ -2579,6 +2686,8 @@ export default function SystemMapViewer() {
   const [environmentalBarrierForm, setEnvironmentalBarrierForm] = useState<EnvironmentalBarrierForm | null>(null);
   const [environmentalRegionForm, setEnvironmentalRegionForm] = useState<EnvironmentalRegionForm | null>(null);
   const [environmentalAsteroidForm, setEnvironmentalAsteroidForm] = useState<MineableAsteroidForm | null>(null);
+  const [stagePlacementForm, setStagePlacementForm] = useState<StagePlacementForm | null>(null);
+  const [stagePlacementSearch, setStagePlacementSearch] = useState("");
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
@@ -2593,6 +2702,7 @@ export default function SystemMapViewer() {
   const [activeEnvironmentalPointAddId, setActiveEnvironmentalPointAddId] = useState<string | null>(null);
   const [activeEnvironmentalRegionPointAddId, setActiveEnvironmentalRegionPointAddId] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
+  const [draggingStageKey, setDraggingStageKey] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
   const [draggingRouteHandle, setDraggingRouteHandle] = useState<string | null>(null);
   const [draggingGateId, setDraggingGateId] = useState<string | null>(null);
@@ -2765,6 +2875,20 @@ export default function SystemMapViewer() {
         const mob = zone.mobs[mobIndex];
         if (distance(world, mob.world) <= screenHitRadius) {
           return { zone, mob };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findStagePlacementAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let zoneIndex = filteredZones.length - 1; zoneIndex >= 0; zoneIndex -= 1) {
+      const zone = filteredZones[zoneIndex];
+      for (let stageIndex = zone.stages.length - 1; stageIndex >= 0; stageIndex -= 1) {
+        const stage = zone.stages[stageIndex];
+        if (pointInStageBounds(world, stage) || distance(world, stage.world) <= screenHitRadius) {
+          return { zone, stage };
         }
       }
     }
@@ -2998,6 +3122,14 @@ export default function SystemMapViewer() {
       if (element.type === "mineable_asteroid") return moveMineableAsteroidByDelta(element, delta, payload);
       return moveEnvironmentalRegionByDelta(element, delta, payload);
     });
+  }
+
+  function updateStagePlacementPosition(zoneId: string, stageKey: string, world: SystemMapVec) {
+    updateZoneInMap(zoneId, (zone) => ({
+      ...zone,
+      modified: zone.draft ? zone.modified : true,
+      stages: zone.stages.map((stage) => (stageIdentity(stage) === stageKey ? moveStagePlacementToWorld(stage, world, zone) : stage)),
+    }));
   }
 
   function updateMobSpawnPosition(zoneId: string, mobKey: string, world: SystemMapVec) {
@@ -3459,6 +3591,26 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
+    const targetStagePlacement = toggles.stages ? findStagePlacementAtWorld(world) : null;
+    if (targetStagePlacement && event.metaKey) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      stageDragRef.current = {
+        zoneId: zoneIdentity(targetStagePlacement.zone),
+        stageKey: stageIdentity(targetStagePlacement.stage),
+        startScreen: screen,
+        startWorld: world,
+        stageStartWorld: targetStagePlacement.stage.world,
+        moved: false,
+      };
+      setDraggingStageKey(stageIdentity(targetStagePlacement.stage));
+      clearHover();
+      return;
+    }
+    if (targetStagePlacement) {
+      openStagePlacementEditor(targetStagePlacement.zone, targetStagePlacement.stage);
+      clearHover();
+      return;
+    }
     const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
     if (targetZone && event.metaKey) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -3533,6 +3685,16 @@ export default function SystemMapViewer() {
         openMobSpawnEditor(zone, mob);
       }
     }
+    const stageDrag = stageDragRef.current;
+    if (stageDrag) {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === stageDrag.zoneId);
+      const stage = zone?.stages.find((entry) => stageIdentity(entry) === stageDrag.stageKey);
+      if (stageDrag.moved) {
+        setStatus({ tone: "success", message: `Moved "${stage?.name || stageDrag.stageKey}". Use Save Changes To Build to write the stage position into Zones.json.` });
+      } else if (zone && stage) {
+        openStagePlacementEditor(zone, stage);
+      }
+    }
     const zoneDrag = zoneDragRef.current;
     if (zoneDrag?.moved) {
       const zone = mapZones.find((entry) => entry.id === zoneDrag.zoneId);
@@ -3562,6 +3724,8 @@ export default function SystemMapViewer() {
     }
     mobDragRef.current = null;
     setDraggingMobKey(null);
+    stageDragRef.current = null;
+    setDraggingStageKey(null);
     environmentalRegionPointDragRef.current = null;
     setDraggingEnvironmentalRegionPoint(null);
     environmentalPointDragRef.current = null;
@@ -3695,15 +3859,7 @@ export default function SystemMapViewer() {
         if (!zoneMatches(zone, normalizedQuery)) continue;
         for (const stage of zone.stages) {
           if (!stageMatches(stage, normalizedQuery)) continue;
-          const halfWidth = Math.max(1, stage.width / 2);
-          const halfHeight = Math.max(1, stage.height / 2);
-          const inStage =
-            stage.shape.toLowerCase() === "rect" || stage.shape.toLowerCase() === "rectangle"
-              ? Math.abs(world.x - stage.world.x) <= halfWidth && Math.abs(world.y - stage.world.y) <= halfHeight
-              : ((world.x - stage.world.x) * (world.x - stage.world.x)) / (halfWidth * halfWidth) +
-                  ((world.y - stage.world.y) * (world.y - stage.world.y)) / (halfHeight * halfHeight) <=
-                1;
-          if (inStage || distance(world, stage.world) <= screenHitRadius) {
+          if (pointInStageBounds(world, stage) || distance(world, stage.world) <= screenHitRadius) {
             return {
               x: screen.x,
               y: screen.y,
@@ -4003,6 +4159,26 @@ export default function SystemMapViewer() {
       return;
     }
 
+    const stageDrag = stageDragRef.current;
+    if (stageDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: stageDrag.stageStartWorld.x + world.x - stageDrag.startWorld.x,
+        y: stageDrag.stageStartWorld.y + world.y - stageDrag.startWorld.y,
+      };
+      if (!stageDrag.moved && distance(screen, stageDrag.startScreen) > 4) {
+        stageDrag.moved = true;
+      }
+      updateStagePlacementPosition(stageDrag.zoneId, stageDrag.stageKey, nextWorld);
+      clearHover();
+      return;
+    }
+
     const mobDrag = mobDragRef.current;
     const routeDrag = routeDragRef.current;
     if (routeDrag) {
@@ -4162,6 +4338,39 @@ export default function SystemMapViewer() {
       rank: "normal",
     });
     setMobSpawnSearch("");
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openCreateStagePlacementForm(zone: SystemMapZone, world: SystemMapVec) {
+    const local = {
+      x: Math.round(world.x - zone.world.x),
+      y: Math.round(world.y - zone.world.y),
+    };
+    const defaultStage = payload?.stageCatalog[0] ?? null;
+    setStagePlacementForm({
+      mode: "create",
+      zoneId: zoneIdentity(zone),
+      stageKey: null,
+      stageId: defaultStage?.id ?? "",
+      localX: numberInputValue(local.x),
+      localY: numberInputValue(local.y),
+    });
+    setStagePlacementSearch(defaultStage?.name || defaultStage?.id || "");
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openStagePlacementEditor(zone: SystemMapZone, stage: SystemMapStagePlacement) {
+    setStagePlacementForm({
+      mode: "edit",
+      zoneId: zoneIdentity(zone),
+      stageKey: stageIdentity(stage),
+      stageId: stage.stageId,
+      localX: numberInputValue(stage.local.x),
+      localY: numberInputValue(stage.local.y),
+    });
+    setStagePlacementSearch(stage.name || stage.stageId);
     setContextMenu(null);
     setStatus(null);
   }
@@ -4557,6 +4766,49 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Updated "${nextZone.name}". Use Save Changes To Build to write changes into Zones.json.` });
   }
 
+  function saveStagePlacementForm() {
+    if (!payload || !stagePlacementForm) return;
+    const zone = mapZones.find((entry) => zoneIdentity(entry) === stagePlacementForm.zoneId);
+    if (!zone) {
+      setStatus({ tone: "error", message: "Could not identify which zone this stage placement belongs to." });
+      return;
+    }
+    if (!stagePlacementForm.stageId.trim()) {
+      setStatus({ tone: "error", message: "Choose a stage before adding the placement." });
+      return;
+    }
+    if (!Number.isFinite(Number(stagePlacementForm.localX)) || !Number.isFinite(Number(stagePlacementForm.localY))) {
+      setStatus({ tone: "error", message: "Stage Local X and Local Y must be valid numbers." });
+      return;
+    }
+
+    const nextStage = createStagePlacementFromForm(stagePlacementForm, zone, payload.stageCatalog);
+    updateZoneInMap(stagePlacementForm.zoneId, (currentZone) => {
+      const existingIndex = stagePlacementForm.stageKey ? currentZone.stages.findIndex((stage) => stageIdentity(stage) === stagePlacementForm.stageKey) : -1;
+      const nextStages =
+        existingIndex >= 0
+          ? currentZone.stages.map((stage, index) => (index === existingIndex ? { ...nextStage, originalIndex: stage.originalIndex, draft: stage.draft, modified: stage.draft ? stage.modified : true } : stage))
+          : [...currentZone.stages, nextStage];
+      return {
+        ...currentZone,
+        modified: currentZone.draft ? currentZone.modified : true,
+        stages: nextStages,
+      };
+    });
+    setStagePlacementForm(null);
+    setStatus({ tone: "success", message: `${stagePlacementForm.mode === "create" ? "Added" : "Updated"} stage placement "${nextStage.name || nextStage.stageId}". Use Save Changes To Build to write it into Zones.json.` });
+  }
+
+  function removeStagePlacement(zoneId: string, stageKey: string) {
+    updateZoneInMap(zoneId, (zone) => ({
+      ...zone,
+      modified: zone.draft ? zone.modified : true,
+      stages: zone.stages.filter((stage) => stageIdentity(stage) !== stageKey),
+    }));
+    setStagePlacementForm(null);
+    setStatus({ tone: "success", message: "Removed the stage placement. Use Save Changes To Build to write it into Zones.json." });
+  }
+
   function saveMobSpawnForm() {
     if (!payload || !mobSpawnForm) return;
     const zone = mapZones.find((entry) => zoneIdentity(entry) === mobSpawnForm.zoneId);
@@ -4649,18 +4901,25 @@ export default function SystemMapViewer() {
         return false;
       }
 
-      const savedZones = draftZones.map((zone, index) => ({
+      const markZoneSaved = (zone: SystemMapZone): SystemMapZone => ({
         ...zone,
-        id: managerDrafts[index]?.id ?? zone.id,
         draft: false,
         modified: false,
         originalId: undefined,
-      }));
+        stages: zone.stages.map((stage) => ({ ...stage, draft: false, modified: false })),
+        mobs: zone.mobs.map((mob) => ({ ...mob, draft: false, modified: false })),
+      });
+      const savedZones = draftZones.map((zone, index) =>
+        markZoneSaved({
+          ...zone,
+          id: managerDrafts[index]?.id ?? zone.id,
+        }),
+      );
       setPayload((current) =>
         current
           ? {
               ...current,
-              zones: [...current.zones.map((zone) => ({ ...zone, modified: false, originalId: undefined })), ...savedZones],
+              zones: [...current.zones.map(markZoneSaved), ...savedZones],
               pois: savedZones.reduce((pois, zone) => updateZonePois(pois, zone.id, zone), current.pois),
             }
           : current,
@@ -5141,6 +5400,12 @@ export default function SystemMapViewer() {
   const hasEnvironmentalChanges = draftEnvironmentalElements.length > 0 || editedEnvironmentalIds.length > 0;
   const hasBuildChanges = hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges;
   const savingBuild = savingZones || savingRoutes || savingGates || savingEnvironmental;
+  const filteredStageCatalog = useMemo(() => {
+    const normalized = stagePlacementSearch.trim().toLowerCase();
+    const catalog = payload?.stageCatalog ?? [];
+    if (!normalized) return catalog.slice(0, 40);
+    return catalog.filter((stage) => [stage.id, stage.name, stage.shape].join(" ").toLowerCase().includes(normalized)).slice(0, 40);
+  }, [payload?.stageCatalog, stagePlacementSearch]);
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
@@ -5575,32 +5840,43 @@ export default function SystemMapViewer() {
             {toggles.stages
               ? filteredZones.flatMap((zone) =>
                   zone.stages.filter((stage) => stageMatches(stage, normalizedQuery)).map((stage) => {
-                    const color = stage.missing ? "rgba(248,113,113,0.7)" : "rgba(168,85,247,0.62)";
+                    const stageKey = stageIdentity(stage);
+                    const isChanged = zone.draft || stage.draft || stage.modified;
+                    const color = stage.missing ? "rgba(248,113,113,0.7)" : isChanged ? "rgba(250,204,21,0.72)" : "rgba(168,85,247,0.62)";
+                    const fill = stage.missing ? "rgba(248,113,113,0.06)" : isChanged ? "rgba(250,204,21,0.07)" : "rgba(168,85,247,0.06)";
+                    const markerColor = stage.missing ? "#f87171" : isChanged ? "#facc15" : "#a855f7";
+                    const key = `${zoneIdentity(zone)}:${stageKey}`;
                     if (stage.shape.toLowerCase() === "rect" || stage.shape.toLowerCase() === "rectangle") {
                       return (
-                        <rect
-                          key={`${zone.id}:${stage.stageId}:${stage.local.x}:${stage.local.y}`}
-                          x={stage.world.x - stage.width / 2}
-                          y={stage.world.y - stage.height / 2}
-                          width={Math.max(500, stage.width)}
-                          height={Math.max(500, stage.height)}
-                          fill="rgba(168,85,247,0.06)"
-                          stroke={color}
-                          strokeWidth={2 / camera.zoom}
-                        />
+                        <g key={key}>
+                          <rect
+                            x={stage.world.x - stage.width / 2}
+                            y={stage.world.y - stage.height / 2}
+                            width={Math.max(500, stage.width)}
+                            height={Math.max(500, stage.height)}
+                            fill={fill}
+                            stroke={color}
+                            strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                            strokeWidth={(draggingStageKey === stageKey ? 4 : 2) / camera.zoom}
+                          />
+                          <circle cx={stage.world.x} cy={stage.world.y} r={(draggingStageKey === stageKey ? 8 : 5) / camera.zoom} fill={markerColor} stroke="rgba(255,255,255,0.75)" strokeWidth={1 / camera.zoom} />
+                        </g>
                       );
                     }
                     return (
-                      <ellipse
-                        key={`${zone.id}:${stage.stageId}:${stage.local.x}:${stage.local.y}`}
-                        cx={stage.world.x}
-                        cy={stage.world.y}
-                        rx={Math.max(250, stage.width / 2)}
-                        ry={Math.max(250, stage.height / 2)}
-                        fill="rgba(168,85,247,0.06)"
-                        stroke={color}
-                        strokeWidth={2 / camera.zoom}
-                      />
+                      <g key={key}>
+                        <ellipse
+                          cx={stage.world.x}
+                          cy={stage.world.y}
+                          rx={Math.max(250, stage.width / 2)}
+                          ry={Math.max(250, stage.height / 2)}
+                          fill={fill}
+                          stroke={color}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={(draggingStageKey === stageKey ? 4 : 2) / camera.zoom}
+                        />
+                        <circle cx={stage.world.x} cy={stage.world.y} r={(draggingStageKey === stageKey ? 8 : 5) / camera.zoom} fill={markerColor} stroke="rgba(255,255,255,0.75)" strokeWidth={1 / camera.zoom} />
+                      </g>
                     );
                   }),
                 )
@@ -5856,7 +6132,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, region, or mineable asteroid field to edit details. Hold Command and drag a zone, gate, barrier, region, or mineable asteroid field to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroid fields.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, stage, mob spawn, route, gate, authored barrier, region, or mineable asteroid field to edit details. Hold Command and drag a zone, stage, mob spawn, gate, barrier, region, or mineable asteroid field to move it. Drag barrier points or polygon vertices to reshape them. Right-click a zone to add stage and mob placements; right-click the map to add zones, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroid fields.</div>
       </div>
 
       {contextMenu ? (
@@ -5890,6 +6166,18 @@ export default function SystemMapViewer() {
               }}
             >
               Add Mob Spawn Here
+            </button>
+          ) : null}
+          {contextMenu.zoneId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+              onClick={() => {
+                const zone = mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId);
+                if (zone) openCreateStagePlacementForm(zone, contextMenu.world);
+              }}
+            >
+              Add Stage Here
             </button>
           ) : null}
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
@@ -6804,6 +7092,123 @@ export default function SystemMapViewer() {
           })()
         : null}
 
+      {stagePlacementForm ? (
+        <div
+          data-system-map-ui="true"
+          className="absolute inset-0 z-[130] flex cursor-default items-center justify-center bg-black/45 p-5 backdrop-blur-sm"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerMove={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onPointerCancel={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          <div className="max-h-[calc(100vh-2rem)] w-[min(680px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
+            {(() => {
+              const zone = mapZones.find((entry) => zoneIdentity(entry) === stagePlacementForm.zoneId);
+              const selectedStage = payload?.stageCatalog.find((entry) => entry.id === stagePlacementForm.stageId) ?? null;
+              const activeStage = zone?.stages.find((entry) => stagePlacementForm.stageKey && stageIdentity(entry) === stagePlacementForm.stageKey) ?? null;
+              const previewWorld =
+                zone && Number.isFinite(Number(stagePlacementForm.localX)) && Number.isFinite(Number(stagePlacementForm.localY))
+                  ? {
+                      x: zone.world.x + Number(stagePlacementForm.localX),
+                      y: zone.world.y + Number(stagePlacementForm.localY),
+                    }
+                  : null;
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-xl font-semibold text-white">{stagePlacementForm.mode === "create" ? "Add Stage Placement" : "Edit Stage Placement"}</div>
+                      <div className="mt-1 text-sm text-white/55">Place a Stages.json profile relative to {zone?.name || "the selected zone"}.</div>
+                    </div>
+                    <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setStagePlacementForm(null)}>
+                      Cancel
+                    </button>
+                  </div>
+
+                  <div className="mt-5">
+                    <label className="text-sm text-white/65">
+                      Stage
+                      <input className="input mt-1" value={stagePlacementSearch} placeholder="Search stages by ID, name, or shape..." onChange={(event) => setStagePlacementSearch(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                    </label>
+                    <div className="mt-3 max-h-56 space-y-2 overflow-auto rounded-xl border border-white/10 bg-black/20 p-2">
+                      {filteredStageCatalog.map((stage) => {
+                        const selected = stage.id === stagePlacementForm.stageId;
+                        return (
+                          <button
+                            key={stage.id}
+                            type="button"
+                            className={`flex w-full items-center justify-between gap-3 rounded-lg border p-2 text-left transition ${
+                              selected ? "border-purple-300/50 bg-purple-300/12 text-purple-50" : "border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/10"
+                            }`}
+                            onClick={() => {
+                              setStagePlacementForm((current) => (current ? { ...current, stageId: stage.id } : current));
+                              setStagePlacementSearch(stage.name || stage.id);
+                            }}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold text-white">{stage.name || stage.id}</span>
+                              <span className="block truncate text-xs text-white/50">{stage.id}</span>
+                              <span className="block truncate text-xs text-white/40">
+                                {stage.shape} · {formatNumber(stage.width)} x {formatNumber(stage.height)} · {stage.materialCount} materials
+                              </span>
+                            </span>
+                            {selected ? <span className="rounded bg-purple-300/15 px-2 py-1 text-xs text-purple-100">Selected</span> : null}
+                          </button>
+                        );
+                      })}
+                      {!filteredStageCatalog.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No stages match the current search.</div> : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                    <label className="text-sm text-white/65 sm:col-span-3">
+                      Stage ID
+                      <input className="input mt-1 font-mono" value={stagePlacementForm.stageId} onChange={(event) => setStagePlacementForm((current) => (current ? { ...current, stageId: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                    </label>
+                    <label className="text-sm text-white/65">
+                      Local X
+                      <input className="input mt-1" type="number" value={stagePlacementForm.localX} onChange={(event) => setStagePlacementForm((current) => (current ? { ...current, localX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                    </label>
+                    <label className="text-sm text-white/65">
+                      Local Y
+                      <input className="input mt-1" type="number" value={stagePlacementForm.localY} onChange={(event) => setStagePlacementForm((current) => (current ? { ...current, localY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                    </label>
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                      <div className="font-semibold text-white/80">Position</div>
+                      <div className="mt-1">Zone: {zone?.name || stagePlacementForm.zoneId}</div>
+                      <div>World: {previewWorld ? formatVec(previewWorld) : activeStage ? formatVec(activeStage.world) : "unknown"}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Stage Summary</div>
+                    <div className="mt-2">Shape: {selectedStage?.shape || activeStage?.shape || "unresolved"}</div>
+                    <div>Size: {selectedStage ? `${formatNumber(selectedStage.width)} x ${formatNumber(selectedStage.height)}` : activeStage ? `${formatNumber(activeStage.width)} x ${formatNumber(activeStage.height)}` : "unknown"}</div>
+                    <div>Materials: {selectedStage?.materialCount ?? activeStage?.materialCount ?? "unknown"}</div>
+                    <div>Saved in Zones.json as a zone-local stage placement.</div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap justify-end gap-2">
+                    {stagePlacementForm.mode === "edit" && stagePlacementForm.stageKey ? (
+                      <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeStagePlacement(stagePlacementForm.zoneId, stagePlacementForm.stageKey!)}>
+                        Delete Stage
+                      </button>
+                    ) : null}
+                    <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setStagePlacementForm(null)}>
+                      Cancel
+                    </button>
+                    <button type="button" className="btn-save-build" onClick={saveStagePlacementForm}>
+                      {stagePlacementForm.mode === "create" ? "Add Stage To Zone" : "Apply Stage Changes"}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      ) : null}
+
       {mobSpawnForm ? (
         <div
           data-system-map-ui="true"
@@ -6939,7 +7344,7 @@ export default function SystemMapViewer() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">{zoneForm.mode === "create" ? "Add Zone Draft" : "Edit Zone Details"}</div>
-                <div className="mt-1 text-sm text-white/55">{zoneForm.mode === "create" ? "This adds a draft to the map. Use the green save button to write it into Zones.json." : "Edit top-level zone details. Stages and mob placements stay unchanged."}</div>
+                <div className="mt-1 text-sm text-white/55">{zoneForm.mode === "create" ? "This adds a draft to the map. Use the green save button to write it into Zones.json." : "Edit top-level zone details. Stage and mob placements are managed directly on the map."}</div>
               </div>
               <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
                 Cancel

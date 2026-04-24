@@ -18,6 +18,7 @@ import type {
   SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
   SystemMapSector,
+  SystemMapStageCatalogEntry,
   SystemMapStagePlacement,
   SystemMapVec,
   SystemMapZone,
@@ -312,6 +313,23 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
     })
     .filter((entry) => entry.id)
     .sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id));
+}
+
+function buildStageCatalogEntries(stagesJson: unknown): SystemMapStageCatalogEntry[] {
+  return Object.entries(asRecord(stagesJson))
+    .map(([id, rawStage]) => {
+      const stage = asRecord(rawStage);
+      return {
+        id,
+        name: stringValue(stage.name, id),
+        shape: stringValue(stage.shape, "ellipse"),
+        width: numberValue(stage.width),
+        height: numberValue(stage.height),
+        materialCount: asArray(stage.materials).length,
+      };
+    })
+    .filter((entry) => entry.id)
+    .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
 }
 
 function resolveResPath(gameRootPath: string, resPath: string) {
@@ -714,7 +732,7 @@ function parseSceneContents(
   };
 }
 
-function buildStagePlacement(stageEntry: unknown, zoneWorld: SystemMapVec, stagesJson: JsonRecord): SystemMapStagePlacement {
+function buildStagePlacement(stageEntry: unknown, zoneWorld: SystemMapVec, stagesJson: JsonRecord, index: number): SystemMapStagePlacement {
   const placement = asRecord(stageEntry);
   const stageId = stringValue(placement.stage_id ?? placement.id).trim();
   const local = vecValue(placement.pos);
@@ -723,6 +741,8 @@ function buildStagePlacement(stageEntry: unknown, zoneWorld: SystemMapVec, stage
   const height = numberValue(stage.height);
 
   return {
+    key: `zone-stage-${index}`,
+    originalIndex: index,
     stageId,
     name: stringValue(stage.name, stageId),
     local,
@@ -804,7 +824,7 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
         width: numberValue(bounds.width),
         height: numberValue(bounds.height),
       },
-      stages: asArray(zone.stages).map((entry) => buildStagePlacement(entry, world, stages)),
+      stages: asArray(zone.stages).map((entry, index) => buildStagePlacement(entry, world, stages, index)),
       mobs: asArray(zone.mobs).map((entry, index) => buildMobSpawn(gameRootPath, entry, world, mobCatalog, stagesJson, hazardBarrierProfilesJson, index)),
     };
   });
@@ -1026,6 +1046,7 @@ export async function GET() {
     sectors: buildSectors(),
     regions: buildRegions(regionsResult.value),
     zones,
+    stageCatalog: buildStageCatalogEntries(stagesResult.value),
     mobCatalog: buildMobCatalogEntries(mobsResult.value),
     pois: buildPois(poiResult.value, zones),
     routes: buildRoutes(routesResult.value),
