@@ -29,6 +29,11 @@ type Status = {
 
 type IconTarget = "class" | "spec" | "talent";
 
+type GridPosition = {
+  row: number;
+  column: number;
+};
+
 function uniqueId(base: string, existingIds: string[]) {
   const root = sanitizeTalentId(base) || "new_entry";
   if (!existingIds.includes(root)) return root;
@@ -49,6 +54,32 @@ function issueClass(issue: TalentValidationIssue) {
   return issue.level === "error" ? "border-red-400/25 bg-red-400/10 text-red-100" : "border-yellow-300/25 bg-yellow-300/10 text-yellow-100";
 }
 
+function slotKey(row: number, column: number) {
+  return `${row}:${column}`;
+}
+
+function templateGridPosition(workspace: TalentWorkspace, template: TalentTemplate): GridPosition {
+  const offset = workspace.layout_index_base === 1 ? 1 : 0;
+  return {
+    row: Math.max(0, Math.round(template.row) - offset),
+    column: Math.max(0, Math.round(template.column) - offset),
+  };
+}
+
+function savedGridPosition(workspace: TalentWorkspace, row: number, column: number): GridPosition {
+  const offset = workspace.layout_index_base === 1 ? 1 : 0;
+  return {
+    row: Math.max(1, row + offset),
+    column: Math.max(1, column + offset),
+  };
+}
+
+function findNearestTemplateAbove(workspace: TalentWorkspace, template: TalentTemplate) {
+  return workspace.talent_templates
+    .filter((entry) => entry.id !== template.id && entry.column === template.column && entry.row < template.row)
+    .sort((left, right) => right.row - left.row)[0] ?? null;
+}
+
 export default function TalentManagerApp() {
   const [workspace, setWorkspace] = useState<TalentWorkspace | null>(null);
   const [sourcePath, setSourcePath] = useState("");
@@ -65,6 +96,8 @@ export default function TalentManagerApp() {
   const [selectedSpecId, setSelectedSpecId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [dataVersion, setDataVersion] = useState("");
+  const [draggedTemplateId, setDraggedTemplateId] = useState("");
+  const [dropTargetKey, setDropTargetKey] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +155,16 @@ export default function TalentManagerApp() {
     () => (workspace && selectedClass && selectedSpec ? expandedTalentsForSpec(workspace, selectedClass, selectedSpec) : []),
     [selectedClass, selectedSpec, workspace],
   );
+  const occupiedSlots = useMemo(() => {
+    const slots = new Map<string, (typeof expandedTalents)[number]>();
+    for (const talent of expandedTalents) {
+      if (talent.row >= 0 && talent.column >= 0 && talent.row < (workspace?.tree_rows ?? 0) && talent.column < (workspace?.tree_columns ?? 0)) {
+        slots.set(slotKey(talent.row, talent.column), talent);
+      }
+    }
+    return slots;
+  }, [expandedTalents, workspace?.tree_columns, workspace?.tree_rows]);
+  const requireAboveCandidate = useMemo(() => (workspace && selectedTemplate ? findNearestTemplateAbove(workspace, selectedTemplate) : null), [selectedTemplate, workspace]);
 
   const iconCategories = useMemo(() => Array.from(new Set(icons.map((icon) => icon.category))).sort((left, right) => left.localeCompare(right)), [icons]);
   const filteredIcons = useMemo(() => {
@@ -232,9 +275,10 @@ export default function TalentManagerApp() {
     setIconTarget("spec");
   }
 
-  function addTalentTemplate() {
+  function addTalentTemplateAt(row: number, column: number) {
     if (!workspace) return;
     const id = uniqueId("new_talent", workspace.talent_templates.map((entry) => entry.id));
+    const position = savedGridPosition(workspace, row, column);
     mutateWorkspace((current) => ({
       ...current,
       talent_templates: [
@@ -243,8 +287,8 @@ export default function TalentManagerApp() {
           id,
           name: "New {spec} Talent",
           description: "",
-          row: 1,
-          column: 1,
+          row: position.row,
+          column: position.column,
           max_rank: 1,
           requires_tree_points: 0,
           requires_talent: "",
@@ -256,6 +300,87 @@ export default function TalentManagerApp() {
     }));
     setSelectedTemplateId(id);
     setIconTarget("talent");
+  }
+
+  function findBestOpenSlot(current: TalentWorkspace): GridPosition | null {
+    const occupied = new Set(current.talent_templates.map((template) => {
+      const position = templateGridPosition(current, template);
+      return slotKey(position.row, position.column);
+    }));
+    const selected = current.talent_templates.find((template) => template.id === selectedTemplateId);
+    const startIndex = selected ? templateGridPosition(current, selected).row * current.tree_columns + templateGridPosition(current, selected).column + 1 : 0;
+    const totalSlots = current.tree_rows * current.tree_columns;
+
+    for (let offset = 0; offset < totalSlots; offset += 1) {
+      const index = (startIndex + offset) % totalSlots;
+      const row = Math.floor(index / current.tree_columns);
+      const column = index % current.tree_columns;
+      if (!occupied.has(slotKey(row, column))) return { row, column };
+    }
+
+    return null;
+  }
+
+  function addTalentTemplate() {
+    if (!workspace) return;
+    const position = findBestOpenSlot(workspace);
+    if (!position) {
+      setStatus({ tone: "neutral", message: "No empty talent slots are available in the current tree." });
+      return;
+    }
+    addTalentTemplateAt(position.row, position.column);
+  }
+
+  function moveTalentTemplateTo(templateId: string, row: number, column: number) {
+    if (!workspace) return;
+    const movingTemplate = workspace.talent_templates.find((template) => template.id === templateId);
+    if (!movingTemplate) return;
+    const movingPosition = templateGridPosition(workspace, movingTemplate);
+    if (movingPosition.row === row && movingPosition.column === column) return;
+    const targetPosition = savedGridPosition(workspace, row, column);
+
+    mutateWorkspace((current) => {
+      const moving = current.talent_templates.find((template) => template.id === templateId);
+      if (!moving) return current;
+      const occupant = current.talent_templates.find((template) => {
+        if (template.id === templateId) return false;
+        const position = templateGridPosition(current, template);
+        return position.row === row && position.column === column;
+      });
+
+      return {
+        ...current,
+        talent_templates: current.talent_templates.map((template) => {
+          if (template.id === templateId) return { ...template, row: targetPosition.row, column: targetPosition.column };
+          if (occupant && template.id === occupant.id) return { ...template, row: moving.row, column: moving.column };
+          return template;
+        }),
+      };
+    });
+
+    setSelectedTemplateId(templateId);
+    setIconTarget("talent");
+  }
+
+  function setRequireAbove(enabled: boolean) {
+    if (!selectedTemplate) return;
+    if (!enabled) {
+      if (selectedTemplate.requires_talent === requireAboveCandidate?.id) {
+        updateSelectedTemplate({ requires_talent: "", requires_talent_full: false, requires_rank: 1 });
+      }
+      return;
+    }
+
+    if (!requireAboveCandidate) {
+      setStatus({ tone: "neutral", message: "There is no talent above this slot in the same column." });
+      return;
+    }
+
+    updateSelectedTemplate({
+      requires_talent: requireAboveCandidate.id,
+      requires_talent_full: true,
+      requires_rank: Math.max(1, Math.round(requireAboveCandidate.max_rank)),
+    });
   }
 
   function applyIcon(icon: TalentIconOption) {
@@ -428,18 +553,94 @@ export default function TalentManagerApp() {
                 {Array.from({ length: workspace.tree_rows * workspace.tree_columns }).map((_, index) => {
                   const row = Math.floor(index / workspace.tree_columns);
                   const column = index % workspace.tree_columns;
-                  const talent = expandedTalents.find((entry) => entry.row === row && entry.column === column);
+                  const key = slotKey(row, column);
+                  const talent = occupiedSlots.get(key);
+                  const isDropTarget = dropTargetKey === key;
                   if (!talent) {
-                    return <div key={`empty-${row}-${column}`} className="min-h-24 rounded-lg border border-dashed border-white/10 bg-white/[0.02]" />;
+                    return (
+                      <button
+                        key={`empty-${row}-${column}`}
+                        type="button"
+                        aria-label={`Add talent at row ${row + 1}, column ${column + 1}`}
+                        className={`group min-h-24 rounded-lg border border-dashed p-3 text-left transition ${
+                          isDropTarget ? "border-cyan-300/55 bg-cyan-300/12" : "border-white/10 bg-white/[0.02] hover:border-cyan-300/30 hover:bg-white/[0.04]"
+                        }`}
+                        onClick={() => addTalentTemplateAt(row, column)}
+                        onDragEnter={(event) => {
+                          if (!draggedTemplateId) return;
+                          event.preventDefault();
+                          setDropTargetKey(key);
+                        }}
+                        onDragOver={(event) => {
+                          if (!draggedTemplateId) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setDropTargetKey(key);
+                        }}
+                        onDragLeave={() => {
+                          if (dropTargetKey === key) setDropTargetKey("");
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const templateId = event.dataTransfer.getData("text/plain") || draggedTemplateId;
+                          if (templateId) moveTalentTemplateTo(templateId, row, column);
+                          setDraggedTemplateId("");
+                          setDropTargetKey("");
+                        }}
+                      >
+                        <div className="flex h-full min-h-16 items-center justify-center rounded border border-transparent text-2xl text-white/20 transition group-hover:text-cyan-100/70">+</div>
+                      </button>
+                    );
                   }
                   const isSelected = selectedTemplate?.id === talent.template_id;
+                  const isDragging = draggedTemplateId === talent.template_id;
                   return (
                     <button
                       key={talent.talent_id}
-                      className={`min-h-24 rounded-lg border p-3 text-left transition ${isSelected ? "border-cyan-300/55 bg-cyan-300/12" : "border-white/10 bg-white/[0.04] hover:border-cyan-300/30 hover:bg-white/[0.06]"}`}
+                      type="button"
+                      draggable
+                      className={`min-h-24 rounded-lg border p-3 text-left transition ${
+                        isSelected
+                          ? "border-cyan-300/55 bg-cyan-300/12"
+                          : isDropTarget
+                            ? "border-cyan-300/40 bg-cyan-300/10"
+                            : "border-white/10 bg-white/[0.04] hover:border-cyan-300/30 hover:bg-white/[0.06]"
+                      } ${isDragging ? "opacity-45" : ""}`}
                       onClick={() => {
                         setSelectedTemplateId(talent.template_id);
                         setIconTarget("talent");
+                      }}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", talent.template_id);
+                        setDraggedTemplateId(talent.template_id);
+                        setSelectedTemplateId(talent.template_id);
+                        setIconTarget("talent");
+                      }}
+                      onDragEnter={(event) => {
+                        if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
+                        event.preventDefault();
+                        setDropTargetKey(key);
+                      }}
+                      onDragOver={(event) => {
+                        if (!draggedTemplateId || draggedTemplateId === talent.template_id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setDropTargetKey(key);
+                      }}
+                      onDragLeave={() => {
+                        if (dropTargetKey === key) setDropTargetKey("");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const templateId = event.dataTransfer.getData("text/plain") || draggedTemplateId;
+                        if (templateId && templateId !== talent.template_id) moveTalentTemplateTo(templateId, row, column);
+                        setDraggedTemplateId("");
+                        setDropTargetKey("");
+                      }}
+                      onDragEnd={() => {
+                        setDraggedTemplateId("");
+                        setDropTargetKey("");
                       }}
                     >
                       <div className="flex items-start gap-3">
@@ -590,6 +791,20 @@ export default function TalentManagerApp() {
                     <input className="input mt-1" type="number" min="0" value={selectedTemplate.requires_tree_points} onChange={(event) => updateSelectedTemplate({ requires_tree_points: Number(event.target.value) })} />
                   </label>
                 </div>
+                <label className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${requireAboveCandidate ? "border-white/10 bg-black/20 text-white/80" : "border-white/10 bg-black/10 text-white/35"}`}>
+                  <span>
+                    <span className="block">Require Above</span>
+                    <span className="mt-0.5 block text-xs text-white/45">
+                      {requireAboveCandidate ? `${requireAboveCandidate.name} (${requireAboveCandidate.id})` : "No talent above in this column"}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    disabled={!requireAboveCandidate}
+                    checked={!!requireAboveCandidate && selectedTemplate.requires_talent === requireAboveCandidate.id && !!selectedTemplate.requires_talent_full}
+                    onChange={(event) => setRequireAbove(event.target.checked)}
+                  />
+                </label>
                 <label className="block text-sm text-white/65">
                   Requires Talent
                   <select className="select mt-1 w-full" value={selectedTemplate.requires_talent ?? ""} onChange={(event) => updateSelectedTemplate({ requires_talent: event.target.value })}>
