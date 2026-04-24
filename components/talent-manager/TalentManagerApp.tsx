@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildIconSrc } from "@lib/icon-src";
 import type { TalentClass, TalentIconOption, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "@lib/talent-manager/types";
-import { expandedTalentsForSpec, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, validateTalentWorkspace } from "@lib/talent-manager/utils";
+import { expandedTalentsForSpec, normalizeTalentRowRequirements, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, treePointsRequiredForGridRow, validateTalentWorkspace } from "@lib/talent-manager/utils";
 
 type LoadResponse = {
   ok: boolean;
@@ -86,11 +86,11 @@ function iconSrc(icon: string | undefined, id: string, name: string, version: st
 }
 
 function hasTalentRequirement(template: TalentTemplate) {
-  return Math.max(0, Math.round(Number(template.requires_tree_points) || 0)) > 0 || !!String(template.requires_talent ?? "").trim();
+  return !!String(template.requires_talent ?? "").trim();
 }
 
-function requirementBadgeClass(template: TalentTemplate) {
-  return template.requires_tree_points > 0 || template.requires_talent ? "border-amber-300/25 bg-amber-300/10 text-amber-100" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100";
+function requirementBadgeClass() {
+  return "border-amber-300/25 bg-amber-300/10 text-amber-100";
 }
 
 function issueClass(issue: TalentValidationIssue) {
@@ -392,11 +392,15 @@ export default function TalentManagerApp() {
       const spec = findCurrentSelectedSpec(current);
       const templates = spec ? talentTemplatesForSpec(current, spec) : [];
       const clearingPatches = requirementClearingPatches(templates, changedIds);
+      const nextDisplayRow = patch.row ?? selectedTemplate.row;
+      const rowOffset = current.layout_index_base === 1 ? 1 : 0;
+      const nextGridRow = Math.max(0, Math.round(Number(nextDisplayRow) || rowOffset + 1) - rowOffset);
       return applyTemplatePatchesToSelectedSpec(current, {
         ...clearingPatches,
         [selectedTemplate.id]: {
           ...(clearingPatches[selectedTemplate.id] ?? {}),
           ...patch,
+          ...(patch.row === undefined ? {} : { requires_tree_points: treePointsRequiredForGridRow(current, nextGridRow) }),
         },
       });
     });
@@ -524,7 +528,7 @@ export default function TalentManagerApp() {
             row: position.row,
             column: position.column,
             max_rank: 1,
-            requires_tree_points: 0,
+            requires_tree_points: treePointsRequiredForGridRow(workspace, row),
             requires_talent: "",
             requires_talent_full: false,
             requires_rank: 1,
@@ -598,8 +602,16 @@ export default function TalentManagerApp() {
         ...(patches[templateId] ?? {}),
         row: targetPosition.row,
         column: targetPosition.column,
+        requires_tree_points: treePointsRequiredForGridRow(current, row),
       };
-      if (occupant) patches[occupant.id] = { ...(patches[occupant.id] ?? {}), row: moving.row, column: moving.column };
+      if (occupant) {
+        patches[occupant.id] = {
+          ...(patches[occupant.id] ?? {}),
+          row: moving.row,
+          column: moving.column,
+          requires_tree_points: treePointsRequiredForGridRow(current, movingPosition.row),
+        };
+      }
 
       return applyTemplatePatchesToSelectedSpec(current, patches);
     });
@@ -643,25 +655,27 @@ export default function TalentManagerApp() {
 
   async function saveToBuild() {
     if (!workspace || validationErrors.length) return;
+    const workspaceToSave = normalizeTalentRowRequirements(workspace);
     setSaving(true);
     setStatus(null);
     try {
       const response = await fetch("/api/talents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace }),
+        body: JSON.stringify({ workspace: workspaceToSave }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
         setStatus({ tone: "error", message: payload.error || "Could not save TalentTrees.json." });
         return;
       }
+      setWorkspace(workspaceToSave);
       setDirty(false);
       setDataVersion(String(Date.now()));
       const localTalentCount = Number(payload.savedSpecTalentTemplates ?? 0);
       setStatus({
         tone: "success",
-        message: `Saved ${payload.savedClasses ?? workspace.classes.length} classes, ${payload.savedTalentTemplates ?? workspace.talent_templates.length} global talent templates, and ${localTalentCount} spec-local talent templates to TalentTrees.json.`,
+        message: `Saved ${payload.savedClasses ?? workspaceToSave.classes.length} classes, ${payload.savedTalentTemplates ?? workspaceToSave.talent_templates.length} global talent templates, and ${localTalentCount} spec-local talent templates to TalentTrees.json.`,
       });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
@@ -939,7 +953,7 @@ export default function TalentManagerApp() {
                         </div>
                         <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-14 w-14 rounded border border-white/10 bg-black/30 object-cover" />
                         <div className="mt-3 line-clamp-3 w-full text-base font-semibold leading-snug text-white">{talent.name}</div>
-                        {hasTalentRequirement(talent) ? <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div> : null}
+                        {hasTalentRequirement(talent) ? <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass()}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div> : null}
                       </button>
                     );
                   }),
@@ -1085,10 +1099,6 @@ export default function TalentManagerApp() {
                     Max Points
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.max_rank} onChange={(event) => updateSelectedTemplate({ max_rank: Number(event.target.value) })} />
                   </label>
-                  <label className="text-sm text-white/65">
-                    Tree Points Required
-                    <input className="input mt-1" type="number" min="0" value={selectedTemplate.requires_tree_points} onChange={(event) => updateSelectedTemplate({ requires_tree_points: Number(event.target.value) })} />
-                  </label>
                 </div>
                 <label className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${requireAboveCandidate ? "border-white/10 bg-black/20 text-white/80" : "border-white/10 bg-black/10 text-white/35"}`}>
                   <span>
@@ -1127,7 +1137,7 @@ export default function TalentManagerApp() {
                     <input className="input mt-1" type="number" min="1" disabled={!!selectedTemplate.requires_talent_full} value={selectedTemplate.requires_rank ?? 1} onChange={(event) => updateSelectedTemplate({ requires_rank: Number(event.target.value) })} />
                   </label>
                 </div>
-                {hasTalentRequirement(selectedTemplate) ? <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass(selectedTemplate)}`}>{templateRequirementText(workspace, selectedTemplate, selectedTalentTemplates)}</div> : null}
+                {hasTalentRequirement(selectedTemplate) ? <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass()}`}>{templateRequirementText(workspace, selectedTemplate, selectedTalentTemplates)}</div> : null}
               </div>
             ) : null}
           </section>

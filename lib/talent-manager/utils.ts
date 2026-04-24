@@ -138,7 +138,7 @@ export function normalizeTalentWorkspace(rootValue: unknown): TalentWorkspace {
     rowUnlockPoints.push(rowUnlockPoints.length * 5);
   }
 
-  return {
+  return normalizeTalentRowRequirements({
     ...root,
     point_model: stringValue(root.point_model, "one_point_per_level_with_debug_override"),
     layout_index_base: Math.round(numberValue(root.layout_index_base, 1)) === 0 ? 0 : 1,
@@ -148,7 +148,7 @@ export function normalizeTalentWorkspace(rootValue: unknown): TalentWorkspace {
     row_unlock_points: rowUnlockPoints,
     talent_templates: asArray(root.talent_templates).map(normalizeTemplate),
     classes: asArray(root.classes).map(normalizeClass),
-  };
+  });
 }
 
 export function formatTemplateText(template: TalentTemplate, talentClass: TalentClass, spec: TalentSpecialization, value: string) {
@@ -181,6 +181,57 @@ export function talentTemplatesForSpec(workspace: TalentWorkspace, spec: TalentS
     base_template_id: template.id,
   }));
   return [...inheritedTemplates, ...localTemplates];
+}
+
+export function treePointsRequiredForGridRow(workspace: Pick<TalentWorkspace, "row_unlock_points">, row: number) {
+  const normalizedRow = Math.max(0, Math.round(numberValue(row, 0)));
+  return Math.max(0, Math.round(numberValue(workspace.row_unlock_points[normalizedRow], normalizedRow * 5)));
+}
+
+function templateGridRow(workspace: Pick<TalentWorkspace, "layout_index_base">, template: Pick<TalentTemplate, "row">) {
+  const offset = workspace.layout_index_base === 1 ? 1 : 0;
+  return Math.max(0, Math.round(numberValue(template.row, 1)) - offset);
+}
+
+function templateWithImplicitRowRequirement(workspace: TalentWorkspace, template: TalentTemplate) {
+  return {
+    ...template,
+    requires_tree_points: treePointsRequiredForGridRow(workspace, templateGridRow(workspace, template)),
+  };
+}
+
+export function normalizeTalentRowRequirements(workspace: TalentWorkspace): TalentWorkspace {
+  const talentTemplates = workspace.talent_templates.map((template) => templateWithImplicitRowRequirement(workspace, template));
+  const globalTemplatesById = new Map(talentTemplates.map((template) => [template.id, template]));
+
+  return {
+    ...workspace,
+    talent_templates: talentTemplates,
+    classes: workspace.classes.map((talentClass) => ({
+      ...talentClass,
+      specializations: talentClass.specializations.map((spec) => {
+        const nextSpec: TalentSpecialization = {
+          ...spec,
+          talent_templates: (spec.talent_templates ?? []).map((template) => templateWithImplicitRowRequirement(workspace, template)),
+        };
+        const nextOverrides: Record<string, TalentTemplateOverride> = {};
+        for (const [templateId, override] of Object.entries(spec.talent_overrides ?? {})) {
+          const baseTemplate = globalTemplatesById.get(templateId);
+          if (!baseTemplate || (!hasOwn(override, "row") && !hasOwn(override, "requires_tree_points"))) {
+            nextOverrides[templateId] = override;
+            continue;
+          }
+          const mergedTemplate: TalentTemplate = { ...baseTemplate, ...override, id: templateId };
+          nextOverrides[templateId] = {
+            ...override,
+            requires_tree_points: treePointsRequiredForGridRow(workspace, templateGridRow(workspace, mergedTemplate)),
+          };
+        }
+        nextSpec.talent_overrides = nextOverrides;
+        return nextSpec;
+      }),
+    })),
+  };
 }
 
 export function expandTalentTemplate(workspace: TalentWorkspace, talentClass: TalentClass, spec: TalentSpecialization, template: TalentTemplate): ExpandedTalent {
@@ -223,17 +274,12 @@ export function expandedTalentsForSpec(workspace: TalentWorkspace, talentClass: 
 }
 
 export function templateRequirementText(workspace: TalentWorkspace, template: TalentTemplate, availableTemplates = workspace.talent_templates) {
-  const parts: string[] = [];
-  const requiredPoints = Math.max(0, Math.round(numberValue(template.requires_tree_points, 0)));
-  if (requiredPoints > 0) parts.push(`${requiredPoints} tree points`);
   const requiredId = sanitizeTalentId(stringValue(template.requires_talent, ""));
-  if (requiredId) {
-    const requiredTemplate = availableTemplates.find((entry) => entry.id === requiredId);
-    const requiredName = requiredTemplate?.name || requiredId;
-    const points = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
-    parts.push(`${points} point${points === 1 ? "" : "s"} in ${requiredName}`);
-  }
-  return parts.length ? `Requires ${parts.join(" and ")}` : "";
+  if (!requiredId) return "";
+  const requiredTemplate = availableTemplates.find((entry) => entry.id === requiredId);
+  const requiredName = requiredTemplate?.name || requiredId;
+  const points = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
+  return `Requires ${points} point${points === 1 ? "" : "s"} in ${requiredName}`;
 }
 
 export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValidationIssue[] {
@@ -310,6 +356,8 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
 }
 
 export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
+  const normalizedWorkspace = normalizeTalentRowRequirements(workspace);
+
   function cleanTalentTemplate(template: TalentTemplate, preserveEmptyRequirement = false) {
     const next: TalentTemplateOverride = { ...template };
     delete next.source;
@@ -346,9 +394,9 @@ export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
   }
 
   const cleaned: TalentWorkspace = {
-    ...workspace,
-    talent_templates: workspace.talent_templates.map((template) => cleanTalentTemplate(template) as TalentTemplate),
-    classes: workspace.classes.map((talentClass) => {
+    ...normalizedWorkspace,
+    talent_templates: normalizedWorkspace.talent_templates.map((template) => cleanTalentTemplate(template) as TalentTemplate),
+    classes: normalizedWorkspace.classes.map((talentClass) => {
       const nextClass: TalentClass = {
         ...talentClass,
         specializations: talentClass.specializations.map((spec) => {
