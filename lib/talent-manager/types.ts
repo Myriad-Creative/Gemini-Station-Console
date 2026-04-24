@@ -12,7 +12,11 @@ export type TalentTemplate = JsonRecord & {
   requires_talent_full?: boolean;
   requires_rank?: number;
   icon?: string;
+  source?: "global" | "spec";
+  base_template_id?: string;
 };
+
+export type TalentTemplateOverride = JsonRecord & Partial<Omit<TalentTemplate, "source" | "base_template_id">>;
 
 export type TalentSpecialization = JsonRecord & {
   id: string;
@@ -20,6 +24,8 @@ export type TalentSpecialization = JsonRecord & {
   role: string;
   description: string;
   icon?: string;
+  talent_templates?: TalentTemplate[];
+  talent_overrides?: Record<string, TalentTemplateOverride>;
 };
 
 export type TalentClass = JsonRecord & {

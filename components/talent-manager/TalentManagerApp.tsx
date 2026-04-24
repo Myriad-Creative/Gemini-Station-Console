@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { buildIconSrc } from "@lib/icon-src";
-import type { TalentClass, TalentIconOption, TalentSpecialization, TalentTemplate, TalentValidationIssue, TalentWorkspace } from "@lib/talent-manager/types";
-import { expandedTalentsForSpec, sanitizeTalentId, templateRequirementText, validateTalentWorkspace } from "@lib/talent-manager/utils";
+import type { TalentClass, TalentIconOption, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "@lib/talent-manager/types";
+import { expandedTalentsForSpec, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, validateTalentWorkspace } from "@lib/talent-manager/utils";
 
 type LoadResponse = {
   ok: boolean;
@@ -83,16 +83,16 @@ function savedGridPosition(workspace: TalentWorkspace, row: number, column: numb
   };
 }
 
-function findNearestTemplateAbove(workspace: TalentWorkspace, template: TalentTemplate) {
-  return workspace.talent_templates
+function findNearestTemplateAbove(templates: TalentTemplate[], template: TalentTemplate) {
+  return templates
     .filter((entry) => entry.id !== template.id && entry.column === template.column && entry.row < template.row)
     .sort((left, right) => right.row - left.row)[0] ?? null;
 }
 
-function buildRequirementLinks(workspace: TalentWorkspace): RequirementLink[] {
-  return workspace.talent_templates.flatMap((dependent) => {
+function buildRequirementLinks(workspace: TalentWorkspace, templates: TalentTemplate[]): RequirementLink[] {
+  return templates.flatMap((dependent) => {
     if (!dependent.requires_talent) return [];
-    const required = workspace.talent_templates.find((template) => template.id === dependent.requires_talent);
+    const required = templates.find((template) => template.id === dependent.requires_talent);
     if (!required) return [];
 
     const requiredPosition = templateGridPosition(workspace, required);
@@ -114,18 +114,19 @@ function buildRequirementLinks(workspace: TalentWorkspace): RequirementLink[] {
   });
 }
 
-function clearRequirementLinksForTemplateIds(templates: TalentTemplate[], movedIds: Set<string>) {
-  return templates.map((template) => {
-    if (!template.requires_talent && !movedIds.has(template.id)) return template;
-    if (!movedIds.has(template.id) && (!template.requires_talent || !movedIds.has(template.requires_talent))) return template;
+function requirementClearingPatches(templates: TalentTemplate[], movedIds: Set<string>) {
+  const patches: Record<string, Partial<TalentTemplate>> = {};
+  for (const template of templates) {
+    if (!template.requires_talent && !movedIds.has(template.id)) continue;
+    if (!movedIds.has(template.id) && (!template.requires_talent || !movedIds.has(template.requires_talent))) continue;
 
-    return {
-      ...template,
+    patches[template.id] = {
       requires_talent: "",
       requires_talent_full: false,
       requires_rank: 1,
     };
-  });
+  }
+  return patches;
 }
 
 export default function TalentManagerApp() {
@@ -198,12 +199,13 @@ export default function TalentManagerApp() {
     () => selectedClass?.specializations.find((entry) => entry.id === selectedSpecId) ?? selectedClass?.specializations[0] ?? null,
     [selectedClass, selectedSpecId],
   );
-  const selectedTemplate = useMemo(() => workspace?.talent_templates.find((entry) => entry.id === selectedTemplateId) ?? workspace?.talent_templates[0] ?? null, [selectedTemplateId, workspace]);
+  const selectedTalentTemplates = useMemo(() => (workspace && selectedSpec ? talentTemplatesForSpec(workspace, selectedSpec) : []), [selectedSpec, workspace]);
+  const selectedTemplate = useMemo(() => selectedTalentTemplates.find((entry) => entry.id === selectedTemplateId) ?? selectedTalentTemplates[0] ?? null, [selectedTalentTemplates, selectedTemplateId]);
   const expandedTalents = useMemo(
     () => (workspace && selectedClass && selectedSpec ? expandedTalentsForSpec(workspace, selectedClass, selectedSpec) : []),
     [selectedClass, selectedSpec, workspace],
   );
-  const requirementLinks = useMemo(() => (workspace ? buildRequirementLinks(workspace) : []), [workspace]);
+  const requirementLinks = useMemo(() => (workspace ? buildRequirementLinks(workspace, selectedTalentTemplates) : []), [selectedTalentTemplates, workspace]);
   const linkedMiddleSlots = useMemo(() => {
     const slots = new Map<string, RequirementLink>();
     for (const link of requirementLinks) {
@@ -230,7 +232,7 @@ export default function TalentManagerApp() {
     }
     return slots;
   }, [expandedTalents, workspace?.tree_columns, workspace?.tree_rows]);
-  const requireAboveCandidate = useMemo(() => (workspace && selectedTemplate ? findNearestTemplateAbove(workspace, selectedTemplate) : null), [selectedTemplate, workspace]);
+  const requireAboveCandidate = useMemo(() => (selectedTemplate ? findNearestTemplateAbove(selectedTalentTemplates, selectedTemplate) : null), [selectedTalentTemplates, selectedTemplate]);
 
   const iconCategories = useMemo(() => Array.from(new Set(icons.map((icon) => icon.category))).sort((left, right) => left.localeCompare(right)), [icons]);
   const filteredIcons = useMemo(() => {
@@ -277,23 +279,71 @@ export default function TalentManagerApp() {
     }));
   }
 
+  function mutateSelectedSpec(current: TalentWorkspace, updater: (spec: TalentSpecialization) => TalentSpecialization): TalentWorkspace {
+    return {
+      ...current,
+      classes: current.classes.map((entry) =>
+        entry.id === selectedClassId
+          ? {
+              ...entry,
+              specializations: entry.specializations.map((spec) => (spec.id === selectedSpecId ? updater(spec) : spec)),
+            }
+          : entry,
+      ),
+    };
+  }
+
+  function findCurrentSelectedSpec(current: TalentWorkspace) {
+    const talentClass = current.classes.find((entry) => entry.id === selectedClassId) ?? current.classes[0];
+    const spec = talentClass?.specializations.find((entry) => entry.id === selectedSpecId) ?? talentClass?.specializations[0];
+    return spec ?? null;
+  }
+
+  function applyTemplatePatchesToSelectedSpec(current: TalentWorkspace, patches: Record<string, Partial<TalentTemplate>>): TalentWorkspace {
+    if (!Object.keys(patches).length) return current;
+    return mutateSelectedSpec(current, (spec) => {
+      const localTemplates = spec.talent_templates ?? [];
+      const overrides: Record<string, TalentTemplateOverride> = { ...(spec.talent_overrides ?? {}) };
+      const nextLocalTemplates = localTemplates.map((template) => {
+        const patch = patches[template.id];
+        return patch ? { ...template, ...patch, id: patch.id ? sanitizeTalentId(patch.id) : template.id } : template;
+      });
+
+      for (const [templateId, patch] of Object.entries(patches)) {
+        if (localTemplates.some((template) => template.id === templateId)) continue;
+        overrides[templateId] = {
+          ...(overrides[templateId] ?? {}),
+          ...patch,
+        };
+      }
+
+      return {
+        ...spec,
+        talent_templates: nextLocalTemplates,
+        talent_overrides: overrides,
+      };
+    });
+  }
+
   function updateSelectedTemplate(patch: Partial<TalentTemplate>) {
     if (!selectedTemplate) return;
-    mutateWorkspace((current) => ({
-      ...current,
-      talent_templates: current.talent_templates.map((entry) => (entry.id === selectedTemplate.id ? { ...entry, ...patch } : entry)),
-    }));
+    mutateWorkspace((current) => applyTemplatePatchesToSelectedSpec(current, { [selectedTemplate.id]: patch }));
   }
 
   function updateSelectedTemplatePosition(patch: Pick<Partial<TalentTemplate>, "row" | "column">) {
     if (!selectedTemplate) return;
     mutateWorkspace((current) => {
       const changedIds = new Set<string>([selectedTemplate.id]);
-      const movedTemplates = current.talent_templates.map((entry) => (entry.id === selectedTemplate.id ? { ...entry, ...patch } : entry));
-      return {
-        ...current,
-        talent_templates: clearRequirementLinksForTemplateIds(movedTemplates, changedIds),
-      };
+      const spec = findCurrentSelectedSpec(current);
+      const templates = spec ? talentTemplatesForSpec(current, spec) : [];
+      const clearingPatches = requirementClearingPatches(templates, changedIds);
+      return applyTemplatePatchesToSelectedSpec(current, {
+        ...clearingPatches,
+        [selectedTemplate.id]: {
+          ...(clearingPatches[selectedTemplate.id] ?? {}),
+          ...patch,
+        },
+      });
     });
   }
 
@@ -354,43 +404,47 @@ export default function TalentManagerApp() {
   }
 
   function addTalentTemplateAt(row: number, column: number) {
-    if (!workspace) return;
-    const id = uniqueId("new_talent", workspace.talent_templates.map((entry) => entry.id));
+    if (!workspace || !selectedSpec) return;
+    const id = uniqueId("new_talent", selectedTalentTemplates.map((entry) => entry.id));
     const position = savedGridPosition(workspace, row, column);
     mutateWorkspace((current) => ({
-      ...current,
-      talent_templates: [
-        ...current.talent_templates,
-        {
-          id,
-          name: "New {spec} Talent",
-          description: "",
-          row: position.row,
-          column: position.column,
-          max_rank: 1,
-          requires_tree_points: 0,
-          requires_talent: "",
-          requires_talent_full: false,
-          requires_rank: 1,
-          icon: "res://assets/mods/mod_utility_circuit_3_common.png",
-        },
-      ],
+      ...mutateSelectedSpec(current, (spec) => ({
+        ...spec,
+        talent_templates: [
+          ...(spec.talent_templates ?? []),
+          {
+            id,
+            name: "New {spec} Talent",
+            description: "",
+            row: position.row,
+            column: position.column,
+            max_rank: 1,
+            requires_tree_points: 0,
+            requires_talent: "",
+            requires_talent_full: false,
+            requires_rank: 1,
+            icon: "res://assets/mods/mod_utility_circuit_3_common.png",
+          },
+        ],
+      })),
     }));
     setSelectedTemplateId(id);
     setIconTarget("talent");
   }
 
   function findBestOpenSlot(current: TalentWorkspace): GridPosition | null {
-    const occupied = new Set(current.talent_templates.map((template) => {
+    const spec = findCurrentSelectedSpec(current);
+    const templates = spec ? talentTemplatesForSpec(current, spec) : [];
+    const occupied = new Set(templates.map((template) => {
       const position = templateGridPosition(current, template);
       return slotKey(position.row, position.column);
     }));
-    for (const link of buildRequirementLinks(current)) {
+    for (const link of buildRequirementLinks(current, templates)) {
       for (let row = link.requiredRow + 1; row < link.dependentRow; row += 1) {
         occupied.add(slotKey(row, link.column));
       }
     }
-    const selected = current.talent_templates.find((template) => template.id === selectedTemplateId);
+    const selected = templates.find((template) => template.id === selectedTemplateId);
     const startIndex = selected ? templateGridPosition(current, selected).row * current.tree_columns + templateGridPosition(current, selected).column + 1 : 0;
     const totalSlots = current.tree_rows * current.tree_columns;
 
@@ -416,32 +470,33 @@ export default function TalentManagerApp() {
 
   function moveTalentTemplateTo(templateId: string, row: number, column: number) {
     if (!workspace) return;
-    const movingTemplate = workspace.talent_templates.find((template) => template.id === templateId);
+    const movingTemplate = selectedTalentTemplates.find((template) => template.id === templateId);
     if (!movingTemplate) return;
     const movingPosition = templateGridPosition(workspace, movingTemplate);
     if (movingPosition.row === row && movingPosition.column === column) return;
     const targetPosition = savedGridPosition(workspace, row, column);
 
     mutateWorkspace((current) => {
-      const moving = current.talent_templates.find((template) => template.id === templateId);
+      const spec = findCurrentSelectedSpec(current);
+      const templates = spec ? talentTemplatesForSpec(current, spec) : [];
+      const moving = templates.find((template) => template.id === templateId);
       if (!moving) return current;
-      const occupant = current.talent_templates.find((template) => {
+      const occupant = templates.find((template) => {
         if (template.id === templateId) return false;
         const position = templateGridPosition(current, template);
         return position.row === row && position.column === column;
       });
       const changedIds = new Set<string>([templateId]);
       if (occupant) changedIds.add(occupant.id);
-      const movedTemplates = current.talent_templates.map((template) => {
-        if (template.id === templateId) return { ...template, row: targetPosition.row, column: targetPosition.column };
-        if (occupant && template.id === occupant.id) return { ...template, row: moving.row, column: moving.column };
-        return template;
-      });
-
-      return {
-        ...current,
-        talent_templates: clearRequirementLinksForTemplateIds(movedTemplates, changedIds),
+      const patches: Record<string, Partial<TalentTemplate>> = requirementClearingPatches(templates, changedIds);
+      patches[templateId] = {
+        ...(patches[templateId] ?? {}),
+        row: targetPosition.row,
+        column: targetPosition.column,
       };
+      if (occupant) patches[occupant.id] = { ...(patches[occupant.id] ?? {}), row: moving.row, column: moving.column };
+
+      return applyTemplatePatchesToSelectedSpec(current, patches);
     });
 
     setSelectedTemplateId(templateId);
@@ -498,9 +553,10 @@ export default function TalentManagerApp() {
       }
       setDirty(false);
       setDataVersion(String(Date.now()));
+      const localTalentCount = Number(payload.savedSpecTalentTemplates ?? 0);
       setStatus({
         tone: "success",
-        message: `Saved ${payload.savedClasses ?? workspace.classes.length} classes and ${payload.savedTalentTemplates ?? workspace.talent_templates.length} talent templates to TalentTrees.json.`,
+        message: `Saved ${payload.savedClasses ?? workspace.classes.length} classes, ${payload.savedTalentTemplates ?? workspace.talent_templates.length} global talent templates, and ${localTalentCount} spec-local talent templates to TalentTrees.json.`,
       });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
@@ -748,7 +804,7 @@ export default function TalentManagerApp() {
                           <div className="mt-1 text-xs text-white/45">Rank {talent.max_rank} · Row {talent.display_row}, Col {talent.display_column}</div>
                         </div>
                       </div>
-                      <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent)}</div>
+                      <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass(talent)}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div>
                     </button>
                   );
                 })}
@@ -860,12 +916,14 @@ export default function TalentManagerApp() {
                   <input
                     className="input mt-1 font-mono"
                     value={selectedTemplate.id}
+                    disabled={selectedTemplate.source !== "spec"}
                     onChange={(event) => {
                       const id = sanitizeTalentId(event.target.value);
                       updateSelectedTemplate({ id });
                       setSelectedTemplateId(id);
                     }}
                   />
+                  {selectedTemplate.source !== "spec" ? <span className="mt-1 block text-xs text-white/40">Inherited template IDs stay shared; visual edits are saved as this spec's override.</span> : null}
                 </label>
                 <label className="block text-sm text-white/65">
                   Description Template
@@ -907,7 +965,7 @@ export default function TalentManagerApp() {
                   Requires Talent
                   <select className="select mt-1 w-full" value={selectedTemplate.requires_talent ?? ""} onChange={(event) => updateSelectedTemplate({ requires_talent: event.target.value })}>
                     <option value="">No talent prerequisite</option>
-                    {workspace.talent_templates
+                    {selectedTalentTemplates
                       .filter((template) => template.id !== selectedTemplate.id)
                       .map((template) => (
                         <option key={template.id} value={template.id}>
@@ -926,7 +984,7 @@ export default function TalentManagerApp() {
                     <input className="input mt-1" type="number" min="1" disabled={!!selectedTemplate.requires_talent_full} value={selectedTemplate.requires_rank ?? 1} onChange={(event) => updateSelectedTemplate({ requires_rank: Number(event.target.value) })} />
                   </label>
                 </div>
-                <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass(selectedTemplate)}`}>{templateRequirementText(workspace, selectedTemplate)}</div>
+                <div className={`rounded border px-3 py-2 text-sm ${requirementBadgeClass(selectedTemplate)}`}>{templateRequirementText(workspace, selectedTemplate, selectedTalentTemplates)}</div>
               </div>
             ) : null}
           </section>

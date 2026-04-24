@@ -1,4 +1,4 @@
-import type { ExpandedTalent, JsonRecord, TalentClass, TalentSpecialization, TalentTemplate, TalentValidationIssue, TalentWorkspace } from "./types";
+import type { ExpandedTalent, JsonRecord, TalentClass, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "./types";
 
 function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -38,6 +38,10 @@ function boolValue(value: unknown, fallback = false) {
   return fallback;
 }
 
+function hasOwn(record: JsonRecord, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 export function sanitizeTalentId(value: string) {
   return value
     .trim()
@@ -65,6 +69,36 @@ function normalizeTemplate(entry: unknown, index: number): TalentTemplate {
   };
 }
 
+function normalizeTemplateOverride(entry: unknown): TalentTemplateOverride {
+  const raw = asRecord(entry);
+  const out: TalentTemplateOverride = { ...raw };
+  delete out.source;
+  delete out.base_template_id;
+  if (hasOwn(raw, "id")) out.id = sanitizeTalentId(stringValue(raw.id, ""));
+  if (hasOwn(raw, "name")) out.name = stringValue(raw.name, "");
+  if (hasOwn(raw, "description")) out.description = stringValue(raw.description, "");
+  if (hasOwn(raw, "row")) out.row = Math.max(1, Math.round(numberValue(raw.row, 1)));
+  if (hasOwn(raw, "column")) out.column = Math.max(1, Math.round(numberValue(raw.column, 1)));
+  if (hasOwn(raw, "max_rank")) out.max_rank = Math.max(1, Math.round(numberValue(raw.max_rank, 1)));
+  if (hasOwn(raw, "requires_tree_points")) out.requires_tree_points = Math.max(0, Math.round(numberValue(raw.requires_tree_points, 0)));
+  if (hasOwn(raw, "requires_talent")) out.requires_talent = sanitizeTalentId(stringValue(raw.requires_talent, ""));
+  if (hasOwn(raw, "requires_talent_full")) out.requires_talent_full = boolValue(raw.requires_talent_full, false);
+  if (hasOwn(raw, "requires_rank")) out.requires_rank = Math.max(0, Math.round(numberValue(raw.requires_rank, 1)));
+  if (hasOwn(raw, "icon")) out.icon = stringValue(raw.icon, "");
+  return out;
+}
+
+function normalizeTemplateOverrideMap(value: unknown) {
+  const raw = asRecord(value);
+  const out: Record<string, TalentTemplateOverride> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    const id = sanitizeTalentId(key);
+    if (!id) continue;
+    out[id] = normalizeTemplateOverride(entry);
+  }
+  return out;
+}
+
 function normalizeSpec(entry: unknown, index: number): TalentSpecialization {
   const spec = asRecord(entry);
   return {
@@ -74,6 +108,8 @@ function normalizeSpec(entry: unknown, index: number): TalentSpecialization {
     role: stringValue(spec.role, "Specialization"),
     description: stringValue(spec.description, ""),
     icon: stringValue(spec.icon, ""),
+    talent_templates: asArray(spec.talent_templates).map(normalizeTemplate),
+    talent_overrides: normalizeTemplateOverrideMap(spec.talent_overrides),
   };
 }
 
@@ -123,12 +159,33 @@ export function formatTemplateText(template: TalentTemplate, talentClass: Talent
   return value.replace(/\{(class|spec|role)\}/g, (_match, key: string) => replacements[key] ?? "");
 }
 
+export function talentTemplatesForSpec(workspace: TalentWorkspace, spec: TalentSpecialization) {
+  const overrides = spec.talent_overrides ?? {};
+  const inheritedTemplates = workspace.talent_templates.map((template) => {
+    const override = overrides[template.id] ?? {};
+    return {
+      ...template,
+      ...override,
+      id: template.id,
+      source: "global" as const,
+      base_template_id: template.id,
+    };
+  });
+  const localTemplates = (spec.talent_templates ?? []).map((template) => ({
+    ...template,
+    source: "spec" as const,
+    base_template_id: template.id,
+  }));
+  return [...inheritedTemplates, ...localTemplates];
+}
+
 export function expandTalentTemplate(workspace: TalentWorkspace, talentClass: TalentClass, spec: TalentSpecialization, template: TalentTemplate): ExpandedTalent {
   const rowOffset = workspace.layout_index_base === 1 ? 1 : 0;
   const row = Math.max(0, Math.round(numberValue(template.row, 1)) - rowOffset);
   const column = Math.max(0, Math.round(numberValue(template.column, 1)) - rowOffset);
   const requiredTemplateId = sanitizeTalentId(stringValue(template.requires_talent, ""));
-  const requiredTemplate = workspace.talent_templates.find((entry) => entry.id === requiredTemplateId);
+  const specTemplates = talentTemplatesForSpec(workspace, spec);
+  const requiredTemplate = specTemplates.find((entry) => entry.id === requiredTemplateId);
   const requiresRank = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(0, Math.round(numberValue(template.requires_rank, 1)));
 
   return {
@@ -153,7 +210,7 @@ export function expandTalentTemplate(workspace: TalentWorkspace, talentClass: Ta
 }
 
 export function expandedTalentsForSpec(workspace: TalentWorkspace, talentClass: TalentClass, spec: TalentSpecialization) {
-  return workspace.talent_templates
+  return talentTemplatesForSpec(workspace, spec)
     .map((template) => expandTalentTemplate(workspace, talentClass, spec, template))
     .sort((left, right) => {
       if (left.row !== right.row) return left.row - right.row;
@@ -161,13 +218,13 @@ export function expandedTalentsForSpec(workspace: TalentWorkspace, talentClass: 
     });
 }
 
-export function templateRequirementText(workspace: TalentWorkspace, template: TalentTemplate) {
+export function templateRequirementText(workspace: TalentWorkspace, template: TalentTemplate, availableTemplates = workspace.talent_templates) {
   const parts: string[] = [];
   const requiredPoints = Math.max(0, Math.round(numberValue(template.requires_tree_points, 0)));
   if (requiredPoints > 0) parts.push(`${requiredPoints} tree points`);
   const requiredId = sanitizeTalentId(stringValue(template.requires_talent, ""));
   if (requiredId) {
-    const requiredTemplate = workspace.talent_templates.find((entry) => entry.id === requiredId);
+    const requiredTemplate = availableTemplates.find((entry) => entry.id === requiredId);
     const requiredName = requiredTemplate?.name || requiredId;
     const rank = template.requires_talent_full && requiredTemplate ? Math.max(1, Math.round(numberValue(requiredTemplate.max_rank, 1))) : Math.max(1, Math.round(numberValue(template.requires_rank, 1)));
     parts.push(`${rank} rank${rank === 1 ? "" : "s"} in ${requiredName}`);
@@ -213,6 +270,35 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
       if (specIds.has(spec.id)) issues.push({ level: "error", message: `Duplicate specialization ID "${spec.id}" in "${talentClass.name || talentClass.id}".` });
       specIds.add(spec.id);
       if (!spec.name.trim()) issues.push({ level: "error", message: `Specialization "${spec.id}" needs a name.` });
+
+      for (const overrideId of Object.keys(spec.talent_overrides ?? {})) {
+        if (!templateIds.has(overrideId)) {
+          issues.push({ level: "warning", message: `Specialization "${talentClass.id}/${spec.id}" has an override for missing global talent "${overrideId}".` });
+        }
+      }
+
+      const mergedTemplates = talentTemplatesForSpec(workspace, spec);
+      const mergedIds = new Set<string>();
+      for (const template of mergedTemplates) {
+        const label = `${talentClass.id}/${spec.id}/${template.id}`;
+        if (!template.id.trim()) issues.push({ level: "error", message: `Talent in "${talentClass.id}/${spec.id}" has no ID.` });
+        if (mergedIds.has(template.id)) issues.push({ level: "error", message: `Duplicate talent ID "${template.id}" in "${talentClass.id}/${spec.id}".` });
+        mergedIds.add(template.id);
+        if (!template.name.trim()) issues.push({ level: "error", message: `Talent "${label}" needs a name.` });
+        if (template.row < 1 || template.row > workspace.tree_rows) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured row range.` });
+        if (template.column < 1 || template.column > workspace.tree_columns) issues.push({ level: "warning", message: `Talent "${label}" is outside the configured column range.` });
+        if (template.max_rank < 1) issues.push({ level: "error", message: `Talent "${label}" max rank must be at least 1.` });
+      }
+
+      for (const template of mergedTemplates) {
+        const label = `${talentClass.id}/${spec.id}/${template.id}`;
+        if (template.requires_talent) {
+          if (template.requires_talent === template.id) issues.push({ level: "error", message: `Talent "${label}" cannot require itself.` });
+          if (!mergedIds.has(template.requires_talent)) {
+            issues.push({ level: "error", message: `Talent "${label}" requires missing talent "${template.requires_talent}" in the same spec.` });
+          }
+        }
+      }
     }
   }
 
@@ -220,27 +306,54 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
 }
 
 export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
-  const cleaned: TalentWorkspace = {
-    ...workspace,
-    talent_templates: workspace.talent_templates.map((template) => {
-      const next: TalentTemplate = { ...template };
-      if (!stringValue(next.icon, "").trim()) delete next.icon;
+  function cleanTalentTemplate(template: TalentTemplate, preserveEmptyRequirement = false) {
+    const next: TalentTemplateOverride = { ...template };
+    delete next.source;
+    delete next.base_template_id;
+    if (!stringValue(next.icon, "").trim()) delete next.icon;
+    if (hasOwn(next, "requires_talent")) {
       if (!stringValue(next.requires_talent, "").trim()) {
-        delete next.requires_talent;
+        if (preserveEmptyRequirement) {
+          next.requires_talent = "";
+        } else {
+          delete next.requires_talent;
+        }
         delete next.requires_talent_full;
         delete next.requires_rank;
       } else {
         if (next.requires_talent_full !== true) delete next.requires_talent_full;
         if (next.requires_talent_full === true || numberValue(next.requires_rank, 1) <= 1) delete next.requires_rank;
       }
-      return next;
-    }),
+    } else {
+      delete next.requires_talent_full;
+      delete next.requires_rank;
+    }
+    return next;
+  }
+
+  function cleanTalentOverrides(overrides: Record<string, TalentTemplateOverride> | undefined) {
+    const out: Record<string, TalentTemplateOverride> = {};
+    for (const [id, override] of Object.entries(overrides ?? {})) {
+      const cleaned = cleanTalentTemplate(override as TalentTemplate, true);
+      delete cleaned.id;
+      if (Object.keys(cleaned).length) out[id] = cleaned;
+    }
+    return out;
+  }
+
+  const cleaned: TalentWorkspace = {
+    ...workspace,
+    talent_templates: workspace.talent_templates.map((template) => cleanTalentTemplate(template) as TalentTemplate),
     classes: workspace.classes.map((talentClass) => {
       const nextClass: TalentClass = {
         ...talentClass,
         specializations: talentClass.specializations.map((spec) => {
           const nextSpec: TalentSpecialization = { ...spec };
           if (!stringValue(nextSpec.icon, "").trim()) delete nextSpec.icon;
+          nextSpec.talent_templates = (nextSpec.talent_templates ?? []).map((template) => cleanTalentTemplate(template) as TalentTemplate);
+          if (!nextSpec.talent_templates.length) delete nextSpec.talent_templates;
+          nextSpec.talent_overrides = cleanTalentOverrides(nextSpec.talent_overrides);
+          if (!Object.keys(nextSpec.talent_overrides).length) delete nextSpec.talent_overrides;
           return nextSpec;
         }),
       };

@@ -15,6 +15,17 @@ function talentTreesPath(gameRoot: string) {
   return path.join(gameRoot, TALENT_TREES_RELATIVE_PATH);
 }
 
+function countSpecLocalTalentTemplates(workspace: TalentWorkspace) {
+  return workspace.classes.reduce((classTotal, talentClass) => {
+    return (
+      classTotal +
+      talentClass.specializations.reduce((specTotal, spec) => {
+        return specTotal + (spec.talent_templates?.length ?? 0);
+      }, 0)
+    );
+  }, 0);
+}
+
 function unavailableResponse() {
   return NextResponse.json({ ok: false, error: "No active local game root is configured." }, { status: 404 });
 }
@@ -81,6 +92,7 @@ export async function POST(req: NextRequest) {
       savedPath: sourcePath,
       savedClasses: workspace.classes.length,
       savedTalentTemplates: workspace.talent_templates.length,
+      savedSpecTalentTemplates: countSpecLocalTalentTemplates(workspace),
       validation,
     });
   } catch (error) {
