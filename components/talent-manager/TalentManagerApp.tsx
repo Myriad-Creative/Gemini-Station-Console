@@ -34,6 +34,15 @@ type GridPosition = {
   column: number;
 };
 
+type RequirementLink = {
+  key: string;
+  requiredId: string;
+  dependentId: string;
+  requiredRow: number;
+  dependentRow: number;
+  column: number;
+};
+
 function uniqueId(base: string, existingIds: string[]) {
   const root = sanitizeTalentId(base) || "new_entry";
   if (!existingIds.includes(root)) return root;
@@ -78,6 +87,45 @@ function findNearestTemplateAbove(workspace: TalentWorkspace, template: TalentTe
   return workspace.talent_templates
     .filter((entry) => entry.id !== template.id && entry.column === template.column && entry.row < template.row)
     .sort((left, right) => right.row - left.row)[0] ?? null;
+}
+
+function buildRequirementLinks(workspace: TalentWorkspace): RequirementLink[] {
+  return workspace.talent_templates.flatMap((dependent) => {
+    if (!dependent.requires_talent) return [];
+    const required = workspace.talent_templates.find((template) => template.id === dependent.requires_talent);
+    if (!required) return [];
+
+    const requiredPosition = templateGridPosition(workspace, required);
+    const dependentPosition = templateGridPosition(workspace, dependent);
+    if (requiredPosition.column !== dependentPosition.column || requiredPosition.row >= dependentPosition.row) return [];
+    if (requiredPosition.column < 0 || requiredPosition.column >= workspace.tree_columns) return [];
+    if (requiredPosition.row < 0 || dependentPosition.row >= workspace.tree_rows) return [];
+
+    return [
+      {
+        key: `${required.id}->${dependent.id}`,
+        requiredId: required.id,
+        dependentId: dependent.id,
+        requiredRow: requiredPosition.row,
+        dependentRow: dependentPosition.row,
+        column: requiredPosition.column,
+      },
+    ];
+  });
+}
+
+function clearRequirementLinksForTemplateIds(templates: TalentTemplate[], movedIds: Set<string>) {
+  return templates.map((template) => {
+    if (!template.requires_talent && !movedIds.has(template.id)) return template;
+    if (!movedIds.has(template.id) && (!template.requires_talent || !movedIds.has(template.requires_talent))) return template;
+
+    return {
+      ...template,
+      requires_talent: "",
+      requires_talent_full: false,
+      requires_rank: 1,
+    };
+  });
 }
 
 export default function TalentManagerApp() {
@@ -155,6 +203,24 @@ export default function TalentManagerApp() {
     () => (workspace && selectedClass && selectedSpec ? expandedTalentsForSpec(workspace, selectedClass, selectedSpec) : []),
     [selectedClass, selectedSpec, workspace],
   );
+  const requirementLinks = useMemo(() => (workspace ? buildRequirementLinks(workspace) : []), [workspace]);
+  const linkedMiddleSlots = useMemo(() => {
+    const slots = new Map<string, RequirementLink>();
+    for (const link of requirementLinks) {
+      for (let row = link.requiredRow + 1; row < link.dependentRow; row += 1) {
+        slots.set(slotKey(row, link.column), link);
+      }
+    }
+    return slots;
+  }, [requirementLinks]);
+  const linkedTalentEndpoints = useMemo(() => {
+    const endpoints = new Map<string, { requiresAbove?: boolean; requiredByBelow?: boolean }>();
+    for (const link of requirementLinks) {
+      endpoints.set(link.requiredId, { ...endpoints.get(link.requiredId), requiredByBelow: true });
+      endpoints.set(link.dependentId, { ...endpoints.get(link.dependentId), requiresAbove: true });
+    }
+    return endpoints;
+  }, [requirementLinks]);
   const occupiedSlots = useMemo(() => {
     const slots = new Map<string, (typeof expandedTalents)[number]>();
     for (const talent of expandedTalents) {
@@ -217,6 +283,18 @@ export default function TalentManagerApp() {
       ...current,
       talent_templates: current.talent_templates.map((entry) => (entry.id === selectedTemplate.id ? { ...entry, ...patch } : entry)),
     }));
+  }
+
+  function updateSelectedTemplatePosition(patch: Pick<Partial<TalentTemplate>, "row" | "column">) {
+    if (!selectedTemplate) return;
+    mutateWorkspace((current) => {
+      const changedIds = new Set<string>([selectedTemplate.id]);
+      const movedTemplates = current.talent_templates.map((entry) => (entry.id === selectedTemplate.id ? { ...entry, ...patch } : entry));
+      return {
+        ...current,
+        talent_templates: clearRequirementLinksForTemplateIds(movedTemplates, changedIds),
+      };
+    });
   }
 
   function addClass() {
@@ -307,6 +385,11 @@ export default function TalentManagerApp() {
       const position = templateGridPosition(current, template);
       return slotKey(position.row, position.column);
     }));
+    for (const link of buildRequirementLinks(current)) {
+      for (let row = link.requiredRow + 1; row < link.dependentRow; row += 1) {
+        occupied.add(slotKey(row, link.column));
+      }
+    }
     const selected = current.talent_templates.find((template) => template.id === selectedTemplateId);
     const startIndex = selected ? templateGridPosition(current, selected).row * current.tree_columns + templateGridPosition(current, selected).column + 1 : 0;
     const totalSlots = current.tree_rows * current.tree_columns;
@@ -347,14 +430,17 @@ export default function TalentManagerApp() {
         const position = templateGridPosition(current, template);
         return position.row === row && position.column === column;
       });
+      const changedIds = new Set<string>([templateId]);
+      if (occupant) changedIds.add(occupant.id);
+      const movedTemplates = current.talent_templates.map((template) => {
+        if (template.id === templateId) return { ...template, row: targetPosition.row, column: targetPosition.column };
+        if (occupant && template.id === occupant.id) return { ...template, row: moving.row, column: moving.column };
+        return template;
+      });
 
       return {
         ...current,
-        talent_templates: current.talent_templates.map((template) => {
-          if (template.id === templateId) return { ...template, row: targetPosition.row, column: targetPosition.column };
-          if (occupant && template.id === occupant.id) return { ...template, row: moving.row, column: moving.column };
-          return template;
-        }),
+        talent_templates: clearRequirementLinksForTemplateIds(movedTemplates, changedIds),
       };
     });
 
@@ -555,8 +641,17 @@ export default function TalentManagerApp() {
                   const column = index % workspace.tree_columns;
                   const key = slotKey(row, column);
                   const talent = occupiedSlots.get(key);
+                  const requirementPath = linkedMiddleSlots.get(key);
                   const isDropTarget = dropTargetKey === key;
                   if (!talent) {
+                    if (requirementPath) {
+                      return (
+                        <div key={`link-${requirementPath.key}-${row}-${column}`} className="relative min-h-24" aria-hidden="true">
+                          <div className="absolute inset-y-[-12px] left-1/2 w-1 -translate-x-1/2 rounded-full bg-cyan-300/60 shadow-[0_0_16px_rgba(103,232,249,0.45)]" />
+                          <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-100/55 bg-cyan-300/65 shadow-[0_0_14px_rgba(103,232,249,0.55)]" />
+                        </div>
+                      );
+                    }
                     return (
                       <button
                         key={`empty-${row}-${column}`}
@@ -594,12 +689,13 @@ export default function TalentManagerApp() {
                   }
                   const isSelected = selectedTemplate?.id === talent.template_id;
                   const isDragging = draggedTemplateId === talent.template_id;
+                  const linkedEndpoint = linkedTalentEndpoints.get(talent.template_id);
                   return (
                     <button
                       key={talent.talent_id}
                       type="button"
                       draggable
-                      className={`min-h-24 rounded-lg border p-3 text-left transition ${
+                      className={`relative min-h-24 overflow-visible rounded-lg border p-3 text-left transition ${
                         isSelected
                           ? "border-cyan-300/55 bg-cyan-300/12"
                           : isDropTarget
@@ -643,6 +739,8 @@ export default function TalentManagerApp() {
                         setDropTargetKey("");
                       }}
                     >
+                      {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
+                      {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
                       <div className="flex items-start gap-3">
                         <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-12 w-12 rounded border border-white/10 bg-black/30 object-cover" />
                         <div className="min-w-0">
@@ -776,11 +874,11 @@ export default function TalentManagerApp() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="text-sm text-white/65">
                     Row
-                    <input className="input mt-1" type="number" min="1" value={selectedTemplate.row} onChange={(event) => updateSelectedTemplate({ row: Number(event.target.value) })} />
+                    <input className="input mt-1" type="number" min="1" value={selectedTemplate.row} onChange={(event) => updateSelectedTemplatePosition({ row: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
                     Column
-                    <input className="input mt-1" type="number" min="1" value={selectedTemplate.column} onChange={(event) => updateSelectedTemplate({ column: Number(event.target.value) })} />
+                    <input className="input mt-1" type="number" min="1" value={selectedTemplate.column} onChange={(event) => updateSelectedTemplatePosition({ column: Number(event.target.value) })} />
                   </label>
                   <label className="text-sm text-white/65">
                     Max Rank
@@ -801,7 +899,7 @@ export default function TalentManagerApp() {
                   <input
                     type="checkbox"
                     disabled={!requireAboveCandidate}
-                    checked={!!requireAboveCandidate && selectedTemplate.requires_talent === requireAboveCandidate.id && !!selectedTemplate.requires_talent_full}
+                    checked={!!requireAboveCandidate && selectedTemplate.requires_talent === requireAboveCandidate.id}
                     onChange={(event) => setRequireAbove(event.target.checked)}
                   />
                 </label>
