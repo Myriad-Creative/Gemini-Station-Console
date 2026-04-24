@@ -2770,6 +2770,7 @@ export default function SystemMapViewer() {
   const [routeIdManuallyEdited, setRouteIdManuallyEdited] = useState(false);
   const [environmentalIdManuallyEdited, setEnvironmentalIdManuallyEdited] = useState(false);
   const [editedZoneIds, setEditedZoneIds] = useState<string[]>([]);
+  const [deletedZoneIds, setDeletedZoneIds] = useState<string[]>([]);
   const [editedRouteIds, setEditedRouteIds] = useState<string[]>([]);
   const [editedGateIds, setEditedGateIds] = useState<string[]>([]);
   const [editedEnvironmentalIds, setEditedEnvironmentalIds] = useState<string[]>([]);
@@ -3013,6 +3014,79 @@ export default function SystemMapViewer() {
       };
     });
     setEditedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
+  }
+
+  function detachMineableAsteroidsFromDeletedZone(zone: SystemMapZone) {
+    const zoneIds = new Set([zone.id, zoneIdentity(zone)].filter(Boolean));
+    const affectedExistingIds = (payload?.environmentalElements ?? [])
+      .filter((element) => element.type === "mineable_asteroid" && element.zoneId && zoneIds.has(element.zoneId))
+      .map((element) => environmentalElementIdentity(element));
+    setDraftEnvironmentalElements((current) =>
+      current.map((element) => (element.type === "mineable_asteroid" && element.zoneId && zoneIds.has(element.zoneId) ? { ...element, zoneId: null, modified: element.draft ? element.modified : true } : element)),
+    );
+    setPayload((current) => {
+      if (!current) return current;
+      let changed = false;
+      const nextElements = current.environmentalElements.map((element) => {
+        if (element.type !== "mineable_asteroid" || !element.zoneId || !zoneIds.has(element.zoneId)) return element;
+        changed = true;
+        return {
+          ...element,
+          zoneId: null,
+          modified: true,
+          originalId: element.originalId ?? element.id,
+        };
+      });
+      if (!changed) return current;
+      return {
+        ...current,
+        environmentalElements: nextElements,
+      };
+    });
+    if (affectedExistingIds.length) {
+      setEditedEnvironmentalIds((ids) => {
+        const nextIds = [...ids];
+        for (const id of affectedExistingIds) {
+          if (!nextIds.includes(id)) nextIds.push(id);
+        }
+        return nextIds;
+      });
+    }
+  }
+
+  function removeZone(zoneId: string) {
+    const zone = mapZones.find((entry) => zoneIdentity(entry) === zoneId);
+    if (!zone) {
+      setStatus({ tone: "error", message: "Could not find the zone to delete." });
+      return;
+    }
+    if (!window.confirm(`Delete zone "${zone.name || zone.id}"? This also removes its stage placements and mob spawns from Zones.json when saved.`)) return;
+
+    detachMineableAsteroidsFromDeletedZone(zone);
+    if (zone.draft) {
+      setDraftZones((current) => current.filter((entry) => zoneIdentity(entry) !== zoneId));
+      setStatus({ tone: "neutral", message: `Removed draft zone "${zone.name || zone.id}".` });
+    } else {
+      const deletedPoiZoneIds = new Set([zoneId, zone.id, zone.originalId].filter(Boolean));
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              zones: current.zones.filter((entry) => zoneIdentity(entry) !== zoneId),
+              pois: current.pois.filter((poi) => !(poi.source === "zone" && poi.zoneId && deletedPoiZoneIds.has(poi.zoneId))),
+            }
+          : current,
+      );
+      setDeletedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
+      setEditedZoneIds((current) => current.filter((id) => id !== zoneId));
+      setStatus({ tone: "success", message: `Deleted "${zone.name || zone.id}" from the map. Use Save Changes To Build to write Zones.json.` });
+    }
+
+    setZoneForm((current) => (current?.originalId === zoneId ? null : current));
+    setStagePlacementForm((current) => (current?.zoneId === zoneId ? null : current));
+    setMobSpawnForm((current) => (current?.zoneId === zoneId ? null : current));
+    setDraggingZoneId((current) => (current === zoneId ? null : current));
+    setContextMenu(null);
   }
 
   function updateRouteInMap(routeId: string, updater: (route: SystemMapRoute) => SystemMapRoute) {
@@ -3338,6 +3412,8 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setStagePlacementForm(null);
+    setMobSpawnForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setZoneForm({
@@ -4483,6 +4559,8 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setStagePlacementForm(null);
+    setMobSpawnForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     const defaultName = "New Zone";
@@ -4510,6 +4588,13 @@ export default function SystemMapViewer() {
   }
 
   function openCreateMobSpawnForm(zone: SystemMapZone, world: SystemMapVec) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setStagePlacementForm(null);
     const local = {
       x: Math.round(world.x - zone.world.x),
       y: Math.round(world.y - zone.world.y),
@@ -4568,6 +4653,13 @@ export default function SystemMapViewer() {
   }
 
   function openMobSpawnEditor(zone: SystemMapZone, mob: SystemMapMobSpawn) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setStagePlacementForm(null);
     setMobSpawnForm({
       mode: "edit",
       zoneId: zoneIdentity(zone),
@@ -5035,6 +5127,17 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: "Removed the stage placement. Use Save Changes To Build to write it into Zones.json." });
   }
 
+  function removeMobSpawn(zoneId: string, mobKey: string) {
+    updateZoneInMap(zoneId, (zone) => ({
+      ...zone,
+      modified: zone.draft ? zone.modified : true,
+      mobs: zone.mobs.filter((mob) => mobIdentity(mob) !== mobKey),
+    }));
+    setMobSpawnForm(null);
+    setDraggingMobKey((current) => (current === mobKey ? null : current));
+    setStatus({ tone: "success", message: "Removed the mob spawn. Use Save Changes To Build to write it into Zones.json." });
+  }
+
   function saveMobSpawnForm() {
     if (!payload || !mobSpawnForm) return;
     const zone = mapZones.find((entry) => zoneIdentity(entry) === mobSpawnForm.zoneId);
@@ -5086,7 +5189,7 @@ export default function SystemMapViewer() {
   }
 
   async function handleSaveZoneChangesToBuild(suppressStatus = false) {
-    if ((!draftZones.length && !editedZoneIds.length) || savingZones) return;
+    if ((!draftZones.length && !editedZoneIds.length && !deletedZoneIds.length) || savingZones) return;
     setSavingZones(true);
     if (!suppressStatus) setStatus(null);
     try {
@@ -5099,10 +5202,13 @@ export default function SystemMapViewer() {
 
       const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
       const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.originalId ?? zone.id));
-      const updatedExistingZones = workspace.zones.map((draft) => {
-        const editedZone = editedZones.find((zone) => (zone.originalId ?? zone.id) === draft.id);
-        return editedZone ? applyZoneDetailsToManagerDraft(draft, editedZone) : draft;
-      });
+      const deletedZoneIdSet = new Set(deletedZoneIds);
+      const updatedExistingZones = workspace.zones
+        .filter((draft) => !deletedZoneIdSet.has(draft.id))
+        .map((draft) => {
+          const editedZone = editedZones.find((zone) => (zone.originalId ?? zone.id) === draft.id);
+          return editedZone ? applyZoneDetailsToManagerDraft(draft, editedZone) : draft;
+        });
       const existingIds = updatedExistingZones.map((zone) => zone.id);
       const managerDrafts: ZoneDraft[] = [];
       for (const zone of draftZones) {
@@ -5152,7 +5258,8 @@ export default function SystemMapViewer() {
       );
       setDraftZones([]);
       setEditedZoneIds([]);
-      const savedCount = savedZones.length + editedZones.length;
+      setDeletedZoneIds([]);
+      const savedCount = savedZones.length + editedZones.length + deletedZoneIds.length;
       if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into the live Zones.json file.` });
       return true;
     } catch (saveError) {
@@ -5620,7 +5727,7 @@ export default function SystemMapViewer() {
   const environmentalRegionDraftCount = draftEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const mineableAsteroidDraftCount = draftEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
-  const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0;
+  const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0 || deletedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const hasGateChanges = editedGateIds.length > 0;
   const hasEnvironmentalChanges = draftEnvironmentalElements.length > 0 || editedEnvironmentalIds.length > 0;
@@ -6380,6 +6487,21 @@ export default function SystemMapViewer() {
               }}
             >
               {contextMenuEditLabel(contextMenu.editTarget)}
+            </button>
+          ) : null}
+          {contextMenu.editTarget?.kind === "zone" || contextMenu.editTarget?.kind === "mob" ? (
+            <button
+              type="button"
+              className="mt-1 w-full rounded-lg px-3 py-2 text-left text-red-100 hover:bg-red-400/15"
+              onClick={() => {
+                const target = contextMenu.editTarget;
+                setContextMenu(null);
+                if (!target) return;
+                if (target.kind === "zone") removeZone(target.zoneId);
+                if (target.kind === "mob") removeMobSpawn(target.zoneId, target.mobKey);
+              }}
+            >
+              {contextMenu.editTarget.kind === "zone" ? "Delete Zone" : "Delete Mob Spawn"}
             </button>
           ) : null}
           {contextMenu.zoneId ? (
@@ -7460,20 +7582,22 @@ export default function SystemMapViewer() {
       {mobSpawnForm ? (
         <div
           data-system-map-ui="true"
-          className="absolute inset-0 z-[130] flex cursor-default items-center justify-center bg-black/45 p-5 backdrop-blur-sm"
+          className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+          onPointerEnter={clearHover}
           onPointerDown={(event) => event.stopPropagation()}
           onPointerMove={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
+          onPointerCancel={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
-          <div className="max-h-[calc(100vh-2rem)] w-[min(760px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
+          <div className="min-w-0">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">{mobSpawnForm.mode === "create" ? "Add Mob Spawn" : "Edit Mob Spawn"}</div>
                 <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, rank, radius, and respawn cooldown.</div>
               </div>
               <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setMobSpawnForm(null)}>
-                Cancel
+                Close
               </button>
             </div>
 
@@ -7567,9 +7691,14 @@ export default function SystemMapViewer() {
               );
             })()}
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              {mobSpawnForm.mode === "edit" && mobSpawnForm.mobKey ? (
+                <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeMobSpawn(mobSpawnForm.zoneId, mobSpawnForm.mobKey!)}>
+                  Delete Mob Spawn
+                </button>
+              ) : null}
               <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setMobSpawnForm(null)}>
-                Cancel
+                Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveMobSpawnForm}>
                 {mobSpawnForm.mode === "create" ? "Add Spawn To Zone" : "Apply Spawn Changes"}
@@ -7582,20 +7711,22 @@ export default function SystemMapViewer() {
       {zoneForm ? (
         <div
           data-system-map-ui="true"
-          className="absolute inset-0 z-[130] flex cursor-default items-center justify-center bg-black/45 p-5 backdrop-blur-sm"
+          className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+          onPointerEnter={clearHover}
           onPointerDown={(event) => event.stopPropagation()}
           onPointerMove={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
+          onPointerCancel={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
-          <div className="max-h-[calc(100vh-2rem)] w-[min(720px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-white/10 bg-[#07111d] p-5 shadow-2xl">
+          <div className="min-w-0">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">{zoneForm.mode === "create" ? "Add Zone Draft" : "Edit Zone Details"}</div>
                 <div className="mt-1 text-sm text-white/55">{zoneForm.mode === "create" ? "This adds a draft to the map. Use the green save button to write it into Zones.json." : "Edit top-level zone details. Stage and mob placements are managed directly on the map."}</div>
               </div>
               <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
-                Cancel
+                Close
               </button>
             </div>
 
@@ -7690,9 +7821,14 @@ export default function SystemMapViewer() {
               </label>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              {zoneForm.mode === "edit" && zoneForm.originalId ? (
+                <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeZone(zoneForm.originalId!)}>
+                  {mapZones.find((zone) => zoneIdentity(zone) === zoneForm.originalId)?.draft ? "Remove Draft Zone" : "Delete Zone"}
+                </button>
+              ) : null}
               <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
-                Cancel
+                Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveZoneForm}>
                 {zoneForm.mode === "create" ? "Add Draft To Map" : "Apply Zone Changes"}
