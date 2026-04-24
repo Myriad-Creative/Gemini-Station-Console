@@ -41,14 +41,6 @@ function iconSrc(icon: string | undefined, id: string, name: string, version: st
   return buildIconSrc(icon || "icon_lootbox.png", id || name || "talent", name || id || "Talent", version);
 }
 
-function matchesQuery(...values: Array<string | undefined>) {
-  return (query: string) => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return true;
-    return values.some((value) => String(value ?? "").toLowerCase().includes(normalized));
-  };
-}
-
 function requirementBadgeClass(template: TalentTemplate) {
   return template.requires_tree_points > 0 || template.requires_talent ? "border-amber-300/25 bg-amber-300/10 text-amber-100" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100";
 }
@@ -66,7 +58,6 @@ export default function TalentManagerApp() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
-  const [query, setQuery] = useState("");
   const [iconQuery, setIconQuery] = useState("");
   const [iconCategory, setIconCategory] = useState("");
   const [iconTarget, setIconTarget] = useState<IconTarget>("talent");
@@ -131,14 +122,6 @@ export default function TalentManagerApp() {
     () => (workspace && selectedClass && selectedSpec ? expandedTalentsForSpec(workspace, selectedClass, selectedSpec) : []),
     [selectedClass, selectedSpec, workspace],
   );
-
-  const filteredClasses = useMemo(() => {
-    if (!workspace) return [];
-    return workspace.classes.filter((talentClass) => {
-      const specText = talentClass.specializations.map((spec) => `${spec.id} ${spec.name} ${spec.role} ${spec.description}`).join(" ");
-      return matchesQuery(talentClass.id, talentClass.name, talentClass.description, specText)(query);
-    });
-  }, [query, workspace]);
 
   const iconCategories = useMemo(() => Array.from(new Set(icons.map((icon) => icon.category))).sort((left, right) => left.localeCompare(right)), [icons]);
   const filteredIcons = useMemo(() => {
@@ -219,6 +202,7 @@ export default function TalentManagerApp() {
     }));
     setSelectedClassId(id);
     setSelectedSpecId("new_spec");
+    setIconTarget("class");
   }
 
   function addSpec() {
@@ -245,6 +229,7 @@ export default function TalentManagerApp() {
       ),
     }));
     setSelectedSpecId(id);
+    setIconTarget("spec");
   }
 
   function addTalentTemplate() {
@@ -350,25 +335,6 @@ export default function TalentManagerApp() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="card">
-          <div className="label">Classes</div>
-          <div className="mt-2 text-3xl font-semibold text-white">{workspace.classes.length}</div>
-        </div>
-        <div className="card">
-          <div className="label">Specializations</div>
-          <div className="mt-2 text-3xl font-semibold text-white">{workspace.classes.reduce((sum, entry) => sum + entry.specializations.length, 0)}</div>
-        </div>
-        <div className="card">
-          <div className="label">Talent Templates</div>
-          <div className="mt-2 text-3xl font-semibold text-white">{workspace.talent_templates.length}</div>
-        </div>
-        <div className="card">
-          <div className="label">Expanded Talents</div>
-          <div className="mt-2 text-3xl font-semibold text-white">{workspace.classes.reduce((sum, entry) => sum + entry.specializations.length, 0) * workspace.talent_templates.length}</div>
-        </div>
-      </div>
-
       {validation.length || warnings.length ? (
         <div className="grid gap-3 lg:grid-cols-2">
           {validation.map((issue, index) => (
@@ -384,55 +350,61 @@ export default function TalentManagerApp() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[330px_minmax(0,1fr)_430px]">
-        <aside className="space-y-4">
-          <section className="card space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xl font-semibold text-white">Classes</div>
-                <div className="mt-1 text-sm text-white/55">Select a class and specialization.</div>
-              </div>
-              <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addClass}>
-                Add
-              </button>
-            </div>
-            <input className="input" placeholder="Search classes, specs, roles..." value={query} onChange={(event) => setQuery(event.target.value)} />
-            <div className="max-h-[36rem] space-y-2 overflow-y-auto pr-1">
-              {filteredClasses.map((talentClass) => (
-                <div key={talentClass.id} className={`rounded-xl border p-2 ${selectedClass?.id === talentClass.id ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/10 bg-white/[0.03]"}`}>
-                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/5" onClick={() => {
-                    setSelectedClassId(talentClass.id);
-                    setSelectedSpecId(talentClass.specializations[0]?.id ?? "");
-                    setIconTarget("class");
-                  }}>
-                    <img src={iconSrc(talentClass.icon, talentClass.id, talentClass.name, dataVersion)} alt="" className="h-10 w-10 rounded border border-white/10 bg-black/25 object-cover" />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-white">{talentClass.name}</div>
-                      <div className="font-mono text-xs text-white/45">{talentClass.id}</div>
-                    </div>
-                  </button>
-                  <div className="mt-1 grid gap-1">
-                    {talentClass.specializations.map((spec) => (
-                      <button
-                        key={spec.id}
-                        className={`rounded px-3 py-2 text-left text-xs ${selectedClass?.id === talentClass.id && selectedSpec?.id === spec.id ? "bg-white/12 text-white" : "text-white/60 hover:bg-white/5 hover:text-white"}`}
-                        onClick={() => {
-                          setSelectedClassId(talentClass.id);
-                          setSelectedSpecId(spec.id);
-                          setIconTarget("spec");
-                        }}
-                      >
-                        <span className="font-semibold">{spec.name}</span>
-                        <span className="text-white/45"> · {spec.role || "Specialization"}</span>
-                      </button>
-                    ))}
-                  </div>
+      <section className="card space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xl font-semibold text-white">Classes</div>
+            <div className="mt-1 text-sm text-white/55">Pick a class across the top, then choose a specialization for the tree.</div>
+          </div>
+          <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addClass}>
+            Add Class
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {workspace.classes.map((talentClass) => (
+            <button
+              key={talentClass.id}
+              className={`rounded-lg border px-3 py-3 text-left transition ${selectedClass?.id === talentClass.id ? "border-cyan-300/45 bg-cyan-300/10" : "border-white/10 bg-white/[0.03] hover:border-cyan-300/30 hover:bg-white/[0.05]"}`}
+              onClick={() => {
+                setSelectedClassId(talentClass.id);
+                setSelectedSpecId(talentClass.specializations[0]?.id ?? "");
+                setIconTarget("class");
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <img src={iconSrc(talentClass.icon, talentClass.id, talentClass.name, dataVersion)} alt="" className="h-11 w-11 rounded border border-white/10 bg-black/25 object-cover" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-white">{talentClass.name}</div>
+                  <div className="mt-1 text-xs text-white/45">{talentClass.specializations.length} specs</div>
                 </div>
-              ))}
-            </div>
-          </section>
-        </aside>
+              </div>
+            </button>
+          ))}
+        </div>
+        {selectedClass ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+            <div className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">Specs</div>
+            {selectedClass.specializations.map((spec) => (
+              <button
+                key={spec.id}
+                className={`rounded border px-3 py-2 text-sm ${selectedSpec?.id === spec.id ? "border-cyan-300/45 bg-cyan-300/12 text-cyan-100" : "border-white/10 bg-white/[0.03] text-white/65 hover:bg-white/[0.06] hover:text-white"}`}
+                onClick={() => {
+                  setSelectedSpecId(spec.id);
+                  setIconTarget("spec");
+                }}
+              >
+                {spec.name}
+                <span className="ml-2 text-white/45">{spec.role || "Specialization"}</span>
+              </button>
+            ))}
+            <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addSpec}>
+              Add Spec
+            </button>
+          </div>
+        ) : null}
+      </section>
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_430px]">
         <main className="space-y-4">
           <section className="card space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -440,8 +412,8 @@ export default function TalentManagerApp() {
                 <div className="text-xl font-semibold text-white">{selectedClass?.name || "No Class"} / {selectedSpec?.name || "No Spec"}</div>
                 <div className="mt-1 text-sm text-white/55">{selectedSpec?.description || selectedClass?.description || "Select a class and specialization to preview generated talents."}</div>
               </div>
-              <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" disabled={!selectedClass} onClick={addSpec}>
-                Add Spec
+              <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addTalentTemplate}>
+                Add Talent
               </button>
             </div>
 
@@ -449,7 +421,7 @@ export default function TalentManagerApp() {
               <div
                 className="grid min-w-[520px] gap-3"
                 style={{
-                  gridTemplateColumns: `repeat(${workspace.tree_columns}, minmax(96px, 1fr))`,
+                  gridTemplateColumns: `repeat(${workspace.tree_columns}, minmax(128px, 1fr))`,
                   gridTemplateRows: `repeat(${workspace.tree_rows}, minmax(104px, auto))`,
                 }}
               >
@@ -485,40 +457,10 @@ export default function TalentManagerApp() {
             </div>
           </section>
 
-          <section className="card space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xl font-semibold text-white">Talent Templates</div>
-                <div className="mt-1 text-sm text-white/55">Templates render once for each specialization.</div>
-              </div>
-              <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={addTalentTemplate}>
-                Add Talent
-              </button>
-            </div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {workspace.talent_templates.map((template) => (
-                <button
-                  key={template.id}
-                  className={`rounded-lg border px-3 py-3 text-left ${selectedTemplate?.id === template.id ? "border-cyan-300/45 bg-cyan-300/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"}`}
-                  onClick={() => {
-                    setSelectedTemplateId(template.id);
-                    setIconTarget("talent");
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <img src={iconSrc(template.icon, template.id, template.name, dataVersion)} alt="" className="h-9 w-9 rounded border border-white/10 bg-black/25 object-cover" />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-white">{template.name}</div>
-                      <div className="font-mono text-xs text-white/45">{template.id}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
         </main>
 
         <aside className="space-y-4">
+          {iconTarget === "class" ? (
           <section className="card space-y-4">
             <div className="text-xl font-semibold text-white">Class Visuals</div>
             {selectedClass ? (
@@ -553,7 +495,9 @@ export default function TalentManagerApp() {
               </div>
             ) : null}
           </section>
+          ) : null}
 
+          {iconTarget === "spec" ? (
           <section className="card space-y-4">
             <div className="text-xl font-semibold text-white">Specialization Visuals</div>
             {selectedSpec ? (
@@ -594,7 +538,9 @@ export default function TalentManagerApp() {
               </div>
             ) : null}
           </section>
+          ) : null}
 
+          {iconTarget === "talent" ? (
           <section className="card space-y-4">
             <div className="text-xl font-semibold text-white">Talent Details</div>
             {selectedTemplate ? (
@@ -671,6 +617,7 @@ export default function TalentManagerApp() {
               </div>
             ) : null}
           </section>
+          ) : null}
 
           <section className="card space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
