@@ -138,6 +138,12 @@ function stringValue(value: unknown, fallback = "") {
   return fallback;
 }
 
+function stringArrayValue(value: unknown) {
+  return asArray(value)
+    .map((entry) => stringValue(entry).trim())
+    .filter(Boolean);
+}
+
 function numberValue(value: unknown, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -436,7 +442,10 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
           type: "mineable_asteroid" as const,
           local,
           world: worldFromSectorLocal(sector, local),
+          count: Math.max(1, Math.round(numberValue(data.count ?? data.spawn_count, 1))),
+          spawnRadius: Math.max(0, numberValue(data.spawn_radius ?? data.field_radius, 0)),
           texture: stringValue(data.texture, DEFAULT_MINEABLE_ASTEROID_TEXTURE),
+          textures: stringArrayValue(data.textures),
           radius: Math.max(1, numberValue(data.radius, 160)),
           visualScale: Math.max(0.01, numberValue(data.visual_scale, 1)),
           durability: Math.max(1, numberValue(data.durability, 500)),

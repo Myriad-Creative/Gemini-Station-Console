@@ -113,7 +113,10 @@ type MineableAsteroidForm = {
   sectorY: string;
   localX: string;
   localY: string;
+  count: string;
+  spawnRadius: string;
   texture: string;
+  textures: string;
   radius: string;
   visualScale: string;
   durability: string;
@@ -361,6 +364,17 @@ function numberInputValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function stringListInputValue(values: string[]) {
+  return values.filter(Boolean).join("\n");
+}
+
+function parseStringListInput(value: string) {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function normalizeBoundsShape(value: string): ZoneDraftForm["boundsShape"] {
   const normalized = value.trim().toLowerCase();
   return normalized === "rect" || normalized === "rectangle" ? "rectangle" : "ellipse";
@@ -569,6 +583,7 @@ function environmentalElementMatches(element: SystemMapEnvironmentalElement, que
           element.name,
           element.type,
           element.texture,
+          ...element.textures,
           element.itemLootTable,
           element.modLootTable,
           element.miningLootIcon,
@@ -648,7 +663,7 @@ function computeWorldBounds(
         bounds = expandBounds(bounds, point);
       }
     } else if (element.type === "mineable_asteroid") {
-      const radius = Math.max(1, element.radius * element.visualScale);
+      const radius = Math.max(1, element.radius * element.visualScale, element.spawnRadius);
       bounds = mergeRect(bounds, {
         x: element.world.x - radius,
         y: element.world.y - radius,
@@ -1361,7 +1376,10 @@ function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: Syst
       y: Math.round(local.y),
     },
     world: roundedWorld,
+    count: 1,
+    spawnRadius: 0,
     texture: DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    textures: [],
     radius: 160,
     visualScale: 1,
     durability: 500,
@@ -1445,7 +1463,10 @@ function mineableAsteroidToForm(asteroid: SystemMapMineableAsteroid, mode: Minea
     sectorY: numberInputValue(asteroid.sector.y),
     localX: numberInputValue(asteroid.local.x),
     localY: numberInputValue(asteroid.local.y),
+    count: numberInputValue(asteroid.count),
+    spawnRadius: numberInputValue(asteroid.spawnRadius),
     texture: asteroid.texture || DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    textures: stringListInputValue(asteroid.textures),
     radius: numberInputValue(asteroid.radius),
     visualScale: numberInputValue(asteroid.visualScale),
     durability: numberInputValue(asteroid.durability),
@@ -1683,6 +1704,8 @@ function withMineableAsteroidForm(
   const sectorY = Number(form.sectorY);
   const localX = Number(form.localX);
   const localY = Number(form.localY);
+  const count = Number(form.count);
+  const spawnRadius = Number(form.spawnRadius);
   const radius = Number(form.radius);
   const visualScale = Number(form.visualScale);
   const durability = Number(form.durability);
@@ -1699,6 +1722,12 @@ function withMineableAsteroidForm(
   if (!id) return { error: "Mineable asteroid ID is required.", asteroid: null, form: null };
   if (![sectorX, sectorY, localX, localY].every(Number.isFinite)) {
     return { error: "Sector and local position must be valid numbers.", asteroid: null, form: null };
+  }
+  if (!Number.isFinite(count) || count < 1) {
+    return { error: "Asteroid count must be a valid number greater than zero.", asteroid: null, form: null };
+  }
+  if (!Number.isFinite(spawnRadius) || spawnRadius < 0) {
+    return { error: "Spawn radius must be a valid non-negative number.", asteroid: null, form: null };
   }
   if (![radius, visualScale, durability].every((value) => Number.isFinite(value) && value > 0)) {
     return { error: "Radius, visual scale, and durability must be valid numbers greater than zero.", asteroid: null, form: null };
@@ -1740,7 +1769,10 @@ function withMineableAsteroidForm(
     notes: form.notes.trim(),
     local,
     world,
+    count: Math.round(count),
+    spawnRadius,
     texture: form.texture.trim() || DEFAULT_MINEABLE_ASTEROID_TEXTURE,
+    textures: parseStringListInput(form.textures),
     radius,
     visualScale,
     durability,
@@ -1922,7 +1954,10 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
       notes: element.notes,
       data: {
         position: [Math.round(element.local.x), Math.round(element.local.y)],
+        count: Math.max(1, Math.round(element.count)),
+        spawn_radius: Math.max(0, element.spawnRadius),
         texture: element.texture,
+        textures: element.textures,
         radius: element.radius,
         visual_scale: element.visualScale,
         durability: element.durability,
@@ -2933,7 +2968,7 @@ export default function SystemMapViewer() {
   function findMineableAsteroidAtWorld(world: SystemMapVec) {
     for (let index = filteredMineableAsteroids.length - 1; index >= 0; index -= 1) {
       const asteroid = filteredMineableAsteroids[index];
-      if (distance(world, asteroid.world) <= Math.max(asteroid.radius * asteroid.visualScale, 10 / camera.zoom)) {
+      if (distance(world, asteroid.world) <= Math.max(asteroid.radius * asteroid.visualScale, asteroid.spawnRadius, 10 / camera.zoom)) {
         return asteroid;
       }
     }
@@ -3713,7 +3748,7 @@ export default function SystemMapViewer() {
             }
           }
         } else if (element.type === "mineable_asteroid") {
-          if (distance(world, element.world) <= Math.max(element.radius * element.visualScale, 10 / camera.zoom)) {
+          if (distance(world, element.world) <= Math.max(element.radius * element.visualScale, element.spawnRadius, 10 / camera.zoom)) {
             return {
               x: screen.x,
               y: screen.y,
@@ -3722,7 +3757,10 @@ export default function SystemMapViewer() {
               icon: safeIconSrc(element.texture, element.id, element.name),
               lines: [
                 `Element ID: ${element.id}`,
+                `Count: ${formatNumber(element.count)}`,
+                `Spawn radius: ${formatNumber(element.spawnRadius)}`,
                 `Texture: ${element.texture}`,
+                `Texture variants: ${element.textures.length ? element.textures.length : "none"}`,
                 `Radius: ${formatNumber(element.radius)}`,
                 `Durability: ${formatNumber(element.durability)}`,
                 `Respawn: ${formatNumber(element.respawnSeconds)}s`,
@@ -5075,6 +5113,9 @@ export default function SystemMapViewer() {
     for (const element of mapEnvironmentalElements) {
       if (element.type === "mineable_asteroid") {
         if (element.texture) paths.add(element.texture);
+        for (const texture of element.textures) {
+          if (texture) paths.add(texture);
+        }
         if (element.miningLootIcon) paths.add(element.miningLootIcon);
       } else {
         for (const materialPath of element.materialPaths ?? []) {
@@ -5089,6 +5130,7 @@ export default function SystemMapViewer() {
   const environmentalBarrierCount = mapEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionCount = mapEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const mineableAsteroidCount = mapEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
+  const mineableAsteroidInstanceCount = mapEnvironmentalElements.reduce((sum, element) => (element.type === "mineable_asteroid" ? sum + element.count : sum), 0);
   const environmentalBarrierDraftCount = draftEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionDraftCount = draftEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const mineableAsteroidDraftCount = draftEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
@@ -5324,10 +5366,22 @@ export default function SystemMapViewer() {
                   const key = `mineable-asteroid:${environmentalElementIdentity(asteroid)}`;
                   const isChanged = asteroid.draft || asteroid.modified;
                   const renderRadius = Math.max(asteroid.radius * asteroid.visualScale, 8 / camera.zoom);
+                  const fieldRadius = Math.max(asteroid.spawnRadius, renderRadius);
                   const spriteSize = Math.max(asteroid.radius * 2 * asteroid.visualScale, 18 / camera.zoom);
                   const markerColor = asteroid.draft ? "#34d399" : asteroid.modified ? "#facc15" : "#f59e0b";
                   return (
                     <g key={key} opacity={asteroid.active ? 1 : 0.45}>
+                      {asteroid.count > 1 || asteroid.spawnRadius > 0 ? (
+                        <circle
+                          cx={asteroid.world.x}
+                          cy={asteroid.world.y}
+                          r={fieldRadius}
+                          fill="none"
+                          stroke={asteroid.draft ? "rgba(52,211,153,0.28)" : asteroid.modified ? "rgba(250,204,21,0.28)" : "rgba(245,158,11,0.25)"}
+                          strokeDasharray={`${14 / camera.zoom} ${12 / camera.zoom}`}
+                          strokeWidth={1 / camera.zoom}
+                        />
+                      ) : null}
                       <circle
                         cx={asteroid.world.x}
                         cy={asteroid.world.y}
@@ -5353,6 +5407,20 @@ export default function SystemMapViewer() {
                         stroke="rgba(255,255,255,0.76)"
                         strokeWidth={(draggingEnvironmentalId === environmentalElementIdentity(asteroid) ? 2 : 1) / camera.zoom}
                       />
+                      {asteroid.count > 1 ? (
+                        <text
+                          x={asteroid.world.x + 10 / camera.zoom}
+                          y={asteroid.world.y - 10 / camera.zoom}
+                          fill="rgba(255,255,255,0.88)"
+                          fontSize={12 / camera.zoom}
+                          fontWeight={700}
+                          stroke="rgba(7,17,29,0.95)"
+                          strokeWidth={3 / camera.zoom}
+                          paintOrder="stroke"
+                        >
+                          x{asteroid.count}
+                        </text>
+                      ) : null}
                     </g>
                   );
                 })
@@ -5699,7 +5767,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroids${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -5758,7 +5826,7 @@ export default function SystemMapViewer() {
           </div>
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">
             Filtered
-            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers · ${filteredEnvironmentalRegions.length} regions · ${filteredMineableAsteroids.length} mineable` : "0 zones"}</div>
+            <div className="text-white">{payload ? `${filteredZones.length} zones · ${filteredRoutes.length} routes · ${filteredGates.length} gates · ${filteredEnvironmentalBarriers.length} barriers · ${filteredEnvironmentalRegions.length} regions · ${filteredMineableAsteroids.length} mineable fields` : "0 zones"}</div>
           </div>
         </div>
 
@@ -5788,7 +5856,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, region, or mineable asteroid to edit details. Hold Command and drag a zone, gate, barrier, region, or mineable asteroid to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroids.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Click a zone, route, gate, authored barrier, region, or mineable asteroid field to edit details. Hold Command and drag a zone, gate, barrier, region, or mineable asteroid field to move it. Drag barrier points or polygon vertices to reshape them. Right-click the map to add zones, mob spawns, trade routes, hazard barriers, polygon regions, ellipse regions, or mineable asteroid fields.</div>
       </div>
 
       {contextMenu ? (
@@ -5837,7 +5905,7 @@ export default function SystemMapViewer() {
             Add Ellipse Region Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateMineableAsteroidForm(contextMenu.world)}>
-            Add Mineable Asteroid Here
+            Add Mineable Asteroid Field Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -6547,7 +6615,7 @@ export default function SystemMapViewer() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-xl font-semibold text-white">{environmentalAsteroidForm.mode === "create" ? "New Mineable Asteroid" : "Edit Mineable Asteroid"}</div>
-                    <div className="mt-1 text-sm text-white/55">Configure the MineableAsteroid2D scene data: position, sprite, mining durability, respawn, and loot tables.</div>
+                    <div className="mt-1 text-sm text-white/55">Configure the MineableAsteroid2D scene data: position, field count, sprite variants, mining durability, respawn, and loot tables.</div>
                   </div>
                   <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setEnvironmentalAsteroidForm(null)}>
                     Close
@@ -6591,6 +6659,14 @@ export default function SystemMapViewer() {
                     Local Y
                     <input className="input mt-1" type="number" value={environmentalAsteroidForm.localY} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, localY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
                   </label>
+                  <label className="text-sm text-white/65">
+                    Count
+                    <input className="input mt-1" type="number" min="1" step="1" value={environmentalAsteroidForm.count} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, count: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Spawn Radius
+                    <input className="input mt-1" type="number" min="0" value={environmentalAsteroidForm.spawnRadius} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, spawnRadius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
                   <label className="text-sm text-white/65 sm:col-span-2">
                     Texture
                     <select className="input mt-1" value={environmentalAsteroidForm.texture} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, texture: event.target.value } : current))}>
@@ -6600,6 +6676,10 @@ export default function SystemMapViewer() {
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Texture Variants
+                    <textarea className="input mt-1 min-h-20 font-mono" value={environmentalAsteroidForm.textures} placeholder="Optional, one texture path per line" onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, textures: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
                   </label>
                   <label className="text-sm text-white/65">
                     Radius
@@ -6695,7 +6775,9 @@ export default function SystemMapViewer() {
                   <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
                     <div className="font-semibold text-white/80">Asteroid Summary</div>
                     <div className="mt-2">World: {formatVec(activeAsteroid.world)}</div>
+                    <div>Field: {activeAsteroid.count} asteroid{activeAsteroid.count === 1 ? "" : "s"} inside {formatNumber(activeAsteroid.spawnRadius)} units</div>
                     <div>Texture: {activeAsteroid.texture}</div>
+                    <div>Variants: {activeAsteroid.textures.length ? activeAsteroid.textures.length : "none"}</div>
                     <div>Item loot: {activeAsteroid.itemLootTable || "none"} ({activeAsteroid.itemRolls} rolls at {activeAsteroid.itemDropChance})</div>
                     <div>Mod loot: {activeAsteroid.modLootTable || "none"} ({activeAsteroid.modRolls} rolls at {activeAsteroid.modDropChance})</div>
                     <div>Sector-local position is what gets written into EnvironmentalElements.json.</div>

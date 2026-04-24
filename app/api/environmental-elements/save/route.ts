@@ -107,6 +107,22 @@ function validateEnvironmentalElements(value: unknown) {
       if (!isFiniteNumber(data.durability) || Number(data.durability) <= 0) {
         return `Mineable asteroid "${id}" must have valid positive durability.`;
       }
+      if (data.count !== undefined && (!isFiniteNumber(data.count) || Number(data.count) <= 0)) {
+        return `Mineable asteroid "${id}" count must be a valid positive number.`;
+      }
+      if (data.spawn_count !== undefined && (!isFiniteNumber(data.spawn_count) || Number(data.spawn_count) <= 0)) {
+        return `Mineable asteroid "${id}" spawn_count must be a valid positive number.`;
+      }
+      if (data.spawn_radius !== undefined && (!isFiniteNumber(data.spawn_radius) || Number(data.spawn_radius) < 0)) {
+        return `Mineable asteroid "${id}" spawn_radius must be a valid non-negative number.`;
+      }
+      if (data.field_radius !== undefined && (!isFiniteNumber(data.field_radius) || Number(data.field_radius) < 0)) {
+        return `Mineable asteroid "${id}" field_radius must be a valid non-negative number.`;
+      }
+      if (data.textures !== undefined) {
+        if (!Array.isArray(data.textures)) return `Mineable asteroid "${id}" textures must be an array.`;
+        if (data.textures.some((texture) => typeof texture !== "string")) return `Mineable asteroid "${id}" textures must only contain string paths.`;
+      }
       const optionalNumberError =
         validateOptionalFiniteNumber(data.visual_scale, 0, `Mineable asteroid "${id}" visual_scale`) ||
         validateOptionalFiniteNumber(data.respawn_seconds, 0, `Mineable asteroid "${id}" respawn_seconds`) ||

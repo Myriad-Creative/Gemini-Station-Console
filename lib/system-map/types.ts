@@ -146,7 +146,10 @@ export type SystemMapMineableAsteroid = SystemMapEnvironmentalElementCommon & {
   type: "mineable_asteroid";
   local: SystemMapVec;
   world: SystemMapVec;
+  count: number;
+  spawnRadius: number;
   texture: string;
+  textures: string[];
   radius: number;
   visualScale: number;
   durability: number;
