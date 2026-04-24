@@ -105,6 +105,19 @@ function formatPointCount(value: number) {
   return `${value} pt${value === 1 ? "" : "s"}`;
 }
 
+function talentMaxPoints(template: TalentTemplate) {
+  return Math.max(1, Math.round(Number(template.max_rank) || 1));
+}
+
+function rankDescriptionValue(template: TalentTemplate, rankIndex: number) {
+  const value = template.rank_descriptions?.[rankIndex];
+  return typeof value === "string" ? value : "";
+}
+
+function rankDescriptionPreview(template: TalentTemplate, rankIndex: number) {
+  return rankDescriptionValue(template, rankIndex).trim() || template.description.trim() || "No description set.";
+}
+
 function templateGridPosition(workspace: TalentWorkspace, template: TalentTemplate): GridPosition {
   const offset = workspace.layout_index_base === 1 ? 1 : 0;
   return {
@@ -182,6 +195,7 @@ export default function TalentManagerApp() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedSpecId, setSelectedSpecId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [rankPreviewPoints, setRankPreviewPoints] = useState(0);
   const [dataVersion, setDataVersion] = useState("");
   const [draggedTemplateId, setDraggedTemplateId] = useState("");
   const [dropTargetKey, setDropTargetKey] = useState("");
@@ -233,6 +247,10 @@ export default function TalentManagerApp() {
     };
   }, []);
 
+  useEffect(() => {
+    setRankPreviewPoints(0);
+  }, [selectedTemplateId]);
+
   const validation = useMemo(() => (workspace ? validateTalentWorkspace(workspace) : []), [workspace]);
   const validationErrors = validation.filter((issue) => issue.level === "error");
 
@@ -243,6 +261,15 @@ export default function TalentManagerApp() {
   );
   const selectedTalentTemplates = useMemo(() => (workspace && selectedSpec ? talentTemplatesForSpec(workspace, selectedSpec) : []), [selectedSpec, workspace]);
   const selectedTemplate = useMemo(() => selectedTalentTemplates.find((entry) => entry.id === selectedTemplateId) ?? selectedTalentTemplates[0] ?? null, [selectedTalentTemplates, selectedTemplateId]);
+  const selectedTemplateMaxPoints = selectedTemplate ? talentMaxPoints(selectedTemplate) : 1;
+  const rankPreviewLearnedPoints = Math.min(Math.max(0, rankPreviewPoints), selectedTemplateMaxPoints);
+  const currentRankPreview = selectedTemplate && rankPreviewLearnedPoints > 0 ? rankDescriptionPreview(selectedTemplate, rankPreviewLearnedPoints - 1) : "";
+  const nextRankPreview = selectedTemplate && rankPreviewLearnedPoints < selectedTemplateMaxPoints ? rankDescriptionPreview(selectedTemplate, rankPreviewLearnedPoints) : "";
+
+  useEffect(() => {
+    setRankPreviewPoints((value) => Math.min(value, selectedTemplateMaxPoints));
+  }, [selectedTemplateMaxPoints]);
+
   const expandedTalents = useMemo(
     () => (workspace && selectedClass && selectedSpec ? expandedTalentsForSpec(workspace, selectedClass, selectedSpec) : []),
     [selectedClass, selectedSpec, workspace],
@@ -385,6 +412,13 @@ export default function TalentManagerApp() {
     mutateWorkspace((current) => applyTemplatePatchesToSelectedSpec(current, { [selectedTemplate.id]: patch }));
   }
 
+  function updateSelectedRankDescription(rankIndex: number, description: string) {
+    if (!selectedTemplate) return;
+    const rankDescriptions = Array.from({ length: selectedTemplateMaxPoints }, (_entry, index) => rankDescriptionValue(selectedTemplate, index));
+    rankDescriptions[rankIndex] = description;
+    updateSelectedTemplate({ rank_descriptions: rankDescriptions });
+  }
+
   function updateSelectedTemplatePosition(patch: Pick<Partial<TalentTemplate>, "row" | "column">) {
     if (!selectedTemplate) return;
     mutateWorkspace((current) => {
@@ -525,6 +559,7 @@ export default function TalentManagerApp() {
             id,
             name: "New {spec} Talent",
             description: "",
+            rank_descriptions: [],
             row: position.row,
             column: position.column,
             max_rank: 1,
@@ -1086,6 +1121,46 @@ export default function TalentManagerApp() {
                   Description Template
                   <textarea className="input mt-1 min-h-28" value={selectedTemplate.description} onChange={(event) => updateSelectedTemplate({ description: event.target.value })} />
                 </label>
+                {selectedTemplateMaxPoints > 1 ? (
+                  <div className="space-y-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-white">Point Descriptions</div>
+                      <label className="flex items-center gap-2 text-xs text-white/55">
+                        Preview
+                        <select className="select h-9 w-32 text-xs" value={rankPreviewLearnedPoints} onChange={(event) => setRankPreviewPoints(Number(event.target.value))}>
+                          {Array.from({ length: selectedTemplateMaxPoints + 1 }, (_entry, index) => (
+                            <option key={index} value={index}>
+                              {index} learned
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="space-y-2">
+                      {Array.from({ length: selectedTemplateMaxPoints }, (_entry, index) => (
+                        <label key={index} className="block text-xs font-semibold text-white/60">
+                          Point {index + 1}
+                          <textarea
+                            className="input mt-1 min-h-20 text-sm font-normal"
+                            value={rankDescriptionValue(selectedTemplate, index)}
+                            placeholder={selectedTemplate.description || "Description for this point"}
+                            onChange={(event) => updateSelectedRankDescription(index, event.target.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded border border-white/10 bg-white/[0.03] p-3">
+                        <div className="text-xs font-semibold uppercase text-white/40">Current</div>
+                        <div className="mt-1 text-sm text-white/75">{currentRankPreview || "No points learned."}</div>
+                      </div>
+                      <div className="rounded border border-cyan-300/20 bg-cyan-300/10 p-3">
+                        <div className="text-xs font-semibold uppercase text-cyan-100/60">Next</div>
+                        <div className="mt-1 text-sm text-cyan-50">{nextRankPreview || "Max points learned."}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="text-sm text-white/65">
                     Row

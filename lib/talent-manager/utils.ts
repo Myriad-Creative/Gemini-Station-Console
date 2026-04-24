@@ -27,6 +27,10 @@ function numberValue(value: unknown, fallback = 0) {
   return fallback;
 }
 
+function stringArrayValue(value: unknown) {
+  return asArray(value).map((entry) => stringValue(entry, ""));
+}
+
 function boolValue(value: unknown, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
@@ -58,6 +62,7 @@ function normalizeTemplate(entry: unknown, index: number): TalentTemplate {
     id: sanitizeTalentId(stringValue(template.id, `talent_${index + 1}`)) || `talent_${index + 1}`,
     name: stringValue(template.name, `Talent ${index + 1}`),
     description: stringValue(template.description, ""),
+    rank_descriptions: stringArrayValue(template.rank_descriptions),
     row: Math.max(1, Math.round(numberValue(template.row, index + 1))),
     column: Math.max(1, Math.round(numberValue(template.column, 1))),
     max_rank: Math.max(1, Math.round(numberValue(template.max_rank, 1))),
@@ -77,6 +82,7 @@ function normalizeTemplateOverride(entry: unknown): TalentTemplateOverride {
   if (hasOwn(raw, "id")) out.id = sanitizeTalentId(stringValue(raw.id, ""));
   if (hasOwn(raw, "name")) out.name = stringValue(raw.name, "");
   if (hasOwn(raw, "description")) out.description = stringValue(raw.description, "");
+  if (hasOwn(raw, "rank_descriptions")) out.rank_descriptions = stringArrayValue(raw.rank_descriptions);
   if (hasOwn(raw, "row")) out.row = Math.max(1, Math.round(numberValue(raw.row, 1)));
   if (hasOwn(raw, "column")) out.column = Math.max(1, Math.round(numberValue(raw.column, 1)));
   if (hasOwn(raw, "max_rank")) out.max_rank = Math.max(1, Math.round(numberValue(raw.max_rank, 1)));
@@ -255,6 +261,7 @@ export function expandTalentTemplate(workspace: TalentWorkspace, talentClass: Ta
     role: spec.role,
     name: formatTemplateText(template, talentClass, spec, template.name),
     description: formatTemplateText(template, talentClass, spec, template.description),
+    rank_descriptions: stringArrayValue(template.rank_descriptions).map((description) => formatTemplateText(template, talentClass, spec, description)),
     row,
     column,
     display_row: Math.round(numberValue(template.row, row + rowOffset)),
@@ -362,6 +369,15 @@ export function stringifyTalentWorkspace(workspace: TalentWorkspace) {
     const next: TalentTemplateOverride = { ...template };
     delete next.source;
     delete next.base_template_id;
+    const rankDescriptions = stringArrayValue(next.rank_descriptions).slice(0, Math.max(1, Math.round(numberValue(next.max_rank, 1))));
+    while (rankDescriptions.length && !rankDescriptions[rankDescriptions.length - 1].trim()) {
+      rankDescriptions.pop();
+    }
+    if (rankDescriptions.length) {
+      next.rank_descriptions = rankDescriptions;
+    } else {
+      delete next.rank_descriptions;
+    }
     if (!stringValue(next.icon, "").trim()) delete next.icon;
     if (hasOwn(next, "requires_talent")) {
       if (!stringValue(next.requires_talent, "").trim()) {

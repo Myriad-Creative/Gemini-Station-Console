@@ -4,6 +4,7 @@ export type TalentTemplate = JsonRecord & {
   id: string;
   name: string;
   description: string;
+  rank_descriptions?: string[];
   row: number;
   column: number;
   max_rank: number;
