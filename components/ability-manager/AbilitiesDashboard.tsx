@@ -68,12 +68,18 @@ export default function AbilitiesDashboard() {
         />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <Link href="/abilities/manager" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
           <div className="text-xl font-semibold text-white">Abilities Manager</div>
           <div className="text-sm leading-6 text-white/65">
             Search, create, clone, edit, delete, and export the indexed ability JSON set. Filter by delivery type like projectile or beam and inspect
             JSON-linked or script-linked status effects.
+          </div>
+        </Link>
+        <Link href="/abilities/talents" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
+          <div className="text-xl font-semibold text-white">Talent Manager</div>
+          <div className="text-sm leading-6 text-white/65">
+            Manage class and talent tree presentation from TalentTrees.json, including requirements, descriptions, grid placement, and icon browsing.
           </div>
         </Link>
         <Link href="/abilities/bulk" className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">

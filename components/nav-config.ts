@@ -38,6 +38,7 @@ const ABILITY_SECTION_LINKS: NavLink[] = [
   { href: "/abilities/manager", label: "Abilities" },
   { href: "/abilities/bulk", label: "Bulk Edit" },
   { href: "/abilities/status-effects", label: "Status Effects" },
+  { href: "/abilities/talents", label: "Talents" },
 ];
 
 const ITEM_SECTION_LINKS: NavLink[] = [
