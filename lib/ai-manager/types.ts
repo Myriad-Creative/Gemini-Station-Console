@@ -6,6 +6,15 @@ export type AiAbilityRef = {
   cooldownPriority?: string | null;
 };
 
+export type AiAbilityOption = {
+  id: string;
+  name: string;
+  description?: string;
+  minRangeType?: string | null;
+  maxRangeType?: string | null;
+  attackRange?: number | null;
+};
+
 export type AiProfileSummary = {
   totalProfiles: number;
   parseErrors: number;
@@ -20,6 +29,8 @@ export type AiProfile = {
   relativePath: string;
   id: string;
   aiType: string;
+  tags: string[];
+  notes: string;
   script: string | null;
   aggroRange: number | null;
   weaponRange: number | null;
@@ -33,7 +44,7 @@ export type AiProfile = {
   referencedByMobIds: string[];
   parseError: string | null;
   rawJson: string;
-  data: AiJsonValue | null;
+  data: Record<string, AiJsonValue> | null;
 };
 
 export type AiProfilesResponse = {
@@ -42,5 +53,6 @@ export type AiProfilesResponse = {
   aiDirectory: string | null;
   summary: AiProfileSummary;
   profiles: AiProfile[];
+  abilityOptions: AiAbilityOption[];
   error?: string;
 };

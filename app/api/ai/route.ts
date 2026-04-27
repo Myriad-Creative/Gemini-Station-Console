@@ -22,6 +22,7 @@ export async function GET() {
           referencedByMobsOnly: [],
         },
         profiles: [],
+        abilityOptions: [],
         error: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },
