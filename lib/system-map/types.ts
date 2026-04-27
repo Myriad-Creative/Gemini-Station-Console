@@ -197,6 +197,11 @@ export type SystemMapMobSpawn = {
   world: SystemMapVec;
   count: number;
   radius: number;
+  spawnArea: {
+    shape: string;
+    points: SystemMapVec[];
+    worldPoints: SystemMapVec[];
+  };
   respawnDelay: number;
   angleDeg: number;
   levelMin: number | null;
@@ -238,6 +243,8 @@ export type SystemMapZone = {
     shape: string;
     width: number;
     height: number;
+    points: SystemMapVec[];
+    worldPoints: SystemMapVec[];
   };
   stages: SystemMapStagePlacement[];
   mobs: SystemMapMobSpawn[];

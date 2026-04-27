@@ -176,7 +176,7 @@ type ZoneDraftForm = {
   worldX: string;
   worldY: string;
   activationRadius: string;
-  boundsShape: "ellipse" | "rectangle";
+  boundsShape: "ellipse" | "rectangle" | "polygon";
   boundsWidth: string;
   boundsHeight: string;
   active: boolean;
@@ -218,6 +218,7 @@ type MobSpawnForm = {
   localY: string;
   count: string;
   radius: string;
+  spawnAreaShape: "circle" | "polygon";
   respawnDelay: string;
   angleDeg: string;
   levelMin: string;
@@ -273,6 +274,23 @@ type EnvironmentalPointDragState = {
 };
 type EnvironmentalRegionPointDragState = {
   elementId: string;
+  pointIndex: number;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  pointStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type ZoneBoundsPointDragState = {
+  zoneId: string;
+  pointIndex: number;
+  startScreen: SystemMapVec;
+  startWorld: SystemMapVec;
+  pointStartWorld: SystemMapVec;
+  moved: boolean;
+};
+type MobSpawnAreaPointDragState = {
+  zoneId: string;
+  mobKey: string;
   pointIndex: number;
   startScreen: SystemMapVec;
   startWorld: SystemMapVec;
@@ -436,7 +454,41 @@ function parseStringListInput(value: string) {
 
 function normalizeBoundsShape(value: string): ZoneDraftForm["boundsShape"] {
   const normalized = value.trim().toLowerCase();
+  if (normalized === "polygon") return "polygon";
   return normalized === "rect" || normalized === "rectangle" ? "rectangle" : "ellipse";
+}
+
+function normalizeSpawnAreaShape(value: string): MobSpawnForm["spawnAreaShape"] {
+  return value.trim().toLowerCase() === "polygon" ? "polygon" : "circle";
+}
+
+function defaultZonePolygonPoints(width: number, height: number) {
+  const halfWidth = Math.max(500, width / 2 || 7500);
+  const halfHeight = Math.max(500, height / 2 || 7500);
+  return [
+    { x: -halfWidth, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight },
+    { x: halfWidth, y: halfHeight },
+    { x: -halfWidth, y: halfHeight },
+  ];
+}
+
+function defaultMobSpawnPolygonPoints(radius: number) {
+  const size = Math.max(500, radius || 2500);
+  return [
+    { x: -size, y: -size },
+    { x: size, y: -size },
+    { x: size, y: size },
+    { x: -size, y: size },
+  ];
+}
+
+function pointsFromAnchor(anchor: SystemMapVec, points: SystemMapVec[]) {
+  return points.map((point) => translateVec(anchor, point));
+}
+
+function pointListJson(points: SystemMapVec[]) {
+  return points.length ? JSON.stringify(points.map((point) => [Math.round(point.x), Math.round(point.y)]), null, 2) : "";
 }
 
 function worldToSectorLocal(world: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZE, sectorHalfExtent = DEFAULT_SECTOR_HALF_EXTENT): { sector: SystemMapVec; local: SystemMapVec } {
@@ -598,6 +650,9 @@ function averagePoints(points: SystemMapVec[]): SystemMapVec {
 }
 
 function pointInZoneBounds(point: SystemMapVec, zone: SystemMapZone) {
+  if (zone.bounds.shape.toLowerCase() === "polygon") {
+    return pointInPolygon(point, zone.bounds.worldPoints);
+  }
   const halfWidth = Math.max(1, zone.bounds.width / 2);
   const halfHeight = Math.max(1, zone.bounds.height / 2);
   const dx = point.x - zone.world.x;
@@ -641,7 +696,7 @@ function pointInPolygon(point: SystemMapVec, polygon: SystemMapVec[]) {
     const b = polygon[previous];
     const intersects =
       a.y > point.y !== b.y > point.y &&
-      point.x < ((b.x - a.x) * (point.y - a.y)) / Math.max(0.000001, b.y - a.y) + a.x;
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (Math.abs(b.y - a.y) < 0.000001 ? 0.000001 : b.y - a.y) + a.x;
     if (intersects) inside = !inside;
   }
   return inside;
@@ -759,8 +814,12 @@ function computeWorldBounds(
     bounds = mergeRect(bounds, sector.rect);
   }
   for (const zone of zones) {
-    const radius = Math.max(zone.bounds.width / 2, zone.bounds.height / 2, 5000);
-    bounds = mergeRect(bounds, { x: zone.world.x - radius, y: zone.world.y - radius, w: radius * 2, h: radius * 2 });
+    if (zone.bounds.shape.toLowerCase() === "polygon" && zone.bounds.worldPoints.length) {
+      for (const point of zone.bounds.worldPoints) bounds = expandBounds(bounds, point);
+    } else {
+      const radius = Math.max(zone.bounds.width / 2, zone.bounds.height / 2, 5000);
+      bounds = mergeRect(bounds, { x: zone.world.x - radius, y: zone.world.y - radius, w: radius * 2, h: radius * 2 });
+    }
     for (const stage of zone.stages) {
       bounds = mergeRect(bounds, {
         x: stage.world.x - Math.max(250, stage.width / 2),
@@ -2215,6 +2274,25 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
   };
 }
 
+function zoneBoundsFromForm(form: ZoneDraftForm, world: SystemMapVec, existingBounds?: SystemMapZone["bounds"]): SystemMapZone["bounds"] {
+  const width = Number(form.boundsWidth);
+  const height = Number(form.boundsHeight);
+  const shape = form.boundsShape;
+  const points =
+    shape === "polygon"
+      ? existingBounds?.shape.toLowerCase() === "polygon" && existingBounds.points.length >= 3
+        ? existingBounds.points
+        : defaultZonePolygonPoints(width, height)
+      : [];
+  return {
+    shape,
+    width,
+    height,
+    points,
+    worldPoints: pointsFromAnchor(world, points),
+  };
+}
+
 function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: string): SystemMapZone {
   const world = {
     x: Number(form.worldX),
@@ -2235,11 +2313,7 @@ function zoneFromDraftForm(form: ZoneDraftForm, payload: SystemMapPayload, id: s
     world,
     activationRadius: Number(form.activationRadius),
     activationRadiusBorder: form.activationRadiusBorder,
-    bounds: {
-      shape: form.boundsShape,
-      width: Number(form.boundsWidth),
-      height: Number(form.boundsHeight),
-    },
+    bounds: zoneBoundsFromForm(form, world),
     stages: [],
     mobs: [],
   };
@@ -2265,11 +2339,7 @@ function applyZoneFormToZone(form: ZoneDraftForm, baseZone: SystemMapZone, paylo
     poiLabel: form.poiLabel.trim(),
     activationRadius: Number(form.activationRadius),
     activationRadiusBorder: form.activationRadiusBorder,
-    bounds: {
-      shape: form.boundsShape,
-      width: Number(form.boundsWidth),
-      height: Number(form.boundsHeight),
-    },
+    bounds: zoneBoundsFromForm(form, world, baseZone.bounds),
   };
 }
 
@@ -2293,6 +2363,7 @@ function zoneToManagerDraft(zone: SystemMapZone, existingIds: string[]): ZoneDra
     boundsShape: zone.bounds.shape,
     boundsWidth: numberInputValue(zone.bounds.width),
     boundsHeight: numberInputValue(zone.bounds.height),
+    boundsPointsJson: pointListJson(zone.bounds.points),
     stages: zone.stages.map((stage) => systemMapStageToManagerDraft(stage)),
     mobs: zone.mobs.map((mob) => systemMapMobToManagerDraft(mob)),
   };
@@ -2317,6 +2388,7 @@ function applyZoneDetailsToManagerDraft(draft: ZoneDraft, zone: SystemMapZone): 
     boundsShape: zone.bounds.shape,
     boundsWidth: numberInputValue(zone.bounds.width),
     boundsHeight: numberInputValue(zone.bounds.height),
+    boundsPointsJson: pointListJson(zone.bounds.points),
     stages: zone.stages.map((stage, index) => systemMapStageToManagerDraft(stage, draft.stages[stage.originalIndex ?? index])),
     mobs: zone.mobs.map((mob, index) => systemMapMobToManagerDraft(mob, draft.mobs[mob.originalIndex ?? index])),
   };
@@ -2339,6 +2411,8 @@ function systemMapMobToManagerDraft(mob: SystemMapMobSpawn, existingDraft?: Zone
     mobId: mob.mobId,
     count: numberInputValue(mob.count),
     radius: numberInputValue(mob.radius),
+    spawnAreaShape: mob.spawnArea.shape.toLowerCase() === "polygon" ? "polygon" : "",
+    spawnAreaPointsJson: mob.spawnArea.shape.toLowerCase() === "polygon" ? pointListJson(mob.spawnArea.points) : "",
     respawnDelay: numberInputValue(mob.respawnDelay),
     posX: numberInputValue(mob.local.x),
     posY: numberInputValue(mob.local.y),
@@ -2380,12 +2454,21 @@ function createStagePlacementFromForm(form: StagePlacementForm, zone: SystemMapZ
   };
 }
 
-function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog: SystemMapMobCatalogEntry[]): SystemMapMobSpawn {
+function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog: SystemMapMobCatalogEntry[], existingMob?: SystemMapMobSpawn): SystemMapMobSpawn {
   const entry = mobCatalogEntryForId(catalog, form.mobId);
   const local = {
     x: Number(form.localX),
     y: Number(form.localY),
   };
+  const world = translateVec(zone.world, local);
+  const radius = Number(form.radius);
+  const spawnAreaShape = form.spawnAreaShape;
+  const spawnAreaPoints =
+    spawnAreaShape === "polygon"
+      ? existingMob?.spawnArea.shape.toLowerCase() === "polygon" && existingMob.spawnArea.points.length >= 3
+        ? existingMob.spawnArea.points
+        : defaultMobSpawnPolygonPoints(radius)
+      : [];
   return {
     key: form.mobKey ?? createDraftKey("map-zone-mob"),
     originalIndex: null,
@@ -2394,9 +2477,14 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     mobId: form.mobId,
     displayName: entry?.displayName || form.mobId,
     local,
-    world: translateVec(zone.world, local),
+    world,
     count: Number(form.count),
-    radius: Number(form.radius),
+    radius,
+    spawnArea: {
+      shape: spawnAreaShape,
+      points: spawnAreaPoints,
+      worldPoints: pointsFromAnchor(world, spawnAreaPoints),
+    },
     respawnDelay: Number(form.respawnDelay),
     angleDeg: Number(form.angleDeg),
     levelMin: form.levelMin.trim() ? Number(form.levelMin) : null,
@@ -2537,6 +2625,10 @@ function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: Syst
     sector,
     local,
     world,
+    bounds: {
+      ...zone.bounds,
+      worldPoints: zone.bounds.worldPoints.map((point) => translateVec(point, delta)),
+    },
     stages: zone.stages.map((stage) => ({
       ...stage,
       world: translateVec(stage.world, delta),
@@ -2544,6 +2636,10 @@ function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: Syst
     mobs: zone.mobs.map((mob) => ({
       ...mob,
       world: translateVec(mob.world, delta),
+      spawnArea: {
+        ...mob.spawnArea,
+        worldPoints: mob.spawnArea.worldPoints.map((point) => translateVec(point, delta)),
+      },
       sceneSpawns: mob.sceneSpawns.map((sceneMob) => ({
         ...sceneMob,
         world: translateVec(sceneMob.world, delta),
@@ -2588,6 +2684,10 @@ function moveMobSpawnToWorld(mob: SystemMapMobSpawn, world: SystemMapVec, zone: 
     world: {
       x: Math.round(world.x),
       y: Math.round(world.y),
+    },
+    spawnArea: {
+      ...mob.spawnArea,
+      worldPoints: mob.spawnArea.worldPoints.map((point) => translateVec(point, delta)),
     },
     sceneSpawns: mob.sceneSpawns.map((sceneMob) => ({
       ...sceneMob,
@@ -2804,6 +2904,8 @@ export default function SystemMapViewer() {
   const environmentalDragRef = useRef<EnvironmentalDragState | null>(null);
   const environmentalPointDragRef = useRef<EnvironmentalPointDragState | null>(null);
   const environmentalRegionPointDragRef = useRef<EnvironmentalRegionPointDragState | null>(null);
+  const zoneBoundsPointDragRef = useRef<ZoneBoundsPointDragState | null>(null);
+  const mobSpawnAreaPointDragRef = useRef<MobSpawnAreaPointDragState | null>(null);
   const fittedRef = useRef(false);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ screen: SystemMapVec; world: SystemMapVec } | null>(null);
@@ -2840,6 +2942,8 @@ export default function SystemMapViewer() {
   const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
   const [activeEnvironmentalPointAddId, setActiveEnvironmentalPointAddId] = useState<string | null>(null);
   const [activeEnvironmentalRegionPointAddId, setActiveEnvironmentalRegionPointAddId] = useState<string | null>(null);
+  const [activeZoneBoundsPointAddId, setActiveZoneBoundsPointAddId] = useState<string | null>(null);
+  const [activeMobSpawnAreaPointAddKey, setActiveMobSpawnAreaPointAddKey] = useState<string | null>(null);
   const [draggingZoneId, setDraggingZoneId] = useState<string | null>(null);
   const [draggingStageKey, setDraggingStageKey] = useState<string | null>(null);
   const [draggingMobKey, setDraggingMobKey] = useState<string | null>(null);
@@ -2848,6 +2952,8 @@ export default function SystemMapViewer() {
   const [draggingEnvironmentalId, setDraggingEnvironmentalId] = useState<string | null>(null);
   const [draggingEnvironmentalPoint, setDraggingEnvironmentalPoint] = useState<string | null>(null);
   const [draggingEnvironmentalRegionPoint, setDraggingEnvironmentalRegionPoint] = useState<string | null>(null);
+  const [draggingZoneBoundsPoint, setDraggingZoneBoundsPoint] = useState<string | null>(null);
+  const [draggingMobSpawnAreaPoint, setDraggingMobSpawnAreaPoint] = useState<string | null>(null);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
@@ -3021,7 +3127,8 @@ export default function SystemMapViewer() {
       const zone = filteredZones[zoneIndex];
       for (let mobIndex = zone.mobs.length - 1; mobIndex >= 0; mobIndex -= 1) {
         const mob = zone.mobs[mobIndex];
-        if (distance(world, mob.world) <= screenHitRadius) {
+        const spawnAreaHit = mob.spawnArea.shape.toLowerCase() === "polygon" && pointInPolygon(world, mob.spawnArea.worldPoints);
+        if (spawnAreaHit || distance(world, mob.world) <= screenHitRadius) {
           return { zone, mob };
         }
       }
@@ -3298,6 +3405,33 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findZoneBoundsPointAtWorld(world: SystemMapVec) {
+    if (!zoneForm?.originalId) return null;
+    const activeZone = mapZones.find((zone) => zoneIdentity(zone) === zoneForm.originalId);
+    if (!activeZone || activeZone.bounds.shape.toLowerCase() !== "polygon") return null;
+    const screenHitRadius = 11 / camera.zoom;
+    for (let index = activeZone.bounds.worldPoints.length - 1; index >= 0; index -= 1) {
+      if (distance(world, activeZone.bounds.worldPoints[index]) <= screenHitRadius) {
+        return { zone: activeZone, pointIndex: index, point: activeZone.bounds.worldPoints[index] };
+      }
+    }
+    return null;
+  }
+
+  function findMobSpawnAreaPointAtWorld(world: SystemMapVec) {
+    if (!mobSpawnForm?.mobKey) return null;
+    const activeZone = mapZones.find((zone) => zoneIdentity(zone) === mobSpawnForm.zoneId);
+    const activeMob = activeZone?.mobs.find((mob) => mobIdentity(mob) === mobSpawnForm.mobKey);
+    if (!activeZone || !activeMob || activeMob.spawnArea.shape.toLowerCase() !== "polygon") return null;
+    const screenHitRadius = 11 / camera.zoom;
+    for (let index = activeMob.spawnArea.worldPoints.length - 1; index >= 0; index -= 1) {
+      if (distance(world, activeMob.spawnArea.worldPoints[index]) <= screenHitRadius) {
+        return { zone: activeZone, mob: activeMob, pointIndex: index, point: activeMob.spawnArea.worldPoints[index] };
+      }
+    }
+    return null;
+  }
+
   function findEnvironmentalBarrierAtWorld(world: SystemMapVec) {
     for (let index = filteredEnvironmentalBarriers.length - 1; index >= 0; index -= 1) {
       const barrier = filteredEnvironmentalBarriers[index];
@@ -3357,6 +3491,57 @@ export default function SystemMapViewer() {
       if (element.type !== "environment_region") return element;
       return moveEnvironmentalRegionPoint(element, pointIndex, world, payload.config.sectorSize);
     });
+  }
+
+  function updateZoneBoundsPointPosition(zoneId: string, pointIndex: number, world: SystemMapVec) {
+    updateZoneInMap(zoneId, (zone) => {
+      if (zone.bounds.shape.toLowerCase() !== "polygon") return zone;
+      const roundedWorld = {
+        x: Math.round(world.x),
+        y: Math.round(world.y),
+      };
+      const local = {
+        x: Math.round(roundedWorld.x - zone.world.x),
+        y: Math.round(roundedWorld.y - zone.world.y),
+      };
+      return {
+        ...zone,
+        modified: zone.draft ? zone.modified : true,
+        originalId: zone.draft ? zone.originalId : zone.originalId ?? zone.id,
+        bounds: {
+          ...zone.bounds,
+          points: zone.bounds.points.map((point, index) => (index === pointIndex ? local : point)),
+          worldPoints: zone.bounds.worldPoints.map((point, index) => (index === pointIndex ? roundedWorld : point)),
+        },
+      };
+    });
+  }
+
+  function updateMobSpawnAreaPointPosition(zoneId: string, mobKey: string, pointIndex: number, world: SystemMapVec) {
+    updateZoneInMap(zoneId, (zone) => ({
+      ...zone,
+      modified: zone.draft ? zone.modified : true,
+      mobs: zone.mobs.map((mob) => {
+        if (mobIdentity(mob) !== mobKey || mob.spawnArea.shape.toLowerCase() !== "polygon") return mob;
+        const roundedWorld = {
+          x: Math.round(world.x),
+          y: Math.round(world.y),
+        };
+        const local = {
+          x: Math.round(roundedWorld.x - mob.world.x),
+          y: Math.round(roundedWorld.y - mob.world.y),
+        };
+        return {
+          ...mob,
+          modified: mob.draft ? mob.modified : true,
+          spawnArea: {
+            ...mob.spawnArea,
+            points: mob.spawnArea.points.map((point, index) => (index === pointIndex ? local : point)),
+            worldPoints: mob.spawnArea.worldPoints.map((point, index) => (index === pointIndex ? roundedWorld : point)),
+          },
+        };
+      }),
+    }));
   }
 
   function updateEnvironmentalElementPosition(elementId: string, startElement: SystemMapEnvironmentalElement, delta: SystemMapVec) {
@@ -3478,6 +3663,8 @@ export default function SystemMapViewer() {
     setMobSpawnForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setZoneForm({
       mode: "edit",
       originalId: zone.originalId ?? zone.id,
@@ -3489,7 +3676,7 @@ export default function SystemMapViewer() {
       boundsShape: normalizeBoundsShape(zone.bounds.shape),
       boundsWidth: numberInputValue(zone.bounds.width),
       boundsHeight: numberInputValue(zone.bounds.height),
-      active: true,
+      active: zone.active,
       showHudOnEnter: zone.showHudOnEnter,
       poiMap: zone.poiMap,
       poiHidden: zone.poiHidden,
@@ -3509,6 +3696,8 @@ export default function SystemMapViewer() {
     setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setRouteForm(routeToForm(route, route.draft ? "create" : "edit"));
     setRouteIdManuallyEdited(true);
     setActiveRouteAddId(null);
@@ -3525,6 +3714,8 @@ export default function SystemMapViewer() {
     setEnvironmentalAsteroidForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setGateForm(gateToForm(gate));
     setContextMenu(null);
     setStatus(null);
@@ -3540,6 +3731,10 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus(null);
   }
@@ -3554,6 +3749,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus(null);
   }
@@ -3568,6 +3765,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus(null);
   }
@@ -3585,6 +3784,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus({ tone: "success", message: `Added draft barrier "${barrier.name}". Drag its end points or use Add Point On Map before saving.` });
   }
@@ -3602,6 +3803,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus({ tone: "success", message: `Added draft polygon region "${region.name}". Drag its vertices or add points on the map, then save to build.` });
   }
@@ -3619,6 +3822,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus({ tone: "success", message: `Added draft ellipse region "${region.name}". Adjust its size and profile, then save to build.` });
   }
@@ -3636,6 +3841,8 @@ export default function SystemMapViewer() {
     setEnvironmentalIdManuallyEdited(false);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
     setStatus({
       tone: "success",
@@ -3710,6 +3917,51 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    const targetZoneBoundsPoint = toggles.zones ? findZoneBoundsPointAtWorld(world) : null;
+    if (targetZoneBoundsPoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      zoneBoundsPointDragRef.current = {
+        zoneId: zoneIdentity(targetZoneBoundsPoint.zone),
+        pointIndex: targetZoneBoundsPoint.pointIndex,
+        startScreen: screen,
+        startWorld: world,
+        pointStartWorld: targetZoneBoundsPoint.point,
+        moved: false,
+      };
+      setDraggingZoneBoundsPoint(`${zoneIdentity(targetZoneBoundsPoint.zone)}:${targetZoneBoundsPoint.pointIndex}`);
+      clearHover();
+      return;
+    }
+    const targetMobSpawnAreaPoint = toggles.mobs ? findMobSpawnAreaPointAtWorld(world) : null;
+    if (targetMobSpawnAreaPoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      mobSpawnAreaPointDragRef.current = {
+        zoneId: zoneIdentity(targetMobSpawnAreaPoint.zone),
+        mobKey: mobIdentity(targetMobSpawnAreaPoint.mob),
+        pointIndex: targetMobSpawnAreaPoint.pointIndex,
+        startScreen: screen,
+        startWorld: world,
+        pointStartWorld: targetMobSpawnAreaPoint.point,
+        moved: false,
+      };
+      setDraggingMobSpawnAreaPoint(`${zoneIdentity(targetMobSpawnAreaPoint.zone)}:${mobIdentity(targetMobSpawnAreaPoint.mob)}:${targetMobSpawnAreaPoint.pointIndex}`);
+      clearHover();
+      return;
+    }
+    if (activeZoneBoundsPointAddId) {
+      addZoneBoundsPointAtWorld(activeZoneBoundsPointAddId, world);
+      setActiveZoneBoundsPointAddId(null);
+      setStatus({ tone: "success", message: "Added a new zone polygon point. Drag it to refine the bounds, then save to build when ready." });
+      clearHover();
+      return;
+    }
+    if (activeMobSpawnAreaPointAddKey) {
+      addMobSpawnAreaPointAtWorld(activeMobSpawnAreaPointAddKey, world);
+      setActiveMobSpawnAreaPointAddKey(null);
+      setStatus({ tone: "success", message: "Added a new mob spawn polygon point. Drag it to refine the spawn area, then save to build when ready." });
+      clearHover();
+      return;
+    }
     const targetEnvironmentalRegionPoint = toggles.barriers ? findEnvironmentalRegionPointAtWorld(world) : null;
     if (targetEnvironmentalRegionPoint) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -3898,6 +4150,25 @@ export default function SystemMapViewer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    const zoneBoundsPointDrag = zoneBoundsPointDragRef.current;
+    if (zoneBoundsPointDrag) {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === zoneBoundsPointDrag.zoneId);
+      if (zoneBoundsPointDrag.moved) {
+        setStatus({ tone: "success", message: `Moved bounds point ${zoneBoundsPointDrag.pointIndex + 1} on "${zone?.name || zoneBoundsPointDrag.zoneId}". Use Save Changes To Build to write it into Zones.json.` });
+      } else if (zone) {
+        openZoneEditor(zone);
+      }
+    }
+    const mobSpawnAreaPointDrag = mobSpawnAreaPointDragRef.current;
+    if (mobSpawnAreaPointDrag) {
+      const zone = mapZones.find((entry) => zoneIdentity(entry) === mobSpawnAreaPointDrag.zoneId);
+      const mob = zone?.mobs.find((entry) => mobIdentity(entry) === mobSpawnAreaPointDrag.mobKey);
+      if (mobSpawnAreaPointDrag.moved) {
+        setStatus({ tone: "success", message: `Moved spawn area point ${mobSpawnAreaPointDrag.pointIndex + 1} on "${mob?.displayName || mobSpawnAreaPointDrag.mobKey}". Use Save Changes To Build to write it into Zones.json.` });
+      } else if (zone && mob) {
+        openMobSpawnEditor(zone, mob);
+      }
+    }
     const environmentalRegionPointDrag = environmentalRegionPointDragRef.current;
     if (environmentalRegionPointDrag) {
       const region = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalRegionPointDrag.elementId);
@@ -3966,10 +4237,14 @@ export default function SystemMapViewer() {
     }
     mobDragRef.current = null;
     setDraggingMobKey(null);
+    mobSpawnAreaPointDragRef.current = null;
+    setDraggingMobSpawnAreaPoint(null);
     stageDragRef.current = null;
     setDraggingStageKey(null);
     environmentalRegionPointDragRef.current = null;
     setDraggingEnvironmentalRegionPoint(null);
+    zoneBoundsPointDragRef.current = null;
+    setDraggingZoneBoundsPoint(null);
     environmentalPointDragRef.current = null;
     setDraggingEnvironmentalPoint(null);
     routeDragRef.current = null;
@@ -4114,7 +4389,8 @@ export default function SystemMapViewer() {
         if (!zoneMatches(zone, normalizedQuery)) continue;
         for (const mob of zone.mobs) {
           if (!mobMatches(mob, normalizedQuery)) continue;
-          if (distance(world, mob.world) <= screenHitRadius) {
+          const spawnAreaHit = mob.spawnArea.shape.toLowerCase() === "polygon" && pointInPolygon(world, mob.spawnArea.worldPoints);
+          if (spawnAreaHit || distance(world, mob.world) <= screenHitRadius) {
             return {
               x: screen.x,
               y: screen.y,
@@ -4124,7 +4400,7 @@ export default function SystemMapViewer() {
               lines: [
                 `Mob ID: ${mob.mobId}`,
                 `Count: ${mob.count}`,
-                `Radius: ${formatNumber(mob.radius)}`,
+                mob.spawnArea.shape.toLowerCase() === "polygon" ? `Spawn area: polygon (${mob.spawnArea.points.length} points)` : `Radius: ${formatNumber(mob.radius)}`,
                 `Level: ${mob.levelMin ?? "?"}-${mob.levelMax ?? "?"} (${mob.rank})`,
                 `Faction: ${mob.faction || "not set"}`,
                 `World: ${formatVec(mob.world)}`,
@@ -4323,7 +4599,7 @@ export default function SystemMapViewer() {
               `Zone ID: ${zone.id}`,
               `POI: ${zone.poiMap ? zone.poiLabel || zone.name : "not shown on map"}`,
               `Activation radius: ${formatNumber(zone.activationRadius)}`,
-              `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
+              zone.bounds.shape.toLowerCase() === "polygon" ? `Bounds: polygon (${zone.bounds.points.length} points)` : `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
               `Stages: ${zone.stages.length}`,
               `Zone mob rows: ${zone.mobs.length}`,
               `Scene mob markers: ${zone.mobs.reduce((sum, mob) => sum + mob.sceneSpawns.length, 0)}`,
@@ -4425,6 +4701,46 @@ export default function SystemMapViewer() {
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (isMapUiTarget(event.target)) {
+      clearHover();
+      return;
+    }
+
+    const zoneBoundsPointDrag = zoneBoundsPointDragRef.current;
+    if (zoneBoundsPointDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: zoneBoundsPointDrag.pointStartWorld.x + world.x - zoneBoundsPointDrag.startWorld.x,
+        y: zoneBoundsPointDrag.pointStartWorld.y + world.y - zoneBoundsPointDrag.startWorld.y,
+      };
+      if (!zoneBoundsPointDrag.moved && distance(screen, zoneBoundsPointDrag.startScreen) > 4) {
+        zoneBoundsPointDrag.moved = true;
+      }
+      updateZoneBoundsPointPosition(zoneBoundsPointDrag.zoneId, zoneBoundsPointDrag.pointIndex, nextWorld);
+      clearHover();
+      return;
+    }
+
+    const mobSpawnAreaPointDrag = mobSpawnAreaPointDragRef.current;
+    if (mobSpawnAreaPointDrag) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screen = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const world = screenToWorld(screen);
+      const nextWorld = {
+        x: mobSpawnAreaPointDrag.pointStartWorld.x + world.x - mobSpawnAreaPointDrag.startWorld.x,
+        y: mobSpawnAreaPointDrag.pointStartWorld.y + world.y - mobSpawnAreaPointDrag.startWorld.y,
+      };
+      if (!mobSpawnAreaPointDrag.moved && distance(screen, mobSpawnAreaPointDrag.startScreen) > 4) {
+        mobSpawnAreaPointDrag.moved = true;
+      }
+      updateMobSpawnAreaPointPosition(mobSpawnAreaPointDrag.zoneId, mobSpawnAreaPointDrag.mobKey, mobSpawnAreaPointDrag.pointIndex, nextWorld);
       clearHover();
       return;
     }
@@ -4670,6 +4986,7 @@ export default function SystemMapViewer() {
       localY: numberInputValue(local.y),
       count: "1",
       radius: "0",
+      spawnAreaShape: "circle",
       respawnDelay: "30",
       angleDeg: "0",
       levelMin: "",
@@ -4731,6 +5048,7 @@ export default function SystemMapViewer() {
       localY: numberInputValue(mob.local.y),
       count: numberInputValue(mob.count),
       radius: numberInputValue(mob.radius),
+      spawnAreaShape: normalizeSpawnAreaShape(mob.spawnArea.shape),
       respawnDelay: numberInputValue(mob.respawnDelay),
       angleDeg: numberInputValue(mob.angleDeg),
       levelMin: mob.levelMin === null ? "" : numberInputValue(mob.levelMin),
@@ -5061,6 +5379,59 @@ export default function SystemMapViewer() {
     });
   }
 
+  function addZoneBoundsPointAtWorld(zoneId: string, world: SystemMapVec) {
+    updateZoneInMap(zoneId, (zone) => {
+      if (zone.bounds.shape.toLowerCase() !== "polygon") return zone;
+      const roundedWorld = {
+        x: Math.round(world.x),
+        y: Math.round(world.y),
+      };
+      const local = {
+        x: Math.round(roundedWorld.x - zone.world.x),
+        y: Math.round(roundedWorld.y - zone.world.y),
+      };
+      return {
+        ...zone,
+        modified: zone.draft ? zone.modified : true,
+        originalId: zone.draft ? zone.originalId : zone.originalId ?? zone.id,
+        bounds: {
+          ...zone.bounds,
+          points: [...zone.bounds.points, local],
+          worldPoints: [...zone.bounds.worldPoints, roundedWorld],
+        },
+      };
+    });
+  }
+
+  function addMobSpawnAreaPointAtWorld(addKey: string, world: SystemMapVec) {
+    const [zoneId, mobKey] = addKey.split("::");
+    if (!zoneId || !mobKey) return;
+    updateZoneInMap(zoneId, (zone) => ({
+      ...zone,
+      modified: zone.draft ? zone.modified : true,
+      mobs: zone.mobs.map((mob) => {
+        if (mobIdentity(mob) !== mobKey || mob.spawnArea.shape.toLowerCase() !== "polygon") return mob;
+        const roundedWorld = {
+          x: Math.round(world.x),
+          y: Math.round(world.y),
+        };
+        const local = {
+          x: Math.round(roundedWorld.x - mob.world.x),
+          y: Math.round(roundedWorld.y - mob.world.y),
+        };
+        return {
+          ...mob,
+          modified: mob.draft ? mob.modified : true,
+          spawnArea: {
+            ...mob.spawnArea,
+            points: [...mob.spawnArea.points, local],
+            worldPoints: [...mob.spawnArea.worldPoints, roundedWorld],
+          },
+        };
+      }),
+    }));
+  }
+
   function saveZoneForm() {
     if (!payload || !zoneForm) return;
     const id = sanitizeZoneId(zoneForm.id);
@@ -5102,6 +5473,7 @@ export default function SystemMapViewer() {
       const zone = zoneFromDraftForm(normalizedForm, payload, id);
       setDraftZones((current) => [...current, zone]);
       setZoneForm(null);
+      setActiveZoneBoundsPointAddId(null);
       setStatus({ tone: "success", message: `Added draft zone "${zone.name}". Use Save Changes To Build to write it into Zones.json.` });
       return;
     }
@@ -5143,6 +5515,7 @@ export default function SystemMapViewer() {
       setEditedZoneIds((current) => (current.includes(originalId) ? current : [...current, originalId]));
     }
     setZoneForm(null);
+    setActiveZoneBoundsPointAddId(null);
     setStatus({ tone: "success", message: `Updated "${nextZone.name}". Use Save Changes To Build to write changes into Zones.json.` });
   }
 
@@ -5233,7 +5606,8 @@ export default function SystemMapViewer() {
       return;
     }
 
-    const nextMob = createMobSpawnFromForm(mobSpawnForm, zone, payload.mobCatalog);
+    const existingMob = mobSpawnForm.mobKey ? zone.mobs.find((mob) => mobIdentity(mob) === mobSpawnForm.mobKey) : undefined;
+    const nextMob = createMobSpawnFromForm(mobSpawnForm, zone, payload.mobCatalog, existingMob);
     updateZoneInMap(mobSpawnForm.zoneId, (currentZone) => {
       const existingIndex = mobSpawnForm.mobKey ? currentZone.mobs.findIndex((mob) => mobIdentity(mob) === mobSpawnForm.mobKey) : -1;
       const nextMobs =
@@ -5247,6 +5621,7 @@ export default function SystemMapViewer() {
       };
     });
     setMobSpawnForm(null);
+    setActiveMobSpawnAreaPointAddKey(null);
     setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into Zones.json.` });
   }
 
@@ -5991,9 +6366,20 @@ export default function SystemMapViewer() {
                   const isChanged = zone.draft || zone.modified;
                   const zoneColor = zone.draft ? "rgba(52,211,153,0.82)" : zone.modified ? "rgba(250,204,21,0.78)" : zone.active ? "rgba(34,211,238,0.55)" : "rgba(148,163,184,0.36)";
                   const zoneFill = zone.draft ? "rgba(52,211,153,0.09)" : zone.modified ? "rgba(250,204,21,0.075)" : zone.active ? "rgba(34,211,238,0.055)" : "rgba(148,163,184,0.035)";
+                  const zoneKey = zoneIdentity(zone);
+                  const isActiveZone = zoneForm?.originalId === zoneKey;
+                  const zoneShape = zone.bounds.shape.toLowerCase();
                   return (
                     <g key={zone.id}>
-                      {zone.bounds.shape.toLowerCase() === "rect" || zone.bounds.shape.toLowerCase() === "rectangle" ? (
+                      {zoneShape === "polygon" ? (
+                        <polygon
+                          points={zone.bounds.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                          fill={zoneFill}
+                          stroke={zoneColor}
+                          strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
+                          strokeWidth={(draggingZoneId === zoneKey ? 4 : 2) / camera.zoom}
+                        />
+                      ) : zoneShape === "rect" || zoneShape === "rectangle" ? (
                         <rect
                           x={zone.world.x - zone.bounds.width / 2}
                           y={zone.world.y - zone.bounds.height / 2}
@@ -6002,7 +6388,7 @@ export default function SystemMapViewer() {
                           fill={zoneFill}
                           stroke={zoneColor}
                           strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={(draggingZoneId === zoneIdentity(zone) ? 4 : 2) / camera.zoom}
+                          strokeWidth={(draggingZoneId === zoneKey ? 4 : 2) / camera.zoom}
                         />
                       ) : (
                         <ellipse
@@ -6013,10 +6399,26 @@ export default function SystemMapViewer() {
                           fill={zoneFill}
                           stroke={zoneColor}
                           strokeDasharray={isChanged ? `${10 / camera.zoom} ${8 / camera.zoom}` : undefined}
-                          strokeWidth={(draggingZoneId === zoneIdentity(zone) ? 4 : 2) / camera.zoom}
+                          strokeWidth={(draggingZoneId === zoneKey ? 4 : 2) / camera.zoom}
                         />
                       )}
-                      <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zoneIdentity(zone) ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
+                      {isActiveZone && zoneShape === "polygon"
+                        ? zone.bounds.worldPoints.map((point, index) => {
+                            const pointKey = `${zoneKey}:${index}`;
+                            return (
+                              <circle
+                                key={pointKey}
+                                cx={point.x}
+                                cy={point.y}
+                                r={(draggingZoneBoundsPoint === pointKey ? 8 : 6) / camera.zoom}
+                                fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : "#22d3ee"}
+                                stroke="rgba(255,255,255,0.82)"
+                                strokeWidth={(draggingZoneBoundsPoint === pointKey ? 2 : 1) / camera.zoom}
+                              />
+                            );
+                          })
+                        : null}
+                      <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zoneKey ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
                     </g>
                   );
                 })
@@ -6283,9 +6685,18 @@ export default function SystemMapViewer() {
                   zone.mobs.filter((mob) => mobMatches(mob, normalizedQuery)).flatMap((mob) => {
                     const mobKey = mobIdentity(mob);
                     const mobColor = mob.draft ? "#34d399" : mob.modified ? "#facc15" : mob.missing ? "#ef4444" : "#fb7185";
+                    const isActiveMob = mobSpawnForm?.zoneId === zoneIdentity(zone) && mobSpawnForm.mobKey === mobKey;
+                    const spawnAreaShape = mob.spawnArea.shape.toLowerCase();
                     const items: JSX.Element[] = [
                       <g key={`${zone.id}:${mob.mobId}:${mob.local.x}:${mob.local.y}:spawn`}>
-                        {mob.radius > 0 ? (
+                        {spawnAreaShape === "polygon" && mob.spawnArea.worldPoints.length ? (
+                          <polygon
+                            points={mob.spawnArea.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                            fill={mob.draft ? "rgba(52,211,153,0.06)" : mob.modified ? "rgba(250,204,21,0.06)" : "rgba(248,113,113,0.055)"}
+                            stroke={mob.draft ? "rgba(52,211,153,0.45)" : mob.modified ? "rgba(250,204,21,0.5)" : "rgba(248,113,113,0.45)"}
+                            strokeWidth={1.5 / camera.zoom}
+                          />
+                        ) : mob.radius > 0 ? (
                           <circle
                             cx={mob.world.x}
                             cy={mob.world.y}
@@ -6295,6 +6706,22 @@ export default function SystemMapViewer() {
                             strokeWidth={1.5 / camera.zoom}
                           />
                         ) : null}
+                        {isActiveMob && spawnAreaShape === "polygon"
+                          ? mob.spawnArea.worldPoints.map((point, index) => {
+                              const pointKey = `${zoneIdentity(zone)}:${mobKey}:${index}`;
+                              return (
+                                <circle
+                                  key={pointKey}
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={(draggingMobSpawnAreaPoint === pointKey ? 8 : 6) / camera.zoom}
+                                  fill={mob.draft ? "#34d399" : mob.modified ? "#facc15" : "#fb7185"}
+                                  stroke="rgba(255,255,255,0.82)"
+                                  strokeWidth={(draggingMobSpawnAreaPoint === pointKey ? 2 : 1) / camera.zoom}
+                                />
+                              );
+                            })
+                          : null}
                         <circle cx={mob.world.x} cy={mob.world.y} r={(draggingMobKey === mobKey ? 9 : 6) / camera.zoom} fill={mobColor} stroke="rgba(255,255,255,0.75)" strokeWidth={(draggingMobKey === mobKey ? 2 : 1) / camera.zoom} />
                       </g>,
                     ];
@@ -7661,9 +8088,16 @@ export default function SystemMapViewer() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">{mobSpawnForm.mode === "create" ? "Add Mob Spawn" : "Edit Mob Spawn"}</div>
-                <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, rank, radius, and respawn cooldown.</div>
+                <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, rank, spawn shape, and respawn cooldown.</div>
               </div>
-              <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setMobSpawnForm(null)}>
+              <button
+                type="button"
+                className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5"
+                onClick={() => {
+                  setMobSpawnForm(null);
+                  setActiveMobSpawnAreaPointAddKey(null);
+                }}
+              >
                 Close
               </button>
             </div>
@@ -7712,6 +8146,13 @@ export default function SystemMapViewer() {
                 <input className="input mt-1" type="number" value={mobSpawnForm.radius} onChange={(event) => setMobSpawnForm((current) => (current ? { ...current, radius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
               </label>
               <label className="text-sm text-white/65">
+                Spawn Shape
+                <select className="input mt-1" value={mobSpawnForm.spawnAreaShape} onChange={(event) => setMobSpawnForm((current) => (current ? { ...current, spawnAreaShape: event.target.value as MobSpawnForm["spawnAreaShape"] } : current))}>
+                  <option value="circle">Circle Radius</option>
+                  <option value="polygon">Polygon Area</option>
+                </select>
+              </label>
+              <label className="text-sm text-white/65">
                 Respawn Cooldown
                 <input className="input mt-1" type="number" value={mobSpawnForm.respawnDelay} onChange={(event) => setMobSpawnForm((current) => (current ? { ...current, respawnDelay: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
               </label>
@@ -7758,13 +8199,95 @@ export default function SystemMapViewer() {
               );
             })()}
 
+            {mobSpawnForm.spawnAreaShape === "polygon"
+              ? (() => {
+                  const zone = mapZones.find((entry) => zoneIdentity(entry) === mobSpawnForm.zoneId);
+                  const mob = zone && mobSpawnForm.mobKey ? zone.mobs.find((entry) => mobIdentity(entry) === mobSpawnForm.mobKey) : null;
+                  const activeMob = mob?.spawnArea.shape.toLowerCase() === "polygon" ? mob : null;
+                  const addKey = activeMob && zone ? `${zoneIdentity(zone)}::${mobIdentity(activeMob)}` : null;
+                  const isAddingPoint = !!addKey && activeMobSpawnAreaPointAddKey === addKey;
+                  return (
+                    <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-white">Spawn Area Points</div>
+                          <div className="text-xs text-white/45">{activeMob ? "Drag these vertices on the map, or add a new one at the cursor location." : "Apply this polygon shape first to create default points, then edit it to refine vertices."}</div>
+                        </div>
+                        {addKey ? (
+                          <button
+                            type="button"
+                            className={`rounded border px-3 py-2 text-sm ${isAddingPoint ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"}`}
+                            onClick={() => {
+                              setPendingRouteStart(false);
+                              setActiveRouteAddId(null);
+                              setActiveEnvironmentalPointAddId(null);
+                              setActiveEnvironmentalRegionPointAddId(null);
+                              setActiveZoneBoundsPointAddId(null);
+                              setActiveMobSpawnAreaPointAddKey((current) => (current === addKey ? null : addKey));
+                              setStatus({ tone: "neutral", message: "Click the map to append a new point to this mob spawn polygon." });
+                            }}
+                          >
+                            {isAddingPoint ? "Click Map To Add" : "Add Point On Map"}
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+                        {activeMob?.spawnArea.worldPoints.map((point, index) => (
+                          <div key={`${mobSpawnForm.zoneId}:${mobSpawnForm.mobKey}:point:${index}`} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-medium text-white">Point {index + 1}</div>
+                              <button
+                                type="button"
+                                className="rounded border border-red-300/25 bg-red-400/10 px-2 py-1 text-xs text-red-100 disabled:cursor-default disabled:opacity-35"
+                                disabled={activeMob.spawnArea.points.length <= 3}
+                                onClick={() => {
+                                  updateZoneInMap(mobSpawnForm.zoneId, (currentZone) => ({
+                                    ...currentZone,
+                                    modified: currentZone.draft ? currentZone.modified : true,
+                                    mobs: currentZone.mobs.map((mob) =>
+                                      mobIdentity(mob) === mobSpawnForm.mobKey
+                                        ? {
+                                            ...mob,
+                                            modified: mob.draft ? mob.modified : true,
+                                            spawnArea: {
+                                              ...mob.spawnArea,
+                                              points: mob.spawnArea.points.filter((_, pointIndex) => pointIndex !== index),
+                                              worldPoints: mob.spawnArea.worldPoints.filter((_, pointIndex) => pointIndex !== index),
+                                            },
+                                          }
+                                        : mob,
+                                    ),
+                                  }));
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className="mt-1 text-xs text-white/55">Local: {formatVec(activeMob.spawnArea.points[index])}</div>
+                            <div className="text-xs text-white/45">World: {formatVec(point)}</div>
+                          </div>
+                        ))}
+                        {!activeMob?.spawnArea.worldPoints.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No polygon points found yet.</div> : null}
+                      </div>
+                    </div>
+                  );
+                })()
+              : null}
+
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               {mobSpawnForm.mode === "edit" && mobSpawnForm.mobKey ? (
                 <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeMobSpawn(mobSpawnForm.zoneId, mobSpawnForm.mobKey!)}>
                   Delete Mob Spawn
                 </button>
               ) : null}
-              <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setMobSpawnForm(null)}>
+              <button
+                type="button"
+                className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5"
+                onClick={() => {
+                  setMobSpawnForm(null);
+                  setActiveMobSpawnAreaPointAddKey(null);
+                }}
+              >
                 Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveMobSpawnForm}>
@@ -7792,7 +8315,14 @@ export default function SystemMapViewer() {
                 <div className="text-xl font-semibold text-white">{zoneForm.mode === "create" ? "Add Zone Draft" : "Edit Zone Details"}</div>
                 <div className="mt-1 text-sm text-white/55">{zoneForm.mode === "create" ? "This adds a draft to the map. Use the green save button to write it into Zones.json." : "Edit top-level zone details. Stage and mob placements are managed directly on the map."}</div>
               </div>
-              <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
+              <button
+                type="button"
+                className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5"
+                onClick={() => {
+                  setZoneForm(null);
+                  setActiveZoneBoundsPointAddId(null);
+                }}
+              >
                 Close
               </button>
             </div>
@@ -7819,6 +8349,7 @@ export default function SystemMapViewer() {
                 <select className="input mt-1" value={zoneForm.boundsShape} onChange={(event) => setZoneForm((current) => (current ? { ...current, boundsShape: event.target.value as ZoneDraftForm["boundsShape"] } : current))}>
                   <option value="ellipse">Ellipse</option>
                   <option value="rectangle">Rectangle</option>
+                  <option value="polygon">Polygon</option>
                 </select>
               </label>
               <label className="text-sm text-white/65">
@@ -7850,6 +8381,73 @@ export default function SystemMapViewer() {
                 })()}
               </div>
             ) : null}
+
+            {zoneForm.boundsShape === "polygon"
+              ? (() => {
+                  const zone = zoneForm.originalId ? mapZones.find((entry) => zoneIdentity(entry) === zoneForm.originalId) : null;
+                  const activeZone = zone?.bounds.shape.toLowerCase() === "polygon" ? zone : null;
+                  const isAddingPoint = !!zoneForm.originalId && activeZoneBoundsPointAddId === zoneForm.originalId;
+                  return (
+                    <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-white">Zone Polygon Points</div>
+                          <div className="text-xs text-white/45">{activeZone ? "Drag these vertices on the map, or add a new one at the cursor location." : "Apply this polygon shape first to create default points, then edit it to refine vertices."}</div>
+                        </div>
+                        {activeZone && zoneForm.originalId ? (
+                          <button
+                            type="button"
+                            className={`rounded border px-3 py-2 text-sm ${isAddingPoint ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/75 hover:bg-white/10"}`}
+                            onClick={() => {
+                              setPendingRouteStart(false);
+                              setActiveRouteAddId(null);
+                              setActiveEnvironmentalPointAddId(null);
+                              setActiveEnvironmentalRegionPointAddId(null);
+                              setActiveMobSpawnAreaPointAddKey(null);
+                              setActiveZoneBoundsPointAddId((current) => (current === zoneForm.originalId ? null : zoneForm.originalId));
+                              setStatus({ tone: "neutral", message: "Click the map to append a new point to this zone polygon." });
+                            }}
+                          >
+                            {isAddingPoint ? "Click Map To Add" : "Add Point On Map"}
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 max-h-56 space-y-2 overflow-auto">
+                        {activeZone?.bounds.worldPoints.map((point, index) => (
+                          <div key={`${zoneForm.originalId}:bounds-point:${index}`} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-medium text-white">Point {index + 1}</div>
+                              <button
+                                type="button"
+                                className="rounded border border-red-300/25 bg-red-400/10 px-2 py-1 text-xs text-red-100 disabled:cursor-default disabled:opacity-35"
+                                disabled={activeZone.bounds.points.length <= 3}
+                                onClick={() => {
+                                  if (!zoneForm.originalId) return;
+                                  updateZoneInMap(zoneForm.originalId, (zone) => ({
+                                    ...zone,
+                                    modified: zone.draft ? zone.modified : true,
+                                    originalId: zone.draft ? zone.originalId : zone.originalId ?? zone.id,
+                                    bounds: {
+                                      ...zone.bounds,
+                                      points: zone.bounds.points.filter((_, pointIndex) => pointIndex !== index),
+                                      worldPoints: zone.bounds.worldPoints.filter((_, pointIndex) => pointIndex !== index),
+                                    },
+                                  }));
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className="mt-1 text-xs text-white/55">Local: {formatVec(activeZone.bounds.points[index])}</div>
+                            <div className="text-xs text-white/45">World: {formatVec(point)}</div>
+                          </div>
+                        ))}
+                        {!activeZone?.bounds.worldPoints.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No polygon points found yet.</div> : null}
+                      </div>
+                    </div>
+                  );
+                })()
+              : null}
 
             {status ? (
               <div
@@ -7894,7 +8492,14 @@ export default function SystemMapViewer() {
                   {mapZones.find((zone) => zoneIdentity(zone) === zoneForm.originalId)?.draft ? "Remove Draft Zone" : "Delete Zone"}
                 </button>
               ) : null}
-              <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setZoneForm(null)}>
+              <button
+                type="button"
+                className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5"
+                onClick={() => {
+                  setZoneForm(null);
+                  setActiveZoneBoundsPointAddId(null);
+                }}
+              >
                 Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveZoneForm}>

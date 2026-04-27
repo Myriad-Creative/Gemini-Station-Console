@@ -224,6 +224,12 @@ function vecValue(value: unknown, fallback: SystemMapVec = { x: 0, y: 0 }): Syst
   return fallback;
 }
 
+function vecArrayValue(value: unknown): SystemMapVec[] {
+  return asArray(value)
+    .map((entry) => vecValue(entry, { x: Number.NaN, y: Number.NaN }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
 function rectValue(value: unknown): SystemMapRect {
   const record = asRecord(value);
   return {
@@ -245,6 +251,28 @@ function addVec(a: SystemMapVec, b: SystemMapVec): SystemMapVec {
   return {
     x: a.x + b.x,
     y: a.y + b.y,
+  };
+}
+
+function pointsFromAnchor(anchor: SystemMapVec, points: SystemMapVec[]) {
+  return points.map((point) => addVec(anchor, point));
+}
+
+function pointBounds(points: SystemMapVec[]) {
+  if (!points.length) return { width: 0, height: 0 };
+  let minX = points[0].x;
+  let maxX = points[0].x;
+  let minY = points[0].y;
+  let maxY = points[0].y;
+  for (const point of points.slice(1)) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  return {
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
   };
 }
 
@@ -842,6 +870,8 @@ function buildMobSpawn(
   const mob = mobCatalog.get(mobId) ?? {};
   const local = vecValue(spawn.pos);
   const world = addVec(zoneWorld, local);
+  const spawnArea = asRecord(spawn.spawn_area);
+  const spawnAreaPoints = vecArrayValue(spawnArea.points);
   const scene = stringValue(mob.scene, "");
   const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog, stagesJson, hazardBarrierProfilesJson) : { mobSpawns: [], barriers: [] };
 
@@ -854,6 +884,11 @@ function buildMobSpawn(
     world,
     count: numberValue(spawn.count, 1),
     radius: numberValue(spawn.radius),
+    spawnArea: {
+      shape: stringValue(spawnArea.shape, spawnAreaPoints.length ? "polygon" : "circle"),
+      points: spawnAreaPoints,
+      worldPoints: pointsFromAnchor(world, spawnAreaPoints),
+    },
     respawnDelay: numberValue(spawn.respawn_delay),
     angleDeg: numberValue(spawn.angle_deg),
     levelMin: nullableNumberValue(spawn.level_min),
@@ -876,6 +911,8 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
     const local = vecValue(zone.pos);
     const world = worldFromSectorLocal(sector, local);
     const bounds = asRecord(zone.bounds);
+    const boundsPoints = vecArrayValue(bounds.points);
+    const boundsBox = pointBounds(boundsPoints);
     const name = stringValue(zone.name, id);
     const poiLabel = stringValue(zone.poi_label, name);
 
@@ -894,8 +931,10 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
       activationRadiusBorder: boolValue(zone.activation_radius_border),
       bounds: {
         shape: stringValue(bounds.shape, "ellipse"),
-        width: numberValue(bounds.width),
-        height: numberValue(bounds.height),
+        width: numberValue(bounds.width, boundsBox.width),
+        height: numberValue(bounds.height, boundsBox.height),
+        points: boundsPoints,
+        worldPoints: pointsFromAnchor(world, boundsPoints),
       },
       stages: asArray(zone.stages).map((entry, index) => buildStagePlacement(entry, world, stages, index)),
       mobs: asArray(zone.mobs).map((entry, index) => buildMobSpawn(gameRootPath, entry, world, mobCatalog, stagesJson, hazardBarrierProfilesJson, index)),

@@ -34,9 +34,9 @@ const ZONE_TOP_LEVEL_KEYS = [
   "mobs",
 ] as const;
 
-const BOUNDS_KEYS = ["shape", "width", "height"] as const;
+const BOUNDS_KEYS = ["shape", "width", "height", "points"] as const;
 const STAGE_KEYS = ["stage_id", "pos"] as const;
-const MOB_KEYS = ["mob_id", "count", "radius", "respawn_delay", "pos", "angle_deg", "level_min", "level_max", "rank"] as const;
+const MOB_KEYS = ["mob_id", "count", "radius", "spawn_area", "respawn_delay", "pos", "angle_deg", "level_min", "level_max", "rank"] as const;
 
 function asObject(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -75,6 +75,44 @@ function parseOptionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parsePointList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (Array.isArray(entry) && entry.length >= 2) {
+        return { x: Number(entry[0]), y: Number(entry[1]) };
+      }
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as JsonObject;
+        return { x: Number(record.x), y: Number(record.y) };
+      }
+      return null;
+    })
+    .filter((point): point is { x: number; y: number } => !!point && Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function formatPointList(value: unknown) {
+  const points = parsePointList(value);
+  return points.length ? JSON.stringify(points.map((point) => [point.x, point.y]), null, 2) : "";
+}
+
+function parsePointListText(text: string, label: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const parsed = parseTolerantJsonText(trimmed);
+  if (parsed.errors.length) {
+    throw new Error(`${label}: ${parsed.errors.join(" ")}`);
+  }
+  if (!Array.isArray(parsed.value)) {
+    throw new Error(`${label} must be a JSON array of [x, y] points.`);
+  }
+  return parsePointList(parsed.value);
+}
+
+function pointsToJsonArray(points: Array<{ x: number; y: number }>) {
+  return points.map((point) => [Math.round(point.x), Math.round(point.y)]);
+}
+
 function createZoneStagePlacementDraft(value?: JsonObject): ZoneStagePlacementDraft {
   const pos = Array.isArray(value?.pos) ? value.pos : [];
   return {
@@ -96,11 +134,14 @@ function exportZoneStagePlacementDraft(draft: ZoneStagePlacementDraft) {
 
 function createZoneMobSpawnDraft(value?: JsonObject): ZoneMobSpawnDraft {
   const pos = Array.isArray(value?.pos) ? value.pos : [];
+  const spawnArea = asObject(value?.spawn_area);
   return {
     key: createDraftKey("zone-mob"),
     mobId: String(value?.mob_id ?? "").trim(),
     count: toNumberString(value?.count),
     radius: toNumberString(value?.radius),
+    spawnAreaShape: String(spawnArea.shape ?? "").trim(),
+    spawnAreaPointsJson: formatPointList(spawnArea.points),
     respawnDelay: toNumberString(value?.respawn_delay),
     posX: toNumberString(pos[0]),
     posY: toNumberString(pos[1]),
@@ -113,10 +154,19 @@ function createZoneMobSpawnDraft(value?: JsonObject): ZoneMobSpawnDraft {
 }
 
 function exportZoneMobSpawnDraft(draft: ZoneMobSpawnDraft) {
+  const spawnAreaPoints = parsePointListText(draft.spawnAreaPointsJson, `Spawn Area Points JSON for zone mob "${draft.mobId || "untitled"}"`);
+  const spawnAreaShape = draft.spawnAreaShape.trim();
   return cleanObject({
     mob_id: draft.mobId.trim(),
     count: parseNumber(draft.count),
     radius: parseNumber(draft.radius),
+    spawn_area:
+      spawnAreaShape || spawnAreaPoints.length
+        ? cleanObject({
+            shape: spawnAreaShape || "polygon",
+            points: spawnAreaPoints.length ? pointsToJsonArray(spawnAreaPoints) : undefined,
+          })
+        : undefined,
     respawn_delay: parseNumber(draft.respawnDelay),
     pos: [parseNumber(draft.posX), parseNumber(draft.posY)],
     angle_deg: parseNumber(draft.angleDeg),
@@ -152,6 +202,7 @@ function createZoneDraft(id: string, record?: JsonObject): ZoneDraft {
     boundsShape: String(bounds.shape ?? "ellipse").trim(),
     boundsWidth: toNumberString(bounds.width),
     boundsHeight: toNumberString(bounds.height),
+    boundsPointsJson: formatPointList(bounds.points),
     boundsExtraJson: formatJsonObject(objectWithoutKeys(bounds, [...BOUNDS_KEYS])),
     stages: stages.map((entry) => createZoneStagePlacementDraft(asObject(entry))),
     mobs: mobs.map((entry) => createZoneMobSpawnDraft(asObject(entry))),
@@ -160,6 +211,7 @@ function createZoneDraft(id: string, record?: JsonObject): ZoneDraft {
 }
 
 function exportZoneDraft(draft: ZoneDraft) {
+  const boundsPoints = parsePointListText(draft.boundsPointsJson, `Bounds Points JSON for zone "${draft.id || "untitled"}"`);
   return cleanObject({
     name: draft.name.trim(),
     active: draft.active,
@@ -175,6 +227,7 @@ function exportZoneDraft(draft: ZoneDraft) {
       shape: draft.boundsShape.trim() || "ellipse",
       width: parseNumber(draft.boundsWidth),
       height: parseNumber(draft.boundsHeight),
+      points: boundsPoints.length ? pointsToJsonArray(boundsPoints) : undefined,
       ...parseExtraJsonObject(draft.boundsExtraJson, `Bounds Extra JSON for zone "${draft.id || "untitled"}"`),
     }),
     stages: draft.stages.map((entry) => exportZoneStagePlacementDraft(entry)),
@@ -199,6 +252,7 @@ export function createBlankZone(existingIds: string[] = []): ZoneDraft {
       shape: "ellipse",
       width: 15000,
       height: 15000,
+      points: [],
     },
     stages: [],
     mobs: [],
@@ -217,6 +271,7 @@ export function createBlankZoneMobSpawn(): ZoneMobSpawnDraft {
     mob_id: "",
     count: 1,
     radius: 0,
+    spawn_area: {},
     respawn_delay: 30,
     pos: [0, 0],
     angle_deg: 0,
@@ -315,7 +370,7 @@ export function validateZoneDrafts(
 ) {
   const issues: ZoneValidationIssue[] = [];
   const duplicateIds = duplicateIdMap(zones.map((zone) => ({ id: zone.id, key: zone.key })));
-  const supportedBounds = new Set(["ellipse", "rectangle", "rect"]);
+  const supportedBounds = new Set(["ellipse", "rectangle", "rect", "polygon"]);
 
   for (const zone of zones) {
     const zoneLabel = zone.name.trim() || zone.id.trim() || "Untitled zone";
@@ -346,6 +401,15 @@ export function validateZoneDrafts(
         field: "boundsShape",
         message: `Zone "${zoneLabel}" uses unsupported bounds shape "${zone.boundsShape}". The preview will approximate it as a rectangle.`,
       });
+    }
+
+    try {
+      const boundsPoints = parsePointListText(zone.boundsPointsJson, `Bounds Points JSON for zone "${zone.id || "untitled"}"`);
+      if (zone.boundsShape.trim().toLowerCase() === "polygon" && boundsPoints.length < 3) {
+        pushIssue(issues, { level: "error", zoneKey: zone.key, field: "boundsPointsJson", message: `Zone "${zoneLabel}" polygon bounds need at least 3 points.` });
+      }
+    } catch (error) {
+      pushIssue(issues, { level: "error", zoneKey: zone.key, field: "boundsPointsJson", message: error instanceof Error ? error.message : String(error) });
     }
 
     try {
@@ -418,6 +482,20 @@ export function validateZoneDrafts(
       validateNumericField(issues, zone.key, `mob:${mob.key}:angleDeg`, mob.angleDeg, `${itemLabel} Angle`);
       validateOptionalNumericField(issues, zone.key, `mob:${mob.key}:levelMin`, mob.levelMin, `${itemLabel} Level Min`);
       validateOptionalNumericField(issues, zone.key, `mob:${mob.key}:levelMax`, mob.levelMax, `${itemLabel} Level Max`);
+
+      try {
+        const spawnAreaPoints = parsePointListText(mob.spawnAreaPointsJson, `Spawn Area Points JSON for zone mob "${mob.mobId || "untitled"}"`);
+        if (mob.spawnAreaShape.trim().toLowerCase() === "polygon" && spawnAreaPoints.length < 3) {
+          pushIssue(issues, { level: "error", zoneKey: zone.key, field: `mob:${mob.key}:spawnAreaPointsJson`, message: `${itemLabel} polygon spawn area needs at least 3 points.` });
+        }
+      } catch (error) {
+        pushIssue(issues, {
+          level: "error",
+          zoneKey: zone.key,
+          field: `mob:${mob.key}:spawnAreaPointsJson`,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       const levelMin = parseOptionalNumber(mob.levelMin);
       const levelMax = parseOptionalNumber(mob.levelMax);

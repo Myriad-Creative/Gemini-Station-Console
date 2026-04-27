@@ -14,6 +14,8 @@ export type ZoneMobSpawnDraft = {
   mobId: string;
   count: string;
   radius: string;
+  spawnAreaShape: string;
+  spawnAreaPointsJson: string;
   respawnDelay: string;
   posX: string;
   posY: string;
@@ -42,6 +44,7 @@ export type ZoneDraft = {
   boundsShape: string;
   boundsWidth: string;
   boundsHeight: string;
+  boundsPointsJson: string;
   boundsExtraJson: string;
   stages: ZoneStagePlacementDraft[];
   mobs: ZoneMobSpawnDraft[];
