@@ -110,8 +110,13 @@ function profileAliases(fileBaseName: string, source: JsonObject) {
 
 function buildProfile(fileName: string, rawText: string, parsed: unknown, mobUsage: Map<string, string[]>): AiProfile {
   const source = asObject(parsed);
+  const editableSource = { ...source };
+  if (!stringOrEmpty(editableSource.description) && stringOrEmpty(editableSource.notes)) {
+    editableSource.description = editableSource.notes;
+  }
+  delete editableSource.notes;
   const fileBaseName = path.basename(fileName, ".json");
-  const aliases = profileAliases(fileBaseName, source);
+  const aliases = profileAliases(fileBaseName, editableSource);
   const referencedByMobIds = Array.from(
     new Set(aliases.flatMap((alias) => mobUsage.get(alias) ?? [])),
   ).sort((left, right) => left.localeCompare(right));
@@ -120,24 +125,24 @@ function buildProfile(fileName: string, rawText: string, parsed: unknown, mobUsa
     key: fileBaseName,
     fileName,
     relativePath: path.join(AI_DIRECTORY, fileName),
-    id: stringOrEmpty(source.id) || fileBaseName,
-    aiType: stringOrEmpty(source.ai_type) || fileBaseName,
-    tags: stringListFromUnknown(source.tags),
-    notes: stringOrEmpty(source.notes),
-    script: stringOrEmpty(source.script) || null,
-    aggroRange: numberOrNull(source.aggro_range),
-    weaponRange: numberOrNull(source.weapon_range),
-    mainAbilities: normalizeAbilityRefs(source.main_abilities),
-    secondaryAbilities: normalizeAbilityRefs(source.secondary_abilities),
-    behaviorSections: collectBehaviorSections(source),
-    movementKeys: objectKeys(source.movement),
-    combatKeys: objectKeys(source.combat),
+    id: stringOrEmpty(editableSource.id) || fileBaseName,
+    aiType: stringOrEmpty(editableSource.ai_type) || fileBaseName,
+    tags: stringListFromUnknown(editableSource.tags),
+    description: stringOrEmpty(editableSource.description),
+    script: stringOrEmpty(editableSource.script) || null,
+    aggroRange: numberOrNull(editableSource.aggro_range),
+    weaponRange: numberOrNull(editableSource.weapon_range),
+    mainAbilities: normalizeAbilityRefs(editableSource.main_abilities),
+    secondaryAbilities: normalizeAbilityRefs(editableSource.secondary_abilities),
+    behaviorSections: collectBehaviorSections(editableSource),
+    movementKeys: objectKeys(editableSource.movement),
+    combatKeys: objectKeys(editableSource.combat),
     aliases,
     referencedByMobCount: referencedByMobIds.length,
     referencedByMobIds,
     parseError: null,
-    rawJson: JSON.stringify(parsed, null, 2),
-    data: toJsonValue(source) as Record<string, AiJsonValue>,
+    rawJson: JSON.stringify(editableSource, null, 2),
+    data: toJsonValue(editableSource) as Record<string, AiJsonValue>,
   };
 }
 
@@ -150,7 +155,7 @@ function buildParseErrorProfile(fileName: string, rawText: string, error: unknow
     id: fileBaseName,
     aiType: fileBaseName,
     tags: [],
-    notes: "",
+    description: "",
     script: null,
     aggroRange: null,
     weaponRange: null,

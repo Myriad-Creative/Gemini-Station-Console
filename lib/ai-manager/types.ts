@@ -30,7 +30,7 @@ export type AiProfile = {
   id: string;
   aiType: string;
   tags: string[];
-  notes: string;
+  description: string;
   script: string | null;
   aggroRange: number | null;
   weaponRange: number | null;

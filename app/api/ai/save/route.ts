@@ -46,7 +46,7 @@ function validateAiProfile(value: unknown) {
   if (value.tags !== undefined && (!Array.isArray(value.tags) || value.tags.some((entry) => typeof entry !== "string"))) {
     return "tags must be an array of strings.";
   }
-  if (value.notes !== undefined && typeof value.notes !== "string") return "notes must be a string.";
+  if (value.description !== undefined && typeof value.description !== "string") return "description must be a string.";
   if (value.ai_type !== undefined && typeof value.ai_type !== "string") return "ai_type must be a string.";
   if (value.script !== undefined && typeof value.script !== "string") return "script must be a string.";
 
@@ -84,7 +84,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const fileName = body?.fileName;
-    const profile = body?.profile;
+    const profile = isRecord(body?.profile) ? { ...body.profile } : body?.profile;
+    if (isRecord(profile)) {
+      delete profile.notes;
+    }
     if (!isSafeAiFileName(fileName)) {
       return NextResponse.json({ ok: false, error: "A safe AI JSON file name is required." }, { status: 400 });
     }

@@ -59,7 +59,9 @@ const NUMERIC_FIELDS = [
 
 function cloneData(value: JsonObject | null): JsonObject {
   if (!value) return {};
-  return JSON.parse(JSON.stringify(value)) as JsonObject;
+  const next = JSON.parse(JSON.stringify(value)) as JsonObject;
+  delete next.notes;
+  return next;
 }
 
 function uniqueSorted(values: string[]) {
@@ -379,8 +381,8 @@ function SelectedProfileEditor({
 
       <div className="card space-y-4">
         <div>
-          <div className="text-lg font-semibold text-white">Tags And Notes</div>
-          <div className="mt-1 text-sm text-white/55">Tags are searchable from the profile browser. Notes are saved directly into this AI JSON file.</div>
+          <div className="text-lg font-semibold text-white">Tags And Description</div>
+          <div className="mt-1 text-sm text-white/55">Tags are searchable from the profile browser. Description is saved directly into this AI JSON file.</div>
         </div>
         <div>
           <div className="label">Tags</div>
@@ -416,8 +418,8 @@ function SelectedProfileEditor({
           </div>
         </div>
         <label>
-          <div className="label">Notes About The AI</div>
-          <textarea className="input mt-1 min-h-[120px]" value={stringValue(draft, "notes")} onChange={(event) => updateField("notes", event.target.value)} />
+          <div className="label">Description</div>
+          <textarea className="input mt-1 min-h-[120px]" value={stringValue(draft, "description")} onChange={(event) => updateField("description", event.target.value)} />
         </label>
       </div>
 
@@ -561,7 +563,7 @@ export default function AiJsonManager() {
         profile.id,
         profile.aiType,
         profile.script ?? "",
-        stringValue(draft, "notes"),
+        stringValue(draft, "description"),
         ...draftTags,
         ...profile.aliases,
         ...profile.behaviorSections,
@@ -659,7 +661,7 @@ export default function AiJsonManager() {
           <div className="card space-y-4">
             <div>
               <div className="label">Search</div>
-              <input className="input mt-1" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="AI type, tag, notes, script, mob..." />
+              <input className="input mt-1" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="AI type, tag, description, script, mob..." />
             </div>
             <div>
               <div className="label">Script</div>
