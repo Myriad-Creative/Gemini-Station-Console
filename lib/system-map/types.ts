@@ -66,6 +66,7 @@ export type SystemMapSceneMobSpawn = {
   nodeName: string;
   mobId: string;
   displayName: string;
+  level: number | null;
   local: SystemMapVec;
   world: SystemMapVec;
   angleDeg: number | null;
@@ -206,6 +207,7 @@ export type SystemMapMobSpawn = {
   angleDeg: number;
   levelMin: number | null;
   levelMax: number | null;
+  level: number | null;
   rank: string;
   faction: string;
   sprite: string;
@@ -218,6 +220,7 @@ export type SystemMapMobSpawn = {
 export type SystemMapMobCatalogEntry = {
   id: string;
   displayName: string;
+  level: number | null;
   faction: string;
   sprite: string;
   scene: string;

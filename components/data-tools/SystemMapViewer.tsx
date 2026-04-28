@@ -21,6 +21,7 @@ import type {
   SystemMapRoute,
   SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
+  SystemMapSector,
   SystemMapStageCatalogEntry,
   SystemMapStagePlacement,
   SystemMapVec,
@@ -29,7 +30,7 @@ import type {
 import type { ZoneDraft, ZoneMobSpawnDraft, ZoneStagePlacementDraft, ZonesManagerWorkspace } from "@lib/zones-manager/types";
 import { createBlankZone, createBlankZoneMobSpawn, createBlankZoneStagePlacement, importZonesManagerWorkspace } from "@lib/zones-manager/utils";
 
-type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "barriers" | "labels";
+type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "barriers" | "labels" | "difficulty";
 type Viewport = {
   width: number;
   height: number;
@@ -316,6 +317,13 @@ type BarrierVisual = {
   sprite: string;
   opacity: number;
 };
+type DifficultySummary = {
+  min: number | null;
+  max: number | null;
+  mobRows: number;
+  spawnCount: number;
+  unknownCount: number;
+};
 
 const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   regions: true,
@@ -327,6 +335,7 @@ const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   mobs: true,
   barriers: true,
   labels: true,
+  difficulty: false,
 };
 
 const MIN_ZOOM = 0.00018;
@@ -338,6 +347,139 @@ const ASTEROID_LOW_DETAIL_ZOOM = 0.0007;
 const ASTEROID_MEDIUM_DETAIL_ZOOM = 0.0015;
 const ASTEROID_SPRITE_DETAIL_ZOOM = 0.004;
 const BARRIER_SPRITE_DETAIL_ZOOM = 0.006;
+
+function createDifficultySummary(): DifficultySummary {
+  return {
+    min: null,
+    max: null,
+    mobRows: 0,
+    spawnCount: 0,
+    unknownCount: 0,
+  };
+}
+
+function addDifficultyRange(summary: DifficultySummary, min: number | null, max: number | null, count = 1) {
+  summary.mobRows += 1;
+  summary.spawnCount += Math.max(1, Math.round(count));
+  if (min === null || max === null) {
+    summary.unknownCount += 1;
+    return;
+  }
+
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  summary.min = summary.min === null ? low : Math.min(summary.min, low);
+  summary.max = summary.max === null ? high : Math.max(summary.max, high);
+}
+
+function mobSpawnLevelRange(mob: SystemMapMobSpawn): { min: number | null; max: number | null } {
+  const min = mob.levelMin ?? mob.level ?? mob.levelMax;
+  const max = mob.levelMax ?? mob.level ?? mob.levelMin;
+  return {
+    min,
+    max,
+  };
+}
+
+function sceneMobLevelRange(mob: SystemMapSceneMobSpawn): { min: number | null; max: number | null } {
+  return {
+    min: mob.level,
+    max: mob.level,
+  };
+}
+
+function buildZoneDifficultySummary(zone: SystemMapZone): DifficultySummary {
+  const summary = createDifficultySummary();
+  for (const mob of zone.mobs) {
+    const range = mobSpawnLevelRange(mob);
+    addDifficultyRange(summary, range.min, range.max, mob.count);
+    for (const sceneMob of mob.sceneSpawns) {
+      const sceneRange = sceneMobLevelRange(sceneMob);
+      addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+    }
+  }
+  return summary;
+}
+
+function sectorKey(sector: Pick<SystemMapSector, "x" | "y">) {
+  return `${sector.x},${sector.y}`;
+}
+
+function buildSectorDifficultySummaries(sectors: SystemMapSector[], zones: SystemMapZone[]) {
+  const summaries = new Map<string, DifficultySummary>();
+  for (const sector of sectors) {
+    summaries.set(sectorKey(sector), createDifficultySummary());
+  }
+
+  for (const zone of zones) {
+    const summary = summaries.get(sectorKey(zone.sector)) ?? createDifficultySummary();
+    for (const mob of zone.mobs) {
+      const range = mobSpawnLevelRange(mob);
+      addDifficultyRange(summary, range.min, range.max, mob.count);
+      for (const sceneMob of mob.sceneSpawns) {
+        const sceneRange = sceneMobLevelRange(sceneMob);
+        addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+      }
+    }
+    summaries.set(sectorKey(zone.sector), summary);
+  }
+  return summaries;
+}
+
+function difficultyLabel(summary: DifficultySummary) {
+  if (!summary.mobRows) return "No mobs";
+  const levelRange = summary.min === null || summary.max === null ? "Lv ?" : summary.min === summary.max ? `Lv ${summary.min}` : `Lv ${summary.min}-${summary.max}`;
+  return `${levelRange} · ${summary.spawnCount} spawn${summary.spawnCount === 1 ? "" : "s"}`;
+}
+
+function difficultyTone(summary: DifficultySummary) {
+  if (!summary.mobRows || summary.max === null) {
+    return {
+      fill: "rgba(148,163,184,0.07)",
+      stroke: "rgba(148,163,184,0.36)",
+      text: "text-slate-100",
+      label: "border-slate-300/25 bg-slate-950/82",
+    };
+  }
+  if (summary.max <= 5) {
+    return {
+      fill: "rgba(34,197,94,0.11)",
+      stroke: "rgba(34,197,94,0.54)",
+      text: "text-emerald-100",
+      label: "border-emerald-300/30 bg-emerald-950/82",
+    };
+  }
+  if (summary.max <= 15) {
+    return {
+      fill: "rgba(6,182,212,0.12)",
+      stroke: "rgba(6,182,212,0.55)",
+      text: "text-cyan-100",
+      label: "border-cyan-300/30 bg-cyan-950/82",
+    };
+  }
+  if (summary.max <= 30) {
+    return {
+      fill: "rgba(250,204,21,0.13)",
+      stroke: "rgba(250,204,21,0.58)",
+      text: "text-yellow-100",
+      label: "border-yellow-300/30 bg-yellow-950/82",
+    };
+  }
+  if (summary.max <= 60) {
+    return {
+      fill: "rgba(251,146,60,0.13)",
+      stroke: "rgba(251,146,60,0.6)",
+      text: "text-orange-100",
+      label: "border-orange-300/30 bg-orange-950/82",
+    };
+  }
+  return {
+    fill: "rgba(244,63,94,0.13)",
+    stroke: "rgba(244,63,94,0.62)",
+    text: "text-rose-100",
+    label: "border-rose-300/30 bg-rose-950/82",
+  };
+}
 const ASTEROID_VIEW_PADDING = 90000;
 const MEASUREMENT_GRID_STEPS = [1000, 5000, 10000, 25000, 50000, 125000, 250000];
 const MEASUREMENT_GRID_MIN_SCREEN_SPACING = 12;
@@ -2489,6 +2631,7 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     angleDeg: Number(form.angleDeg),
     levelMin: form.levelMin.trim() ? Number(form.levelMin) : null,
     levelMax: form.levelMax.trim() ? Number(form.levelMax) : null,
+    level: entry?.level ?? null,
     rank: form.rank.trim() || "normal",
     faction: entry?.faction || "",
     sprite: entry?.sprite || "",
@@ -4591,6 +4734,7 @@ export default function SystemMapViewer() {
         if (pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) {
           const zoneMineableAsteroids = mineableAsteroidsForZone(zone, mapEnvironmentalElements);
           const zoneMineableInstanceCount = zoneMineableAsteroids.reduce((sum, asteroid) => sum + asteroid.count, 0);
+          const zoneDifficulty = zoneDifficultySummaries.get(zoneIdentity(zone)) ?? createDifficultySummary();
           return {
             x: screen.x,
             y: screen.y,
@@ -4601,6 +4745,7 @@ export default function SystemMapViewer() {
               `POI: ${zone.poiMap ? zone.poiLabel || zone.name : "not shown on map"}`,
               `Activation radius: ${formatNumber(zone.activationRadius)}`,
               zone.bounds.shape.toLowerCase() === "polygon" ? `Bounds: polygon (${zone.bounds.points.length} points)` : `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
+              `Difficulty: ${difficultyLabel(zoneDifficulty)}${zoneDifficulty.unknownCount ? `, ${zoneDifficulty.unknownCount} unknown` : ""}`,
               `Stages: ${zone.stages.length}`,
               `Zone mob rows: ${zone.mobs.length}`,
               `Scene mob markers: ${zone.mobs.reduce((sum, mob) => sum + mob.sceneSpawns.length, 0)}`,
@@ -4687,12 +4832,16 @@ export default function SystemMapViewer() {
 
     for (const sector of payload.sectors) {
       if (pointInRect(world, sector.rect)) {
+        const sectorDifficulty = sectorDifficultySummaries.get(sectorKey(sector)) ?? createDifficultySummary();
         return {
           x: screen.x,
           y: screen.y,
           title: sector.name,
           subtitle: `Sector ${sector.x}, ${sector.y}`,
-          lines: [`Bounds: ${formatVec({ x: sector.rect.x, y: sector.rect.y })} to ${formatVec({ x: sector.rect.x + sector.rect.w, y: sector.rect.y + sector.rect.h })}`],
+          lines: [
+            `Difficulty: ${difficultyLabel(sectorDifficulty)}${sectorDifficulty.unknownCount ? `, ${sectorDifficulty.unknownCount} unknown` : ""}`,
+            `Bounds: ${formatVec({ x: sector.rect.x, y: sector.rect.y })} to ${formatVec({ x: sector.rect.x + sector.rect.w, y: sector.rect.y + sector.rect.h })}`,
+          ],
         };
       }
     }
@@ -6130,6 +6279,8 @@ export default function SystemMapViewer() {
   const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
   const asteroidVisuals = useMemo(() => (payload ? buildAsteroidVisuals(payload, mapGates) : []), [mapGates, payload]);
   const visibleAsteroids = useMemo(() => (showAsteroidSprites ? filterAsteroidsForCamera(asteroidVisuals, camera, viewport) : []), [asteroidVisuals, camera, showAsteroidSprites, viewport]);
+  const zoneDifficultySummaries = useMemo(() => new Map(mapZones.map((zone) => [zoneIdentity(zone), buildZoneDifficultySummary(zone)])), [mapZones]);
+  const sectorDifficultySummaries = useMemo(() => (payload ? buildSectorDifficultySummaries(payload.sectors, mapZones) : new Map<string, DifficultySummary>()), [mapZones, payload]);
   const barrierSpritePaths = useMemo(() => {
     const paths = new Set<string>([...ASTEROID_SPRITES, ...BARRIER_DEBRIS_SPRITES, ...BARRIER_GAS_SPRITES]);
     for (const zone of mapZones) {
@@ -6182,7 +6333,7 @@ export default function SystemMapViewer() {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
     if (!normalized) return catalog.slice(0, 40);
-    return catalog.filter((mob) => [mob.id, mob.displayName, mob.faction, mob.scene].join(" ").toLowerCase().includes(normalized)).slice(0, 40);
+    return catalog.filter((mob) => [mob.id, mob.displayName, mob.level, mob.faction, mob.scene].join(" ").toLowerCase().includes(normalized)).slice(0, 40);
   }, [mobSpawnSearch, payload?.mobCatalog]);
 
   return (
@@ -6276,6 +6427,26 @@ export default function SystemMapViewer() {
                 strokeWidth={2 / camera.zoom}
               />
             ))}
+
+            {toggles.difficulty
+              ? payload.sectors.map((sector) => {
+                  const summary = sectorDifficultySummaries.get(sectorKey(sector)) ?? createDifficultySummary();
+                  if (!summary.mobRows) return null;
+                  const tone = difficultyTone(summary);
+                  return (
+                    <rect
+                      key={`${sector.x},${sector.y}:difficulty`}
+                      x={sector.rect.x}
+                      y={sector.rect.y}
+                      width={sector.rect.w}
+                      height={sector.rect.h}
+                      fill={tone.fill}
+                      stroke={tone.stroke}
+                      strokeWidth={3 / camera.zoom}
+                    />
+                  );
+                })
+              : null}
 
             {toggles.regions
               ? payload.sectors.flatMap((sector) =>
@@ -6421,6 +6592,53 @@ export default function SystemMapViewer() {
                         : null}
                       <circle cx={zone.world.x} cy={zone.world.y} r={(draggingZoneId === zoneKey ? 9 : 6) / camera.zoom} fill={zone.draft ? "#34d399" : zone.modified ? "#facc15" : zone.active ? "#22d3ee" : "#94a3b8"} />
                     </g>
+                  );
+                })
+              : null}
+
+            {toggles.difficulty
+              ? mapZones.map((zone) => {
+                  const summary = zoneDifficultySummaries.get(zoneIdentity(zone)) ?? createDifficultySummary();
+                  if (!summary.mobRows) return null;
+                  const tone = difficultyTone(summary);
+                  const zoneShape = zone.bounds.shape.toLowerCase();
+                  const zoneKey = `${zoneIdentity(zone)}:difficulty`;
+                  if (zoneShape === "polygon") {
+                    return (
+                      <polygon
+                        key={zoneKey}
+                        points={zone.bounds.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                        fill={tone.fill}
+                        stroke={tone.stroke}
+                        strokeWidth={3 / camera.zoom}
+                      />
+                    );
+                  }
+                  if (zoneShape === "rect" || zoneShape === "rectangle") {
+                    return (
+                      <rect
+                        key={zoneKey}
+                        x={zone.world.x - zone.bounds.width / 2}
+                        y={zone.world.y - zone.bounds.height / 2}
+                        width={zone.bounds.width}
+                        height={zone.bounds.height}
+                        fill={tone.fill}
+                        stroke={tone.stroke}
+                        strokeWidth={3 / camera.zoom}
+                      />
+                    );
+                  }
+                  return (
+                    <ellipse
+                      key={zoneKey}
+                      cx={zone.world.x}
+                      cy={zone.world.y}
+                      rx={zone.bounds.width / 2}
+                      ry={zone.bounds.height / 2}
+                      fill={tone.fill}
+                      stroke={tone.stroke}
+                      strokeWidth={3 / camera.zoom}
+                    />
                   );
                 })
               : null}
@@ -6756,21 +6974,59 @@ export default function SystemMapViewer() {
         </svg>
       ) : null}
 
-      {payload && toggles.labels ? (
+      {payload && (toggles.labels || toggles.difficulty) ? (
         <div className="pointer-events-none absolute inset-0">
-          {payload.sectors.map((sector) => {
-            const point = worldToScreen(rectCenter(sector.rect));
-            return (
-              <div
-                key={`${sector.x},${sector.y}:label`}
-                className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-2xl font-semibold uppercase tracking-[0.28em] text-white/[0.055]"
-                style={{ left: point.x, top: point.y }}
-              >
-                {sector.name}
-              </div>
-            );
-          })}
-          {toggles.zones
+          {toggles.labels
+            ? payload.sectors.map((sector) => {
+                const point = worldToScreen(rectCenter(sector.rect));
+                return (
+                  <div
+                    key={`${sector.x},${sector.y}:label`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-2xl font-semibold uppercase tracking-[0.28em] text-white/[0.055]"
+                    style={{ left: point.x, top: point.y }}
+                  >
+                    {sector.name}
+                  </div>
+                );
+              })
+            : null}
+          {toggles.difficulty
+            ? payload.sectors.map((sector) => {
+                const summary = sectorDifficultySummaries.get(sectorKey(sector)) ?? createDifficultySummary();
+                if (!summary.mobRows) return null;
+                const point = worldToScreen(rectCenter(sector.rect));
+                const tone = difficultyTone(summary);
+                return (
+                  <div
+                    key={`${sector.x},${sector.y}:difficulty-label`}
+                    className={`absolute -translate-x-1/2 translate-y-7 whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold shadow-lg ${tone.label} ${tone.text}`}
+                    style={{ left: point.x, top: point.y }}
+                  >
+                    {sector.name} · {difficultyLabel(summary)}
+                    {summary.unknownCount ? ` · ${summary.unknownCount} unknown` : ""}
+                  </div>
+                );
+              })
+            : null}
+          {toggles.difficulty
+            ? mapZones.map((zone) => {
+                const summary = zoneDifficultySummaries.get(zoneIdentity(zone)) ?? createDifficultySummary();
+                if (!summary.mobRows) return null;
+                const point = worldToScreen(zone.world);
+                const tone = difficultyTone(summary);
+                return (
+                  <div
+                    key={`${zoneIdentity(zone)}:difficulty-label`}
+                    className={`absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold shadow-lg ${tone.label} ${tone.text}`}
+                    style={{ left: point.x, top: point.y - 12 }}
+                  >
+                    {zone.name || zone.id} · {difficultyLabel(summary)}
+                    {summary.unknownCount ? ` · ${summary.unknownCount} unknown` : ""}
+                  </div>
+                );
+              })
+            : null}
+          {toggles.labels && toggles.zones
               ? filteredZones.map((zone) => {
                 const point = worldToScreen(zone.world);
                 return (
@@ -6791,7 +7047,7 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
-          {toggles.barriers
+          {toggles.labels && toggles.barriers
             ? filteredEnvironmentalElements.map((element) => {
                 const anchor =
                   element.type === "hazard_barrier"
@@ -6818,7 +7074,7 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
-          {toggles.environment
+          {toggles.labels && toggles.environment
             ? filteredGates.map((gate) => {
                 const point = worldToScreen(gate.world);
                 return (
@@ -6839,7 +7095,7 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
-          {toggles.pois
+          {toggles.labels && toggles.pois
             ? filteredPois.map((poi) => {
                 const point = worldToScreen(poi.world);
                 return (
@@ -6914,6 +7170,22 @@ export default function SystemMapViewer() {
             </button>
           ))}
         </div>
+
+        {toggles.difficulty ? (
+          <div className="mt-3 grid grid-cols-5 gap-1 text-[11px] text-white/70">
+            {[
+              ["1-5", "bg-emerald-400/25 text-emerald-100"],
+              ["6-15", "bg-cyan-400/25 text-cyan-100"],
+              ["16-30", "bg-yellow-400/25 text-yellow-100"],
+              ["31-60", "bg-orange-400/25 text-orange-100"],
+              ["61+", "bg-rose-400/25 text-rose-100"],
+            ].map(([label, className]) => (
+              <div key={label} className={`rounded border border-white/10 px-2 py-1 text-center ${className}`}>
+                {label}
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-white/60 sm:grid-cols-4">
           <div className="rounded border border-white/10 bg-black/20 px-3 py-2">

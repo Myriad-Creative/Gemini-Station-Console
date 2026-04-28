@@ -371,6 +371,7 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
       return {
         id,
         displayName: stringValue(mob.display_name ?? mob.name, id),
+        level: nullableNumberValue(mob.level),
         faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
         sprite: stringValue(mob.sprite, ""),
         scene: stringValue(mob.scene, ""),
@@ -697,6 +698,7 @@ function parseSceneContents(
       nodeName,
       mobId,
       displayName: stringValue(mob.display_name ?? mob.name, mobId),
+      level: nullableNumberValue(mob.level),
       local: position,
       world: addVec(parentWorld, position),
       angleDeg,
@@ -893,6 +895,7 @@ function buildMobSpawn(
     angleDeg: numberValue(spawn.angle_deg),
     levelMin: nullableNumberValue(spawn.level_min),
     levelMax: nullableNumberValue(spawn.level_max),
+    level: nullableNumberValue(mob.level),
     rank: stringValue(spawn.rank, "normal"),
     faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
     sprite: stringValue(mob.sprite, ""),
