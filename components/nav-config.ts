@@ -5,20 +5,28 @@ export type NavLink = {
   newTab?: boolean;
 };
 
-export const MAIN_NAV_LINKS: NavLink[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/mods", label: "Mods" },
-  { href: "/abilities", label: "Abilities" },
-  { href: "/items", label: "Items" },
-  { href: "/missions", label: "Missions" },
-  { href: "/mob-lab", label: "Mobs" },
-  { href: "/merchant-lab", label: "Merchant Profiles" },
-  { href: "/comms", label: "Comms" },
-  { href: "/data", label: "Data" },
-  { href: "/reports/holes", label: "Holes" },
-  { href: "/reports/outliers", label: "Outliers" },
-  { href: "/settings", label: "Settings" },
+export type SectionKey = "dashboard" | "mods" | "abilities" | "items" | "missions" | "mobs" | "merchant" | "comms" | "data" | "reports" | "settings";
+
+export type MainNavLink = {
+  section: SectionKey;
+  label: string;
+};
+
+export const MAIN_NAV_LINKS: MainNavLink[] = [
+  { section: "dashboard", label: "Dashboard" },
+  { section: "mods", label: "Mods" },
+  { section: "abilities", label: "Abilities" },
+  { section: "items", label: "Items" },
+  { section: "missions", label: "Missions" },
+  { section: "mobs", label: "Mobs" },
+  { section: "merchant", label: "Merchant Profiles" },
+  { section: "comms", label: "Comms" },
+  { section: "data", label: "Data" },
+  { section: "reports", label: "Reports" },
+  { section: "settings", label: "Settings" },
 ];
+
+const DASHBOARD_SECTION_LINKS: NavLink[] = [{ href: "/", label: "Dashboard" }];
 
 const MISSION_SECTION_LINKS: NavLink[] = [
   { href: "/missions", label: "Missions Dashboard" },
@@ -61,10 +69,25 @@ const DATA_SECTION_LINKS: NavLink[] = [
 
 const SETTINGS_SECTION_LINKS: NavLink[] = [{ href: "/settings", label: "Settings Dashboard" }];
 
-const SECTION_DASHBOARD_HREFS = new Set(["/missions", "/mods", "/abilities", "/items", "/data", "/settings"]);
+const MOB_SECTION_LINKS: NavLink[] = [{ href: "/mob-lab", label: "Mob Lab" }];
 
-export function getActiveSection(pathname: string | null | undefined): "missions" | "mods" | "abilities" | "items" | "data" | "settings" | null {
+const MERCHANT_SECTION_LINKS: NavLink[] = [{ href: "/merchant-lab", label: "Merchant Profiles" }];
+
+const COMMS_SECTION_LINKS: NavLink[] = [{ href: "/comms", label: "Comms" }];
+
+const REPORT_SECTION_LINKS: NavLink[] = [
+  { href: "/reports/holes", label: "Holes" },
+  { href: "/reports/outliers", label: "Outliers" },
+];
+
+const SECTION_DASHBOARD_HREFS = new Set(["/", "/missions", "/mods", "/abilities", "/items", "/data", "/settings"]);
+
+export function getActiveSection(pathname: string | null | undefined): SectionKey | null {
   if (!pathname) return null;
+
+  if (pathname === "/") {
+    return "dashboard";
+  }
 
   if (pathname === "/mission-lab" || pathname === "/missions" || pathname.startsWith("/missions/")) {
     return "missions";
@@ -90,29 +113,46 @@ export function getActiveSection(pathname: string | null | undefined): "missions
     return "settings";
   }
 
+  if (pathname === "/mob-lab") {
+    return "mobs";
+  }
+
+  if (pathname === "/merchant-lab") {
+    return "merchant";
+  }
+
+  if (pathname === "/comms") {
+    return "comms";
+  }
+
+  if (pathname.startsWith("/reports/")) {
+    return "reports";
+  }
+
   return null;
 }
 
-export function getSectionLinks(pathname: string | null | undefined): NavLink[] {
-  const section = getActiveSection(pathname);
+export function getSectionLinksForSection(section: SectionKey | null | undefined): NavLink[] {
+  if (section === "dashboard") return DASHBOARD_SECTION_LINKS;
   if (section === "missions") return MISSION_SECTION_LINKS;
   if (section === "mods") return MOD_SECTION_LINKS;
   if (section === "abilities") return ABILITY_SECTION_LINKS;
   if (section === "items") return ITEM_SECTION_LINKS;
   if (section === "data") return DATA_SECTION_LINKS;
   if (section === "settings") return SETTINGS_SECTION_LINKS;
+  if (section === "mobs") return MOB_SECTION_LINKS;
+  if (section === "merchant") return MERCHANT_SECTION_LINKS;
+  if (section === "comms") return COMMS_SECTION_LINKS;
+  if (section === "reports") return REPORT_SECTION_LINKS;
   return [];
 }
 
-export function isMainLinkActive(pathname: string | null | undefined, href: string) {
-  if (href === "/") return pathname === "/";
-  if (href === "/missions") return getActiveSection(pathname) === "missions";
-  if (href === "/mods") return getActiveSection(pathname) === "mods";
-  if (href === "/abilities") return getActiveSection(pathname) === "abilities";
-  if (href === "/items") return getActiveSection(pathname) === "items";
-  if (href === "/data") return getActiveSection(pathname) === "data";
-  if (href === "/settings") return getActiveSection(pathname) === "settings";
-  return pathname === href || pathname?.startsWith(`${href}/`) || false;
+export function getSectionLinks(pathname: string | null | undefined): NavLink[] {
+  return getSectionLinksForSection(getActiveSection(pathname));
+}
+
+export function isMainLinkActive(activeSection: SectionKey | null | undefined, section: SectionKey) {
+  return activeSection === section;
 }
 
 export function isSectionLinkActive(pathname: string | null | undefined, link: NavLink) {

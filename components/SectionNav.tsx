@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getSectionLinks, isSectionLinkActive } from "@components/nav-config";
+import { getSectionLinksForSection, isSectionLinkActive, type SectionKey } from "@components/nav-config";
 import { publishSharedDataWorkspaceUpdate } from "@lib/shared-upload-client";
 
 type RefreshState =
@@ -11,9 +11,9 @@ type RefreshState =
   | { tone: "error"; message: string }
   | null;
 
-export default function SectionNav() {
+export default function SectionNav({ activeSection }: { activeSection: SectionKey | null }) {
   const pathname = usePathname();
-  const links = getSectionLinks(pathname);
+  const links = getSectionLinksForSection(activeSection);
   const [reindexing, setReindexing] = useState(false);
   const [refreshState, setRefreshState] = useState<RefreshState>(null);
 
