@@ -4273,9 +4273,10 @@ export default function SystemMapViewer() {
     const targetGate = toggles.environment ? findGateAtWorld(world) : null;
     const targetEnvironmentalBarrier = toggles.barriers ? findEnvironmentalBarrierAtWorld(world) : null;
     const targetEnvironmentalRegion = toggles.barriers ? findEnvironmentalRegionAtWorld(world) : null;
-    const targetZone = toggles.zones ? findZoneAtWorld(world) : null;
+    const zoneForPlacement = findZoneAtWorld(world);
+    const targetZone = toggles.zones ? zoneForPlacement : null;
     const targetRoute = toggles.routes ? findRouteAtWorld(world) : null;
-    const zoneForAdd = targetMobSpawn?.zone ?? targetStagePlacement?.zone ?? targetZone;
+    const zoneForAdd = targetMobSpawn?.zone ?? targetStagePlacement?.zone ?? zoneForPlacement;
     const editTarget: ContextMenuEditTarget | null = targetMobSpawn
       ? { kind: "mob", zoneId: zoneIdentity(targetMobSpawn.zone), mobKey: mobIdentity(targetMobSpawn.mob) }
       : targetStagePlacement
@@ -7009,7 +7010,11 @@ export default function SystemMapViewer() {
             >
               Add Mob Spawn Here
             </button>
-          ) : null}
+          ) : (
+            <div className="rounded-lg px-3 py-2 text-left text-sm text-white/45">
+              Mob spawns are zone-owned. Add or right-click inside a zone first.
+            </div>
+          )}
           {contextMenu.zoneId ? (
             <button
               type="button"

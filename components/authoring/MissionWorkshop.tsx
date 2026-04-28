@@ -53,6 +53,7 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   scan: "Scan",
   collect: "Collect",
   kill: "Kill",
+  mine: "Mine",
   sell: "Sell",
   buy: "Buy",
   travel: "Travel",
@@ -96,6 +97,7 @@ export default function MissionWorkshop({
   const [mods, setMods] = useState<Mod[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
   const [commsOptions, setCommsOptions] = useState<LookupOption[]>([]);
+  const [mineableAsteroidOptions, setMineableAsteroidOptions] = useState<LookupOption[]>([]);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const [pendingBeatFocusKey, setPendingBeatFocusKey] = useState<string | null>(null);
@@ -112,29 +114,37 @@ export default function MissionWorkshop({
 
     async function loadCatalogs() {
       try {
-        const [itemsResponse, modsResponse, mobsResponse, commsResponse] = await Promise.all([
+        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse] = await Promise.all([
           fetch("/api/items"),
           fetch("/api/mods"),
           fetch("/api/mobs"),
           fetch("/api/settings/data/source?kind=comms"),
+          fetch("/api/settings/data/source?kind=environmentalElements"),
         ]);
 
         const itemsJson = await itemsResponse.json().catch(() => ({ data: [] }));
         const modsJson = await modsResponse.json().catch(() => ({ data: [] }));
         const mobsJson = await mobsResponse.json().catch(() => ({ data: [] }));
         const commsJson = await commsResponse.json().catch(() => ({ ok: false, text: "" }));
+        const environmentalElementsJson = await environmentalElementsResponse.json().catch(() => ({ ok: false, text: "" }));
         if (cancelled) return;
 
         setItems(Array.isArray(itemsJson.data) ? itemsJson.data : []);
         setMods(Array.isArray(modsJson.data) ? modsJson.data : []);
         setMobs(Array.isArray(mobsJson.data) ? mobsJson.data : []);
         setCommsOptions(commsJson.ok && typeof commsJson.text === "string" ? parseCommsLookupOptions(commsJson.text) : []);
+        setMineableAsteroidOptions(
+          environmentalElementsJson.ok && typeof environmentalElementsJson.text === "string"
+            ? parseMineableAsteroidLookupOptions(environmentalElementsJson.text)
+            : [],
+        );
       } catch {
         if (cancelled) return;
         setItems([]);
         setMods([]);
         setMobs([]);
         setCommsOptions([]);
+        setMineableAsteroidOptions([]);
       }
     }
 
@@ -797,6 +807,7 @@ export default function MissionWorkshop({
                   totalSteps={selectedMission.steps.length}
                   itemOptions={itemOptions}
                   mobOptions={mobOptions}
+                  mineableAsteroidOptions={mineableAsteroidOptions}
                   conversationOptions={conversationIdOptions}
                   onChange={(nextStep) => updateStep(stepIndex, () => nextStep)}
                   onAddObjective={() =>
@@ -1111,6 +1122,7 @@ function MissionStepEditor({
   totalSteps,
   itemOptions,
   mobOptions,
+  mineableAsteroidOptions,
   conversationOptions,
   onChange,
   onAddObjective,
@@ -1129,6 +1141,7 @@ function MissionStepEditor({
   totalSteps: number;
   itemOptions: LookupOption[];
   mobOptions: LookupOption[];
+  mineableAsteroidOptions: LookupOption[];
   conversationOptions: string[];
   onChange: (next: MissionStepDraft) => void;
   onAddObjective: () => void;
@@ -1206,6 +1219,7 @@ function MissionStepEditor({
             mode={normalizedMode}
             itemOptions={itemOptions}
             mobOptions={mobOptions}
+            mineableAsteroidOptions={mineableAsteroidOptions}
             conversationOptions={conversationOptions}
             onChange={(next) => onUpdateObjective(objectiveIndex, () => next)}
             onMoveUp={() => onMoveObjectiveUp(objectiveIndex)}
@@ -1226,6 +1240,7 @@ function MissionObjectiveEditor({
   mode,
   itemOptions,
   mobOptions,
+  mineableAsteroidOptions,
   conversationOptions,
   onChange,
   onMoveUp,
@@ -1239,6 +1254,7 @@ function MissionObjectiveEditor({
   mode: string;
   itemOptions: LookupOption[];
   mobOptions: LookupOption[];
+  mineableAsteroidOptions: LookupOption[];
   conversationOptions: string[];
   onChange: (next: MissionObjectiveDraft) => void;
   onMoveUp: () => void;
@@ -1247,8 +1263,19 @@ function MissionObjectiveEditor({
   onRemove: () => void;
 }) {
   const type = objective.type.trim().toLowerCase();
-  const usesMultiTarget = type === "collect" || type === "kill";
-  const usesMobTarget = type === "talk" || type === "scan" || type === "collect" || type === "kill" || type === "sell" || type === "buy" || type === "hail" || type === "repair";
+  const usesMultiTarget = type === "collect" || type === "kill" || type === "mine";
+  const usesMobTarget =
+    type === "talk" ||
+    type === "scan" ||
+    type === "collect" ||
+    type === "kill" ||
+    type === "mine" ||
+    type === "sell" ||
+    type === "buy" ||
+    type === "hail" ||
+    type === "repair";
+  const targetOptions = type === "mine" ? mineableAsteroidOptions : mobOptions;
+  const targetPlaceholder = type === "mine" ? "Search mineable asteroid or id" : "Search mob name or id";
 
   return (
     <div className="rounded border border-white/10 bg-black/20 p-3">
@@ -1291,8 +1318,8 @@ function MissionObjectiveEditor({
             <LookupIdListEditor
               label="Target IDs"
               values={objective.targetIds}
-              options={mobOptions}
-              placeholder="Search mob name or id"
+              options={targetOptions}
+              placeholder={targetPlaceholder}
               emptyText="No target ids attached."
               onChange={(next) => onChange({ ...objective, targetIds: next })}
             />
@@ -1304,8 +1331,8 @@ function MissionObjectiveEditor({
             label="Target ID"
             value={objective.targetIds[0] ?? ""}
             onChange={(value) => onChange({ ...objective, targetIds: value.trim() ? [value] : [] })}
-            options={mobOptions}
-            placeholder="Search mob name or id"
+            options={targetOptions}
+            placeholder={targetPlaceholder}
           />
         ) : null}
 
@@ -1336,7 +1363,7 @@ function MissionObjectiveEditor({
           </>
         ) : null}
 
-        {(type === "scan" || type === "collect" || type === "kill" || type === "buy" || type === "sell") ? (
+        {(type === "scan" || type === "collect" || type === "kill" || type === "mine" || type === "buy" || type === "sell") ? (
           <Field
             label="Count"
             value={objective.count}
@@ -1935,6 +1962,34 @@ function mobToLookupOption(mob: Mob): LookupOption {
     label: mob.displayName?.trim() || String(mob.id),
     meta: [mob.level != null ? `Level ${mob.level}` : "", mob.faction?.trim() || ""].filter(Boolean).join(" · "),
   };
+}
+
+function parseMineableAsteroidLookupOptions(text: string): LookupOption[] {
+  try {
+    const parsed = parseLooseJson<{ elements?: unknown[] }>(text);
+    const elements = Array.isArray(parsed?.elements) ? parsed.elements : [];
+    const options: LookupOption[] = [];
+    for (const entry of elements) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const element = entry as Record<string, unknown>;
+      if (String(element.type ?? "").trim() !== "mineable_asteroid") continue;
+      const id = String(element.id ?? "").trim();
+      if (!id) continue;
+
+      const data = element.data && typeof element.data === "object" && !Array.isArray(element.data) ? (element.data as Record<string, unknown>) : {};
+      const oreName = String(data.ore_item_name ?? data.ore_name ?? "").trim();
+      const sector = Array.isArray(element.sector_id) ? element.sector_id.map((value) => String(value)).join(",") : "";
+      const zoneId = String(element.zone_id ?? data.zone_id ?? "").trim();
+      options.push({
+        id,
+        label: String(element.name ?? id).trim() || id,
+        meta: [oreName, sector ? `Sector ${sector}` : "", zoneId].filter(Boolean).join(" · "),
+      });
+    }
+    return options.sort((left, right) => left.label.localeCompare(right.label));
+  } catch {
+    return [];
+  }
 }
 
 function parseCommsLookupOptions(text: string): LookupOption[] {

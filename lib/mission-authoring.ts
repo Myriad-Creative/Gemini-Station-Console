@@ -9,6 +9,7 @@ export const MISSION_OBJECTIVE_TYPES = [
   "scan",
   "collect",
   "kill",
+  "mine",
   "sell",
   "buy",
   "travel",
@@ -251,7 +252,7 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     type,
     targetIds: [],
     itemId: "",
-    count: type === "collect" || type === "kill" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
+    count: type === "collect" || type === "kill" || type === "mine" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
     dropChance: type === "collect" ? "1.0" : "",
     seconds: type === "travel" ? "1" : "",
     sectorId: "",
@@ -615,6 +616,15 @@ function serializeObjective(draft: MissionObjectiveDraft) {
         objective: draft.objective,
         progress_label: draft.progressLabel,
       };
+    case "mine":
+      return {
+        type,
+        count: parseNumber(draft.count) ?? 1,
+        target_id: targetIds,
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+      };
     case "sell":
     case "buy":
       return {
@@ -769,7 +779,7 @@ function conversationIdsFromDraft(draft: MissionDraft) {
 }
 
 function objectiveTargetRequirement(type: string) {
-  return type === "collect" || type === "kill" ? "many" : type === "explore" ? "none" : "one";
+  return type === "collect" || type === "kill" || type === "mine" ? "many" : type === "explore" ? "none" : "one";
 }
 
 export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds: string[] = []): ValidationMessage[] {
@@ -955,7 +965,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           });
         }
 
-        if ((type === "scan" || type === "collect" || type === "kill" || type === "buy" || type === "sell") && parseNumber(objective.count) === undefined) {
+        if ((type === "scan" || type === "collect" || type === "kill" || type === "mine" || type === "buy" || type === "sell") && parseNumber(objective.count) === undefined) {
           messages.push({
             level: "error",
             scope: "missions",
