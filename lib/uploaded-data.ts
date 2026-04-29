@@ -21,6 +21,7 @@ export type UploadedDataAvailability = {
   hazardBarrierProfiles: boolean;
   asteroidBeltGates: boolean;
   environmentalElements: boolean;
+  playerSpawn: boolean;
 };
 
 export type UploadedDataState = {
@@ -66,7 +67,8 @@ export type UploadedDataFileKind =
   | "stages"
   | "hazardBarrierProfiles"
   | "asteroidBeltGates"
-  | "environmentalElements";
+  | "environmentalElements"
+  | "playerSpawn";
 
 const UPLOADED_DATA_ROOT = path.resolve(process.cwd(), ".gemini-uploaded-data");
 const UPLOADED_DATA_DIR = path.join(UPLOADED_DATA_ROOT, "data");
@@ -91,6 +93,7 @@ export const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
   hazardBarrierProfiles: path.join("data", "database", "environment", "HazardBarrierProfiles.json"),
   asteroidBeltGates: path.join("data", "database", "environment", "AsteroidBeltGates.json"),
   environmentalElements: path.join("data", "database", "environment", "EnvironmentalElements.json"),
+  playerSpawn: path.join("data", "database", "player", "PlayerSpawn.json"),
 };
 
 function emptyAvailability(): UploadedDataAvailability {
@@ -113,6 +116,7 @@ function emptyAvailability(): UploadedDataAvailability {
     hazardBarrierProfiles: false,
     asteroidBeltGates: false,
     environmentalElements: false,
+    playerSpawn: false,
   };
 }
 
@@ -151,6 +155,7 @@ function detectAvailability(root: string): UploadedDataAvailability {
     hazardBarrierProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.hazardBarrierProfiles)),
     asteroidBeltGates: fs.existsSync(path.join(root, DATA_FILE_PATHS.asteroidBeltGates)),
     environmentalElements: fs.existsSync(path.join(root, DATA_FILE_PATHS.environmentalElements)),
+    playerSpawn: fs.existsSync(path.join(root, DATA_FILE_PATHS.playerSpawn)),
   };
 }
 

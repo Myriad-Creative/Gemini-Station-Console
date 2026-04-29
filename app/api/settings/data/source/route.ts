@@ -22,6 +22,7 @@ const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
   "hazardBarrierProfiles",
   "asteroidBeltGates",
   "environmentalElements",
+  "playerSpawn",
 ]);
 
 function isSupportedKind(value: string): value is UploadedDataFileKind {

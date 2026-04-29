@@ -12,6 +12,8 @@ import type {
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
+  SystemMapPlayerSpawn,
+  SystemMapPlayerSpawnEntry,
   SystemMapPoi,
   SystemMapRect,
   SystemMapRegion,
@@ -528,6 +530,35 @@ function buildMineableOreItems(itemsJson: unknown): SystemMapMineableOreItem[] {
     });
   }
   return oreItems;
+}
+
+function buildPlayerSpawn(playerSpawnJson: unknown): SystemMapPlayerSpawn | null {
+  const root = asRecord(playerSpawnJson);
+  const spawnsSource = asRecord(root.spawns);
+  const spawnEntries: SystemMapPlayerSpawnEntry[] = Object.entries(spawnsSource)
+    .map(([id, rawSpawn]) => {
+      const spawn = asRecord(rawSpawn);
+      const sector = vecValue(spawn.sector_id);
+      const local = vecValue(spawn.coordinates ?? spawn.local_pos ?? spawn.pos);
+      return {
+        id,
+        name: stringValue(spawn.name, id),
+        sector,
+        local,
+        world: worldFromSectorLocal(sector, local),
+      };
+    })
+    .filter((entry) => entry.id);
+
+  if (!spawnEntries.length) return null;
+
+  const configuredActiveId = stringValue(root.active_spawn ?? root.default_spawn, "").trim();
+  const activeSpawn = spawnEntries.find((entry) => entry.id === configuredActiveId) ?? spawnEntries[0];
+  return {
+    ...activeSpawn,
+    activeSpawnId: activeSpawn.id,
+    spawns: spawnEntries,
+  };
 }
 
 function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfilesJson: unknown, stagesJson: unknown): SystemMapEnvironmentalElement[] {
@@ -1116,7 +1147,19 @@ export async function GET() {
     );
   }
 
-  const [zonesResult, stagesResult, hazardBarrierProfilesResult, environmentalElementsResult, mobsResult, poiResult, regionsResult, routesResult, asteroidBeltGatesResult, itemsResult] = await Promise.all([
+  const [
+    zonesResult,
+    stagesResult,
+    hazardBarrierProfilesResult,
+    environmentalElementsResult,
+    mobsResult,
+    poiResult,
+    regionsResult,
+    routesResult,
+    asteroidBeltGatesResult,
+    itemsResult,
+    playerSpawnResult,
+  ] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
@@ -1127,6 +1170,7 @@ export async function GET() {
     loadDataFile(local.gameRootPath, "tradeRoutes", "trade_routes.json"),
     loadDataFile(local.gameRootPath, "asteroidBeltGates", "AsteroidBeltGates.json"),
     loadDataFile(local.gameRootPath, "items", "items.json"),
+    loadDataFile(local.gameRootPath, "playerSpawn", "PlayerSpawn.json"),
   ]);
 
   const warnings = [
@@ -1140,6 +1184,7 @@ export async function GET() {
     ...routesResult.warnings,
     ...asteroidBeltGatesResult.warnings,
     ...itemsResult.warnings,
+    ...playerSpawnResult.warnings,
   ];
 
   const mobCatalog = buildMobCatalog(mobsResult.value);
@@ -1171,6 +1216,7 @@ export async function GET() {
     environmentProfiles: buildEnvironmentProfiles(hazardBarrierProfilesResult.value, stagesResult.value),
     environmentalElements: buildEnvironmentalElements(environmentalElementsResult.value, hazardBarrierProfilesResult.value, stagesResult.value),
     mineableOreItems: buildMineableOreItems(itemsResult.value),
+    playerSpawn: buildPlayerSpawn(playerSpawnResult.value),
     warnings,
   };
 

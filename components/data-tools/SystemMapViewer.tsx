@@ -16,6 +16,7 @@ import type {
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
+  SystemMapPlayerSpawn,
   SystemMapPoi,
   SystemMapRect,
   SystemMapRoute,
@@ -658,6 +659,27 @@ function localPointsToWorld(sector: SystemMapVec, points: SystemMapVec[], sector
   return points.map((point) => sectorLocalToWorld(sector, point, sectorSize));
 }
 
+function playerSpawnAtWorld(playerSpawn: SystemMapPlayerSpawn, world: SystemMapVec, sectorSize = DEFAULT_SECTOR_SIZE, sectorHalfExtent = DEFAULT_SECTOR_HALF_EXTENT): SystemMapPlayerSpawn {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const { sector, local } = worldToSectorLocal(roundedWorld, sectorSize, sectorHalfExtent);
+  const nextActiveSpawn = {
+    id: playerSpawn.activeSpawnId,
+    name: playerSpawn.name,
+    sector,
+    local,
+    world: roundedWorld,
+  };
+  return {
+    ...playerSpawn,
+    ...nextActiveSpawn,
+    modified: true,
+    spawns: playerSpawn.spawns.map((spawn) => (spawn.id === playerSpawn.activeSpawnId ? nextActiveSpawn : spawn)),
+  };
+}
+
 function translateVec(value: SystemMapVec, delta: SystemMapVec): SystemMapVec {
   return {
     x: value.x + delta.x,
@@ -980,6 +1002,9 @@ function computeWorldBounds(
   }
   for (const poi of payload.pois) {
     bounds = expandBounds(bounds, poi.world);
+  }
+  if (payload.playerSpawn) {
+    bounds = expandBounds(bounds, payload.playerSpawn.world);
   }
   for (const route of routes) {
     for (const point of routeRenderPoints(route)) {
@@ -2911,6 +2936,26 @@ function routePointToLocal(point: SystemMapVec, sector: SystemMapVec, sectorSize
   };
 }
 
+function playerSpawnToJson(playerSpawn: SystemMapPlayerSpawn, basePlayerSpawn?: unknown): Record<string, unknown> {
+  const base = isPlainRecord(basePlayerSpawn) ? basePlayerSpawn : {};
+  const baseSpawns = isPlainRecord(base.spawns) ? base.spawns : {};
+  const activeBaseSpawnValue = baseSpawns[playerSpawn.activeSpawnId];
+  const activeBaseSpawn: Record<string, unknown> = isPlainRecord(activeBaseSpawnValue) ? activeBaseSpawnValue : {};
+  return {
+    ...base,
+    active_spawn: playerSpawn.activeSpawnId,
+    spawns: {
+      ...baseSpawns,
+      [playerSpawn.activeSpawnId]: {
+        ...activeBaseSpawn,
+        name: playerSpawn.name || playerSpawn.activeSpawnId,
+        sector_id: [Math.round(playerSpawn.sector.x), Math.round(playerSpawn.sector.y)],
+        coordinates: [Math.round(playerSpawn.local.x), Math.round(playerSpawn.local.y)],
+      },
+    },
+  };
+}
+
 function routeToTradeRouteJson(route: SystemMapRoute, sectorSize: number, baseRoute?: unknown): Record<string, unknown> {
   const base = isPlainRecord(baseRoute) ? baseRoute : {};
   const baseEndpoints = isPlainRecord(base.endpoints) ? base.endpoints : {};
@@ -3062,6 +3107,7 @@ export default function SystemMapViewer() {
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
   const [draftRoutes, setDraftRoutes] = useState<SystemMapRoute[]>([]);
   const [draftEnvironmentalElements, setDraftEnvironmentalElements] = useState<SystemMapEnvironmentalElement[]>([]);
+  const [editedPlayerSpawn, setEditedPlayerSpawn] = useState<SystemMapPlayerSpawn | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneDraftForm | null>(null);
   const [routeForm, setRouteForm] = useState<RouteDraftForm | null>(null);
@@ -3102,6 +3148,7 @@ export default function SystemMapViewer() {
   const [savingRoutes, setSavingRoutes] = useState(false);
   const [savingGates, setSavingGates] = useState(false);
   const [savingEnvironmental, setSavingEnvironmental] = useState(false);
+  const [savingPlayerSpawn, setSavingPlayerSpawn] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
 
   useEffect(() => {
@@ -3116,6 +3163,7 @@ export default function SystemMapViewer() {
           return;
         }
         setPayload(data as SystemMapPayload);
+        setEditedPlayerSpawn(null);
         setError("");
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -3172,6 +3220,7 @@ export default function SystemMapViewer() {
   const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
   const mapGates = useMemo(() => payload?.asteroidBeltGates ?? [], [payload]);
   const mapEnvironmentalElements = useMemo(() => (payload ? [...payload.environmentalElements, ...draftEnvironmentalElements] : []), [draftEnvironmentalElements, payload]);
+  const mapPlayerSpawn = editedPlayerSpawn ?? payload?.playerSpawn ?? null;
   const existingZoneIds = useMemo(() => mapZones.map((zone) => zone.id).filter(Boolean), [mapZones]);
   const existingRouteIds = useMemo(() => mapRoutes.map((route) => route.id).filter(Boolean), [mapRoutes]);
   const existingEnvironmentalIds = useMemo(() => mapEnvironmentalElements.map((element) => element.id).filter(Boolean), [mapEnvironmentalElements]);
@@ -4015,6 +4064,29 @@ export default function SystemMapViewer() {
     setCamera(cameraForBounds(bounds, viewport));
   }
 
+  function centerPlayerSpawn() {
+    if (!mapPlayerSpawn) {
+      setStatus({ tone: "error", message: "PlayerSpawn.json is not available or has no active spawn." });
+      return;
+    }
+    setCamera((current) => ({
+      center: mapPlayerSpawn.world,
+      zoom: clamp(Math.max(current.zoom, 0.0022), MIN_ZOOM, MAX_ZOOM),
+    }));
+    setStatus({ tone: "neutral", message: `Centered on player spawn "${mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId}".` });
+  }
+
+  function setPlayerSpawnAtWorld(world: SystemMapVec) {
+    if (!payload?.playerSpawn) {
+      setStatus({ tone: "error", message: "PlayerSpawn.json is not available or has no active spawn to update." });
+      return;
+    }
+    const nextSpawn = playerSpawnAtWorld(mapPlayerSpawn ?? payload.playerSpawn, world, payload.config.sectorSize, payload.config.sectorHalfExtent);
+    setEditedPlayerSpawn(nextSpawn);
+    setContextMenu(null);
+    setStatus({ tone: "success", message: `Moved player spawn "${nextSpawn.name || nextSpawn.activeSpawnId}". Use Save Changes To Build to write PlayerSpawn.json.` });
+  }
+
   function resetSol() {
     setCamera({
       center: { x: 0, y: 0 },
@@ -4527,6 +4599,21 @@ export default function SystemMapViewer() {
   function buildHover(screen: SystemMapVec, world: SystemMapVec): HoverInfo | null {
     if (!payload) return null;
     const screenHitRadius = 14 / camera.zoom;
+
+    if (mapPlayerSpawn && distance(world, mapPlayerSpawn.world) <= 24 / camera.zoom) {
+      return {
+        x: screen.x,
+        y: screen.y,
+        title: mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId,
+        subtitle: `${mapPlayerSpawn.modified ? "Unsaved edit" : "Active"} player spawn`,
+        lines: [
+          `Spawn ID: ${mapPlayerSpawn.activeSpawnId}`,
+          `Sector: ${mapPlayerSpawn.sector.x}, ${mapPlayerSpawn.sector.y}`,
+          `Coordinates: ${formatVec(mapPlayerSpawn.local)}`,
+          `World: ${formatVec(mapPlayerSpawn.world)}`,
+        ],
+      };
+    }
 
     if (toggles.mobs) {
       for (const zone of mapZones) {
@@ -6210,8 +6297,62 @@ export default function SystemMapViewer() {
     }
   }
 
+  async function handleSavePlayerSpawnChangesToBuild(suppressStatus = false) {
+    if (!editedPlayerSpawn || savingPlayerSpawn) return true;
+    setSavingPlayerSpawn(true);
+    if (!suppressStatus) setStatus(null);
+    try {
+      let basePlayerSpawn: unknown = {};
+      const sourceResponse = await fetch("/api/settings/data/source?kind=playerSpawn", { cache: "no-store" });
+      const sourcePayload = await sourceResponse.json().catch(() => ({}));
+      if (sourceResponse.ok && sourcePayload?.ok && typeof sourcePayload.text === "string") {
+        const parsed = parseTolerantJsonText(sourcePayload.text);
+        if (parsed.errors.length) {
+          if (!suppressStatus) setStatus({ tone: "error", message: parsed.errors[0] || "Could not parse PlayerSpawn.json before saving." });
+          return false;
+        }
+        basePlayerSpawn = parsed.value;
+      }
+
+      const playerSpawn = playerSpawnToJson(editedPlayerSpawn, basePlayerSpawn);
+      const saveResponse = await fetch("/api/player-spawn/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ playerSpawn }),
+      });
+      const savePayload = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok || !savePayload?.ok) {
+        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save player spawn into PlayerSpawn.json." });
+        return false;
+      }
+
+      const savedSpawn = {
+        ...editedPlayerSpawn,
+        modified: false,
+      };
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              playerSpawn: savedSpawn,
+            }
+          : current,
+      );
+      setEditedPlayerSpawn(null);
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved player spawn "${savedSpawn.name || savedSpawn.activeSpawnId}" into PlayerSpawn.json.` });
+      return true;
+    } catch (saveError) {
+      if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+      return false;
+    } finally {
+      setSavingPlayerSpawn(false);
+    }
+  }
+
   async function handleSaveAllChangesToBuild() {
-    if (!(hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges)) return;
+    if (!(hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges || hasPlayerSpawnChanges)) return;
     setStatus(null);
 
     if (hasZoneChanges) {
@@ -6241,12 +6382,20 @@ export default function SystemMapViewer() {
         return;
       }
     }
+    if (hasPlayerSpawnChanges) {
+      const ok = await handleSavePlayerSpawnChangesToBuild(true);
+      if (ok === false) {
+        setStatus({ tone: "error", message: "Could not save player spawn into PlayerSpawn.json." });
+        return;
+      }
+    }
 
     const changedSystems = [
       hasZoneChanges ? "zones" : null,
       hasRouteChanges ? "trade routes" : null,
       hasGateChanges ? "belt gates" : null,
       hasEnvironmentalChanges ? "environmental elements" : null,
+      hasPlayerSpawnChanges ? "player spawn" : null,
     ].filter(Boolean);
     setStatus({
       tone: "success",
@@ -6321,8 +6470,9 @@ export default function SystemMapViewer() {
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const hasGateChanges = editedGateIds.length > 0;
   const hasEnvironmentalChanges = draftEnvironmentalElements.length > 0 || editedEnvironmentalIds.length > 0;
-  const hasBuildChanges = hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges;
-  const savingBuild = savingZones || savingRoutes || savingGates || savingEnvironmental;
+  const hasPlayerSpawnChanges = !!editedPlayerSpawn;
+  const hasBuildChanges = hasZoneChanges || hasRouteChanges || hasGateChanges || hasEnvironmentalChanges || hasPlayerSpawnChanges;
+  const savingBuild = savingZones || savingRoutes || savingGates || savingEnvironmental || savingPlayerSpawn;
   const filteredStageCatalog = useMemo(() => {
     const normalized = stagePlacementSearch.trim().toLowerCase();
     const catalog = payload?.stageCatalog ?? [];
@@ -6970,6 +7120,26 @@ export default function SystemMapViewer() {
                   </g>
                 ))
               : null}
+            {mapPlayerSpawn ? (
+              <g key="player-spawn-marker">
+                <circle
+                  cx={mapPlayerSpawn.world.x}
+                  cy={mapPlayerSpawn.world.y}
+                  r={18 / camera.zoom}
+                  fill={mapPlayerSpawn.modified ? "rgba(250,204,21,0.16)" : "rgba(52,211,153,0.14)"}
+                  stroke={mapPlayerSpawn.modified ? "rgba(250,204,21,0.86)" : "rgba(52,211,153,0.82)"}
+                  strokeWidth={2.5 / camera.zoom}
+                />
+                <path
+                  d={`M ${mapPlayerSpawn.world.x} ${mapPlayerSpawn.world.y - 11 / camera.zoom} L ${mapPlayerSpawn.world.x + 11 / camera.zoom} ${mapPlayerSpawn.world.y} L ${mapPlayerSpawn.world.x} ${mapPlayerSpawn.world.y + 11 / camera.zoom} L ${mapPlayerSpawn.world.x - 11 / camera.zoom} ${mapPlayerSpawn.world.y} Z`}
+                  fill={mapPlayerSpawn.modified ? "#facc15" : "#34d399"}
+                  stroke="rgba(255,255,255,0.88)"
+                  strokeWidth={1.5 / camera.zoom}
+                />
+                <line x1={mapPlayerSpawn.world.x - 26 / camera.zoom} y1={mapPlayerSpawn.world.y} x2={mapPlayerSpawn.world.x + 26 / camera.zoom} y2={mapPlayerSpawn.world.y} stroke="rgba(255,255,255,0.72)" strokeWidth={1 / camera.zoom} />
+                <line x1={mapPlayerSpawn.world.x} y1={mapPlayerSpawn.world.y - 26 / camera.zoom} x2={mapPlayerSpawn.world.x} y2={mapPlayerSpawn.world.y + 26 / camera.zoom} stroke="rgba(255,255,255,0.72)" strokeWidth={1 / camera.zoom} />
+              </g>
+            ) : null}
           </g>
         </svg>
       ) : null}
@@ -7105,6 +7275,21 @@ export default function SystemMapViewer() {
                 );
               })
             : null}
+          {mapPlayerSpawn ? (() => {
+            const point = worldToScreen(mapPlayerSpawn.world);
+            return (
+              <div
+                key="player-spawn-label"
+                className={`absolute translate-x-4 -translate-y-1/2 whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold shadow-lg ${
+                  mapPlayerSpawn.modified ? "border-yellow-300/35 bg-yellow-950/85 text-yellow-100" : "border-emerald-300/30 bg-emerald-950/82 text-emerald-100"
+                }`}
+                style={{ left: point.x, top: point.y }}
+              >
+                Player Spawn: {mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId}
+                {mapPlayerSpawn.modified ? " (edited)" : ""}
+              </div>
+            );
+          })() : null}
         </div>
       ) : null}
 
@@ -7123,7 +7308,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers · player spawn ${mapPlayerSpawn ? mapPlayerSpawn.activeSpawnId : "missing"}${mapPlayerSpawn?.modified ? " (edited)" : ""}`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -7144,6 +7329,9 @@ export default function SystemMapViewer() {
             </button>
             <button type="button" className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10" onClick={fitAll}>
               Fit All
+            </button>
+            <button type="button" className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:cursor-default disabled:opacity-40" disabled={!mapPlayerSpawn} onClick={centerPlayerSpawn}>
+              Player Spawn
             </button>
             <button type="button" className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10" onClick={resetSol}>
               Sol
@@ -7301,6 +7489,9 @@ export default function SystemMapViewer() {
           ) : null}
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
             Add Zone Here
+          </button>
+          <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10 disabled:cursor-default disabled:text-white/35 disabled:hover:bg-transparent" disabled={!payload?.playerSpawn} onClick={() => setPlayerSpawnAtWorld(contextMenu.world)}>
+            Set Player Spawn Here
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateEnvironmentalBarrierForm(contextMenu.world)}>
             Add Hazard Barrier Here

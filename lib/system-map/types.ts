@@ -308,6 +308,20 @@ export type SystemMapMineableOreItem = {
   icon: string;
 };
 
+export type SystemMapPlayerSpawnEntry = {
+  id: string;
+  name: string;
+  sector: SystemMapVec;
+  local: SystemMapVec;
+  world: SystemMapVec;
+};
+
+export type SystemMapPlayerSpawn = SystemMapPlayerSpawnEntry & {
+  activeSpawnId: string;
+  spawns: SystemMapPlayerSpawnEntry[];
+  modified?: boolean;
+};
+
 export type SystemMapPayload = {
   ok: true;
   sourceRoot: string;
@@ -324,5 +338,6 @@ export type SystemMapPayload = {
   environmentProfiles: SystemMapEnvironmentProfile[];
   environmentalElements: SystemMapEnvironmentalElement[];
   mineableOreItems: SystemMapMineableOreItem[];
+  playerSpawn: SystemMapPlayerSpawn | null;
   warnings: string[];
 };
