@@ -4073,7 +4073,7 @@ export default function SystemMapViewer() {
       center: mapPlayerSpawn.world,
       zoom: clamp(Math.max(current.zoom, 0.0022), MIN_ZOOM, MAX_ZOOM),
     }));
-    setStatus({ tone: "neutral", message: `Centered on player spawn "${mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId}".` });
+    setStatus({ tone: "neutral", message: "Centered on active player spawn." });
   }
 
   function setPlayerSpawnAtWorld(world: SystemMapVec) {
@@ -4084,7 +4084,7 @@ export default function SystemMapViewer() {
     const nextSpawn = playerSpawnAtWorld(mapPlayerSpawn ?? payload.playerSpawn, world, payload.config.sectorSize, payload.config.sectorHalfExtent);
     setEditedPlayerSpawn(nextSpawn);
     setContextMenu(null);
-    setStatus({ tone: "success", message: `Moved player spawn "${nextSpawn.name || nextSpawn.activeSpawnId}". Use Save Changes To Build to write PlayerSpawn.json.` });
+    setStatus({ tone: "success", message: "Moved active player spawn. Use Save Changes To Build to write PlayerSpawn.json." });
   }
 
   function resetSol() {
@@ -4604,9 +4604,10 @@ export default function SystemMapViewer() {
       return {
         x: screen.x,
         y: screen.y,
-        title: mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId,
-        subtitle: `${mapPlayerSpawn.modified ? "Unsaved edit" : "Active"} player spawn`,
+        title: "Player Spawn",
+        subtitle: mapPlayerSpawn.modified ? "Unsaved spawn point edit" : "Active spawn point",
         lines: [
+          `Spawn name: ${mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId}`,
           `Spawn ID: ${mapPlayerSpawn.activeSpawnId}`,
           `Sector: ${mapPlayerSpawn.sector.x}, ${mapPlayerSpawn.sector.y}`,
           `Coordinates: ${formatVec(mapPlayerSpawn.local)}`,
@@ -6341,7 +6342,7 @@ export default function SystemMapViewer() {
           : current,
       );
       setEditedPlayerSpawn(null);
-      if (!suppressStatus) setStatus({ tone: "success", message: `Saved player spawn "${savedSpawn.name || savedSpawn.activeSpawnId}" into PlayerSpawn.json.` });
+      if (!suppressStatus) setStatus({ tone: "success", message: "Saved active player spawn into PlayerSpawn.json." });
       return true;
     } catch (saveError) {
       if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
@@ -7285,7 +7286,7 @@ export default function SystemMapViewer() {
                 }`}
                 style={{ left: point.x, top: point.y }}
               >
-                Player Spawn: {mapPlayerSpawn.name || mapPlayerSpawn.activeSpawnId}
+                Player Spawn
                 {mapPlayerSpawn.modified ? " (edited)" : ""}
               </div>
             );
