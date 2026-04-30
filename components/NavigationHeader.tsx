@@ -17,14 +17,24 @@ export default function NavigationHeader({ version }: { version: string }) {
   }, [pathname]);
 
   return (
-    <div className="grid grid-cols-[auto,minmax(0,1fr)] items-center gap-x-12 gap-y-3">
+    <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-center gap-x-12 gap-y-3">
       <Link href="/" className="font-semibold">
         Gemini Balance Console <span className="text-white/50 text-xs align-top">v{version}</span>
       </Link>
       <Nav activeSection={activeSection} onSelectSection={setActiveSection} />
-      <div className="col-span-2 border-t border-white/10" />
+      <Link
+        href="/data/system-map"
+        target="_blank"
+        rel="noreferrer"
+        className="justify-self-end rounded border border-sky-400/80 px-3 py-1.5 text-sm font-semibold text-sky-300 transition hover:border-sky-300 hover:bg-sky-400/10 hover:text-sky-200"
+      >
+        System Map
+      </Link>
+      <div className="col-span-3 border-t border-white/10" />
       <div aria-hidden="true" />
-      <SectionNav activeSection={activeSection} />
+      <div className="col-span-2 min-w-0">
+        <SectionNav activeSection={activeSection} />
+      </div>
     </div>
   );
 }
