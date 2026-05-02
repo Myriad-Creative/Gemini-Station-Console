@@ -158,6 +158,50 @@ function parseScalar(value: string) {
   return trimmed;
 }
 
+function incrementTrailingNumber(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(.*?)(\d+)$/);
+  if (match) {
+    const [, prefix, digits] = match;
+    return `${prefix}${String(Number(digits) + 1).padStart(digits.length, "0")}`;
+  }
+  return `${trimmed}_001`;
+}
+
+export function normalizeMissionIdSlug(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+export function normalizeMissionIdValue(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return "";
+  const withoutPrefix = normalized.startsWith("mission.")
+    ? normalized.slice("mission.".length)
+    : normalized === "mission"
+      ? ""
+      : normalized.replace(/^mission[._-]+/, "");
+  const slug = normalizeMissionIdSlug(withoutPrefix);
+  return slug ? `mission.${slug}` : "mission.";
+}
+
+export function generateMissionIdFromTitle(title: string, existingIds: string[] = [], currentId?: string) {
+  const slug = normalizeMissionIdSlug(title);
+  if (!slug) return "mission.";
+
+  const taken = new Set(existingIds.map((entry) => entry.trim()).filter(Boolean));
+  if (currentId?.trim()) taken.delete(currentId.trim());
+
+  let candidate = `mission.${slug}`;
+  while (taken.has(candidate)) {
+    candidate = incrementTrailingNumber(candidate);
+  }
+  return candidate;
+}
+
 function normalizeMode(value: unknown): string {
   const normalized = String(value ?? "single").trim().toLowerCase();
   return MISSION_MODES.includes(normalized as MissionMode) ? normalized : "single";

@@ -35,7 +35,8 @@ import {
   duplicateMissionObjectiveDraft,
   duplicateMissionStepDraft,
   exportMissionDraft,
-  missionFilename,
+  generateMissionIdFromTitle,
+  normalizeMissionIdValue,
   validateMissionDrafts,
 } from "@lib/mission-authoring";
 import type { Item, Mob, Mod } from "@lib/types";
@@ -100,7 +101,9 @@ export default function MissionWorkshop({
   const [mineableAsteroidOptions, setMineableAsteroidOptions] = useState<LookupOption[]>([]);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const responseInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [pendingBeatFocusKey, setPendingBeatFocusKey] = useState<string | null>(null);
+  const [pendingResponseFocusKey, setPendingResponseFocusKey] = useState<string | null>(null);
   const clearStatus = () => setStatus(EMPTY_TIMED_STATUS);
   const statusCountdown = useDismissibleStatusCountdown(status, clearStatus);
 
@@ -233,6 +236,20 @@ export default function MissionWorkshop({
     return () => window.cancelAnimationFrame(frame);
   }, [missions, pendingBeatFocusKey]);
 
+  useEffect(() => {
+    if (!pendingResponseFocusKey) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = responseInputRefs.current[pendingResponseFocusKey];
+      if (target) {
+        target.focus();
+        const length = target.value.length;
+        target.setSelectionRange(length, length);
+        setPendingResponseFocusKey(null);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [missions, pendingResponseFocusKey]);
+
   const filteredMissions = useMemo(() => {
     return missions
       .map((mission, index) => ({ mission, index }))
@@ -293,6 +310,24 @@ export default function MissionWorkshop({
   function updateSelected(updater: (draft: MissionDraft) => MissionDraft) {
     if (!selectedMission) return;
     setMissionAt(clampedSelectedIndex, updater(selectedMission));
+  }
+
+  function updateSelectedMissionId(value: string) {
+    updateSelected((draft) => ({ ...draft, id: normalizeMissionIdValue(value) }));
+  }
+
+  function updateSelectedMissionTitle(value: string) {
+    updateSelected((draft) => {
+      const currentId = draft.id.trim();
+      const currentAutoId = generateMissionIdFromTitle(draft.title, knownMissionIds, currentId);
+      const nextAutoId = generateMissionIdFromTitle(value, knownMissionIds, currentId);
+      const shouldAutoUpdateId = !currentId || currentId === "mission." || currentId === currentAutoId;
+      return {
+        ...draft,
+        title: value,
+        id: shouldAutoUpdateId ? nextAutoId : draft.id,
+      };
+    });
   }
 
   function updateStep(stepIndex: number, updater: (step: MissionStepDraft) => MissionStepDraft) {
@@ -362,6 +397,15 @@ export default function MissionWorkshop({
     queueBeatFocus(nextBeat.key);
   }
 
+  function addResponse(conversationIndex: number, beatIndex: number) {
+    const nextResponse = createMissionConversationResponseDraft();
+    updateBeat(conversationIndex, beatIndex, (current) => ({
+      ...current,
+      responses: [...current.responses, nextResponse],
+    }));
+    setPendingResponseFocusKey(nextResponse.key);
+  }
+
   function addMission() {
     const next = [...missions, createMissionDraft()];
     onChange(next);
@@ -395,10 +439,36 @@ export default function MissionWorkshop({
     });
   }
 
-  function saveSelectedJson() {
+  async function saveSelectedJson() {
     if (!selectedMission) return;
-    downloadJson(exportMissionDraft(selectedMission), missionFilename(selectedMission, clampedSelectedIndex));
-    setStatus({ tone: "success", message: "Saved the selected mission JSON file.", dismissAfterMs: 7000 });
+    clearStatus();
+    try {
+      const response = await fetch("/api/missions/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mission: selectedMission, index: clampedSelectedIndex, knownMissionIds }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; savedPath?: string };
+      if (!response.ok || !payload.ok) {
+        setStatus({
+          tone: "error",
+          message: payload.error || "Could not save the selected mission into the game mission folder.",
+          dismissAfterMs: null,
+        });
+        return;
+      }
+      setStatus({
+        tone: "success",
+        message: `Saved the selected mission into the game mission folder${payload.savedPath ? `: ${payload.savedPath}` : "."}`,
+        dismissAfterMs: 7000,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not save the selected mission into the game mission folder.",
+        dismissAfterMs: null,
+      });
+    }
   }
 
   function resetFilters() {
@@ -553,7 +623,7 @@ export default function MissionWorkshop({
                   Copy JSON
                 </button>
                 <button className="btn" onClick={saveSelectedJson}>
-                  Save JSON File
+                  Save To Game Folder
                 </button>
                 <button className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30" onClick={removeSelectedMission}>
                   Delete
@@ -566,13 +636,14 @@ export default function MissionWorkshop({
             <div>
               <h3 className="text-lg font-semibold">Mission Basics</h3>
               <div className="text-sm text-white/60">
-                Mission ids must start with <code>mission.</code>. Level is the minimum required level to accept the mission.
+                Mission ids auto-generate from the title as lowercase underscores and must start with <code>mission.</code>. Level is the minimum required
+                level to accept the mission.
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Mission ID" value={selectedMission.id} onChange={(value) => updateSelected((draft) => ({ ...draft, id: value }))} />
-              <Field label="Title" value={selectedMission.title} onChange={(value) => updateSelected((draft) => ({ ...draft, title: value }))} />
+              <Field label="Mission ID" value={selectedMission.id} onChange={updateSelectedMissionId} />
+              <Field label="Title" value={selectedMission.title} onChange={updateSelectedMissionTitle} />
               <Field
                 label="Level"
                 value={selectedMission.level}
@@ -1046,12 +1117,7 @@ export default function MissionWorkshop({
                                 </button>
                                 <button
                                   className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
-                                  onClick={() =>
-                                    updateBeat(conversationIndex, beatIndex, (current) => ({
-                                      ...current,
-                                      responses: [...current.responses, createMissionConversationResponseDraft()],
-                                    }))
-                                  }
+                                  onClick={() => addResponse(conversationIndex, beatIndex)}
                                 >
                                   Add Response
                                 </button>
@@ -1065,6 +1131,9 @@ export default function MissionWorkshop({
                                     <input
                                       className="input"
                                       value={response.text}
+                                      ref={(node) => {
+                                        responseInputRefs.current[response.key] = node;
+                                      }}
                                       onChange={(event) =>
                                         updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
                                           ...current,
@@ -2031,14 +2100,4 @@ async function copyText(value: string) {
   } catch {
     return false;
   }
-}
-
-function downloadJson(value: unknown, filename: string) {
-  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
