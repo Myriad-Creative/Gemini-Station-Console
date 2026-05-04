@@ -668,77 +668,98 @@ export default function CommsManagerApp() {
                 </div>
 
                 <Section title="Identity" description="Core comms contact fields exported into the keyed object map.">
-                  <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-                    <div className="space-y-3">
-                      <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
-                        {portraitSrc ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={portraitSrc}
-                            alt={selectedContact.name || selectedContact.id || "Contact portrait"}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="px-3 text-center text-xs text-white/35">No portrait</div>
-                        )}
+                  <div className="space-y-6">
+                    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+                      <div className="space-y-3">
+                        <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
+                          {portraitSrc ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={portraitSrc}
+                              alt={selectedContact.name || selectedContact.id || "Contact portrait"}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="px-3 text-center text-xs text-white/35">No portrait</div>
+                          )}
+                        </div>
+                        <div className="rounded border border-white/10 px-3 py-2 text-xs text-white/55">
+                          {portraitOptions.length} portrait option{portraitOptions.length === 1 ? "" : "s"}
+                        </div>
                       </div>
-                      <div className="rounded border border-white/10 px-3 py-2 text-xs text-white/55">
-                        {portraitOptions.length} portrait option{portraitOptions.length === 1 ? "" : "s"}
+
+                      <div className="min-w-0 space-y-4">
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div>
+                            <div className="label">Name</div>
+                            <input
+                              className="input mt-1"
+                              value={selectedContact.name}
+                              placeholder="Ava Ray"
+                              onChange={(event) =>
+                                updateSelectedContact((current) => {
+                                  const nextName = event.target.value;
+                                  const otherIds = (workspace?.contacts ?? [])
+                                    .filter((entry) => entry.key !== current.key)
+                                    .map((entry) => entry.id);
+                                  const currentAutoId = generateCommsIdFromName(current.name, otherIds);
+                                  const nextAutoId = generateCommsIdFromName(nextName, otherIds);
+                                  const currentId = current.id.trim();
+                                  const idWasManuallyEdited = manuallyEditedContactIds.has(current.key);
+                                  const isGeneratedPlaceholder =
+                                    current.sourceIndex === -1 && GENERATED_CONTACT_ID_PATTERN.test(currentId);
+                                  const shouldAutoUpdateId =
+                                    !currentId || (!idWasManuallyEdited && (currentId === currentAutoId || isGeneratedPlaceholder));
+
+                                  return {
+                                    ...current,
+                                    name: nextName,
+                                    id: shouldAutoUpdateId ? nextAutoId : current.id,
+                                  };
+                                })
+                              }
+                            />
+                            <div className="mt-2 text-xs text-white/50">
+                              Entering a name auto-generates a lowercase ID with underscores and no special characters. You can still edit the ID manually.
+                            </div>
+                          </div>
+                          <div>
+                            <div className="label">Contact ID</div>
+                            <input
+                              className={`input mt-1 ${selectedDuplicateKeys.length ? "border-red-300/35" : ""}`}
+                              value={selectedContact.id}
+                              placeholder="ava_ray"
+                              onChange={(event) => {
+                                const nextId = normalizeCommsIdValue(event.target.value);
+                                setManuallyEditedContactIds((current) => new Set(current).add(selectedContact.key));
+                                updateSelectedContact((current) => ({ ...current, id: nextId }));
+                              }}
+                            />
+                            <div className="mt-2 text-xs text-white/50">Manual IDs are normalized to lowercase underscores.</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="label">Greeting</div>
+                          <input
+                            className="input mt-1"
+                            value={selectedContact.greeting}
+                            placeholder="Well?"
+                            onChange={(event) => updateSelectedContact((current) => ({ ...current, greeting: event.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <div className="label">Meta Notes</div>
+                          <textarea
+                            className="input mt-1 min-h-24"
+                            value={selectedContact.notes}
+                            placeholder="Authoring notes about where this contact is used."
+                            onChange={(event) => updateSelectedContact((current) => ({ ...current, notes: event.target.value }))}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="min-w-0 space-y-4">
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        <div>
-                          <div className="label">Contact ID</div>
-                          <input
-                            className={`input mt-1 ${selectedDuplicateKeys.length ? "border-red-300/35" : ""}`}
-                            value={selectedContact.id}
-                            placeholder="ava_ray"
-                            onChange={(event) => {
-                              const nextId = normalizeCommsIdValue(event.target.value);
-                              setManuallyEditedContactIds((current) => new Set(current).add(selectedContact.key));
-                              updateSelectedContact((current) => ({ ...current, id: nextId }));
-                            }}
-                          />
-                          <div className="mt-2 text-xs text-white/50">Manual IDs are normalized to lowercase underscores.</div>
-                        </div>
-                        <div>
-                          <div className="label">Name</div>
-                          <input
-                            className="input mt-1"
-                            value={selectedContact.name}
-                            placeholder="Ava Ray"
-                            onChange={(event) =>
-                              updateSelectedContact((current) => {
-                                const nextName = event.target.value;
-                                const otherIds = (workspace?.contacts ?? [])
-                                  .filter((entry) => entry.key !== current.key)
-                                  .map((entry) => entry.id);
-                                const currentAutoId = generateCommsIdFromName(current.name, otherIds);
-                                const nextAutoId = generateCommsIdFromName(nextName, otherIds);
-                                const currentId = current.id.trim();
-                                const idWasManuallyEdited = manuallyEditedContactIds.has(current.key);
-                                const isGeneratedPlaceholder =
-                                  current.sourceIndex === -1 && GENERATED_CONTACT_ID_PATTERN.test(currentId);
-                                const shouldAutoUpdateId =
-                                  !currentId || (!idWasManuallyEdited && (currentId === currentAutoId || isGeneratedPlaceholder));
-
-                                return {
-                                  ...current,
-                                  name: nextName,
-                                  id: shouldAutoUpdateId ? nextAutoId : current.id,
-                                };
-                              })
-                            }
-                          />
-                          <div className="mt-2 text-xs text-white/50">
-                            Entering a name auto-generates a lowercase ID with underscores and no special characters. You can still edit the ID manually.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+                    <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
                         <div>
                           <div className="label">Portrait</div>
                           <div className="mt-1 text-xs text-white/45">
@@ -806,26 +827,6 @@ export default function CommsManagerApp() {
                             </div>
                           )}
                         </div>
-                      </div>
-
-                      <div>
-                        <div className="label">Greeting</div>
-                        <input
-                          className="input mt-1"
-                          value={selectedContact.greeting}
-                          placeholder="Well?"
-                          onChange={(event) => updateSelectedContact((current) => ({ ...current, greeting: event.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <div className="label">Meta Notes</div>
-                        <textarea
-                          className="input mt-1 min-h-24"
-                          value={selectedContact.notes}
-                          placeholder="Authoring notes about where this contact is used."
-                          onChange={(event) => updateSelectedContact((current) => ({ ...current, notes: event.target.value }))}
-                        />
-                      </div>
                     </div>
                   </div>
                 </Section>
