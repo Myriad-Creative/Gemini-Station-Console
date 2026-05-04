@@ -69,6 +69,12 @@ type LookupOption = {
   meta?: string;
 };
 
+type MissionHeaderImageOption = {
+  fileName: string;
+  resPath: string;
+  label: string;
+};
+
 type IssueFilter = "all" | "error" | "warning";
 
 export default function MissionWorkshop({
@@ -99,6 +105,13 @@ export default function MissionWorkshop({
   const [mobs, setMobs] = useState<Mob[]>([]);
   const [commsOptions, setCommsOptions] = useState<LookupOption[]>([]);
   const [mineableAsteroidOptions, setMineableAsteroidOptions] = useState<LookupOption[]>([]);
+  const [factionCatalogOptions, setFactionCatalogOptions] = useState<string[]>([]);
+  const [classCatalogOptions, setClassCatalogOptions] = useState<string[]>([]);
+  const [missionHeaderOptions, setMissionHeaderOptions] = useState<MissionHeaderImageOption[]>([]);
+  const [objectivesCollapsed, setObjectivesCollapsed] = useState(false);
+  const [collapsedObjectiveKeys, setCollapsedObjectiveKeys] = useState<Set<string>>(() => new Set());
+  const [conversationsCollapsed, setConversationsCollapsed] = useState(false);
+  const [collapsedConversationBeatKeys, setCollapsedConversationBeatKeys] = useState<Set<string>>(() => new Set());
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const responseInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -117,12 +130,14 @@ export default function MissionWorkshop({
 
     async function loadCatalogs() {
       try {
-        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse] = await Promise.all([
+        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse, taxonomyResponse, missionHeaderResponse] = await Promise.all([
           fetch("/api/items"),
           fetch("/api/mods"),
           fetch("/api/mobs"),
           fetch("/api/settings/data/source?kind=comms"),
           fetch("/api/settings/data/source?kind=environmentalElements"),
+          fetch("/api/taxonomy"),
+          fetch("/api/mission-header-images"),
         ]);
 
         const itemsJson = await itemsResponse.json().catch(() => ({ data: [] }));
@@ -130,6 +145,8 @@ export default function MissionWorkshop({
         const mobsJson = await mobsResponse.json().catch(() => ({ data: [] }));
         const commsJson = await commsResponse.json().catch(() => ({ ok: false, text: "" }));
         const environmentalElementsJson = await environmentalElementsResponse.json().catch(() => ({ ok: false, text: "" }));
+        const taxonomyJson = await taxonomyResponse.json().catch(() => ({ ok: false, factions: [], classes: [] }));
+        const missionHeaderJson = await missionHeaderResponse.json().catch(() => ({ ok: false, data: [] }));
         if (cancelled) return;
 
         setItems(Array.isArray(itemsJson.data) ? itemsJson.data : []);
@@ -141,6 +158,13 @@ export default function MissionWorkshop({
             ? parseMineableAsteroidLookupOptions(environmentalElementsJson.text)
             : [],
         );
+        setFactionCatalogOptions(
+          taxonomyJson.ok && Array.isArray(taxonomyJson.factions)
+            ? taxonomyJson.factions.map((entry: { name?: unknown }) => String(entry.name ?? "").trim()).filter(Boolean)
+            : [],
+        );
+        setClassCatalogOptions(taxonomyJson.ok && Array.isArray(taxonomyJson.classes) ? taxonomyJson.classes.map((entry: unknown) => String(entry).trim()).filter(Boolean) : []);
+        setMissionHeaderOptions(missionHeaderJson.ok && Array.isArray(missionHeaderJson.data) ? missionHeaderJson.data : []);
       } catch {
         if (cancelled) return;
         setItems([]);
@@ -148,6 +172,9 @@ export default function MissionWorkshop({
         setMobs([]);
         setCommsOptions([]);
         setMineableAsteroidOptions([]);
+        setFactionCatalogOptions([]);
+        setClassCatalogOptions([]);
+        setMissionHeaderOptions([]);
       }
     }
 
@@ -181,10 +208,7 @@ export default function MissionWorkshop({
     [clampedSelectedIndex, validation],
   );
 
-  const factionOptions = useMemo(
-    () => buildSortedOptions([...missions.map((mission) => mission.faction), ...referenceMissions.map((mission) => mission.faction ?? "")]),
-    [missions, referenceMissions],
-  );
+  const factionOptions = useMemo(() => buildSortedOptions(factionCatalogOptions), [factionCatalogOptions]);
   const levelOptions = useMemo(
     () =>
       buildSortedOptions([
@@ -209,10 +233,7 @@ export default function MissionWorkshop({
       ]),
     [missions, referenceMissions],
   );
-  const missionClassOptions = useMemo(
-    () => buildSortedOptions([...missions.map((mission) => mission.missionClass), ...referenceMissions.map((mission) => mission.class ?? "")]),
-    [missions, referenceMissions],
-  );
+  const missionClassOptions = useMemo(() => buildSortedOptions(classCatalogOptions), [classCatalogOptions]);
   const conversationIdOptions = useMemo(
     () => buildSortedOptions(selectedMission?.conversations.map((conversation) => conversation.id) ?? []),
     [selectedMission],
@@ -381,6 +402,24 @@ export default function MissionWorkshop({
       ...beat,
       responses: beat.responses.map((response, index) => (index === responseIndex ? updater(response) : response)),
     }));
+  }
+
+  function toggleObjectiveCollapsed(objectiveKey: string) {
+    setCollapsedObjectiveKeys((current) => {
+      const next = new Set(current);
+      if (next.has(objectiveKey)) next.delete(objectiveKey);
+      else next.add(objectiveKey);
+      return next;
+    });
+  }
+
+  function toggleConversationBeatCollapsed(beatKey: string) {
+    setCollapsedConversationBeatKeys((current) => {
+      const next = new Set(current);
+      if (next.has(beatKey)) next.delete(beatKey);
+      else next.add(beatKey);
+      return next;
+    });
   }
 
   function queueBeatFocus(beatKey: string) {
@@ -650,11 +689,10 @@ export default function MissionWorkshop({
                 inputMode="numeric"
                 onChange={(value) => updateSelected((draft) => ({ ...draft, level: value }))}
               />
-              <Field
-                label="Image Header Path"
+              <MissionHeaderImageSelect
                 value={selectedMission.image}
+                options={missionHeaderOptions}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, image: value }))}
-                placeholder="res://assets/missions/header_data_fragments.png"
               />
               <LookupIdField
                 label="Giver ID"
@@ -670,19 +708,21 @@ export default function MissionWorkshop({
                 options={mobOptions}
                 placeholder="Search mob name or id"
               />
-              <DatalistField
+              <SelectField
                 label="Faction"
                 value={selectedMission.faction}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, faction: value }))}
                 options={factionOptions}
-                placeholder="none"
+                allLabel="Select faction"
+                allValue=""
               />
-              <DatalistField
+              <SelectField
                 label="Class"
                 value={selectedMission.missionClass}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, missionClass: value }))}
                 options={missionClassOptions}
-                placeholder="Optional mission class"
+                allLabel="Select class"
+                allValue=""
               />
             </div>
 
@@ -856,20 +896,25 @@ export default function MissionWorkshop({
                   Each step has a mode and a shared step description. Objective fields vary by type. Talk objectives link into the conversation library below.
                 </div>
               </div>
-              <button
-                className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-                onClick={() =>
-                  updateSelected((draft) => ({
-                    ...draft,
-                    steps: [...draft.steps, createMissionStepDraft("single")],
-                  }))
-                }
-              >
-                Add Step
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setObjectivesCollapsed((value) => !value)}>
+                  {objectivesCollapsed ? "Expand Section" : "Collapse Section"}
+                </button>
+                <button
+                  className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                  onClick={() =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      steps: [...draft.steps, createMissionStepDraft("single")],
+                    }))
+                  }
+                >
+                  Add Step
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4">
+            {objectivesCollapsed ? null : <div className="space-y-4">
               {selectedMission.steps.map((step, stepIndex) => (
                 <MissionStepEditor
                   key={step.key}
@@ -880,7 +925,9 @@ export default function MissionWorkshop({
                   mobOptions={mobOptions}
                   mineableAsteroidOptions={mineableAsteroidOptions}
                   conversationOptions={conversationIdOptions}
+                  collapsedObjectiveKeys={collapsedObjectiveKeys}
                   onChange={(nextStep) => updateStep(stepIndex, () => nextStep)}
+                  onToggleObjectiveCollapse={toggleObjectiveCollapsed}
                   onAddObjective={() =>
                     updateStep(stepIndex, (current) => ({
                       ...current,
@@ -949,7 +996,7 @@ export default function MissionWorkshop({
                   }
                 />
               ))}
-            </div>
+            </div>}
           </div>
 
           <div className="card space-y-4">
@@ -960,20 +1007,25 @@ export default function MissionWorkshop({
                   Build conversation ids, beats, and player responses here. Talk objectives should reference the appropriate conversation_id.
                 </div>
               </div>
-              <button
-                className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-                onClick={() =>
-                  updateSelected((draft) => ({
-                    ...draft,
-                    conversations: [...draft.conversations, createMissionConversationDraft(`step${draft.conversations.length + 1}`)],
-                  }))
-                }
-              >
-                Add Conversation
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => setConversationsCollapsed((value) => !value)}>
+                  {conversationsCollapsed ? "Expand Section" : "Collapse Section"}
+                </button>
+                <button
+                  className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                  onClick={() =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      conversations: [...draft.conversations, createMissionConversationDraft(`step${draft.conversations.length + 1}`)],
+                    }))
+                  }
+                >
+                  Add Conversation
+                </button>
+              </div>
             </div>
 
-            {selectedMission.conversations.length ? (
+            {conversationsCollapsed ? null : selectedMission.conversations.length ? (
               <div className="space-y-4">
                 {selectedMission.conversations.map((conversation, conversationIndex) => (
                   <div key={conversation.key} className="rounded border border-white/10 bg-white/5 p-4">
@@ -1039,6 +1091,9 @@ export default function MissionWorkshop({
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <div className="text-sm font-semibold">Beat {beatIndex + 1}</div>
                             <div className="flex flex-wrap gap-2">
+                              <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={() => toggleConversationBeatCollapsed(beat.key)}>
+                                {collapsedConversationBeatKeys.has(beat.key) ? "Expand" : "Collapse"}
+                              </button>
                               <button
                                 className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-40"
                                 disabled={beatIndex === 0}
@@ -1082,6 +1137,8 @@ export default function MissionWorkshop({
                             </div>
                           </div>
 
+                          {collapsedConversationBeatKeys.has(beat.key) ? null : (
+                            <>
                           <div className="grid gap-4 md:grid-cols-2">
                             <SelectLookupField
                               label="Speaker"
@@ -1162,6 +1219,8 @@ export default function MissionWorkshop({
                               </div>
                             )}
                           </div>
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1193,8 +1252,10 @@ function MissionStepEditor({
   mobOptions,
   mineableAsteroidOptions,
   conversationOptions,
+  collapsedObjectiveKeys,
   onChange,
   onAddObjective,
+  onToggleObjectiveCollapse,
   onMoveUp,
   onMoveDown,
   onDuplicate,
@@ -1212,8 +1273,10 @@ function MissionStepEditor({
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
   conversationOptions: string[];
+  collapsedObjectiveKeys: Set<string>;
   onChange: (next: MissionStepDraft) => void;
   onAddObjective: () => void;
+  onToggleObjectiveCollapse: (objectiveKey: string) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
@@ -1290,7 +1353,9 @@ function MissionStepEditor({
             mobOptions={mobOptions}
             mineableAsteroidOptions={mineableAsteroidOptions}
             conversationOptions={conversationOptions}
+            collapsed={collapsedObjectiveKeys.has(objective.key)}
             onChange={(next) => onUpdateObjective(objectiveIndex, () => next)}
+            onToggleCollapse={() => onToggleObjectiveCollapse(objective.key)}
             onMoveUp={() => onMoveObjectiveUp(objectiveIndex)}
             onMoveDown={() => onMoveObjectiveDown(objectiveIndex)}
             onDuplicate={() => onDuplicateObjective(objectiveIndex)}
@@ -1311,7 +1376,9 @@ function MissionObjectiveEditor({
   mobOptions,
   mineableAsteroidOptions,
   conversationOptions,
+  collapsed,
   onChange,
+  onToggleCollapse,
   onMoveUp,
   onMoveDown,
   onDuplicate,
@@ -1325,7 +1392,9 @@ function MissionObjectiveEditor({
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
   conversationOptions: string[];
+  collapsed: boolean;
   onChange: (next: MissionObjectiveDraft) => void;
+  onToggleCollapse: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
@@ -1353,6 +1422,9 @@ function MissionObjectiveEditor({
           Objective {objectiveIndex + 1} · {OBJECTIVE_LABELS[type] ?? "Objective"}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={onToggleCollapse}>
+            {collapsed ? "Expand" : "Collapse"}
+          </button>
           <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-40" disabled={objectiveIndex === 0} onClick={onMoveUp}>
             Move Up
           </button>
@@ -1372,6 +1444,8 @@ function MissionObjectiveEditor({
         </div>
       </div>
 
+      {collapsed ? null : (
+        <>
       <div className="grid gap-4 md:grid-cols-2">
         <SelectField
           label="Objective Type"
@@ -1512,6 +1586,8 @@ function MissionObjectiveEditor({
           placeholder="HUD completion label"
         />
       </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1903,24 +1979,53 @@ function TextAreaField({
   );
 }
 
+function MissionHeaderImageSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: MissionHeaderImageOption[];
+  onChange: (next: string) => void;
+}) {
+  const hasCurrentValue = Boolean(value.trim()) && !options.some((option) => option.resPath === value.trim());
+  return (
+    <label className="space-y-2">
+      <div className="label">Image Header</div>
+      <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Select mission header</option>
+        {hasCurrentValue ? <option value={value}>{value} (missing from assets/missions)</option> : null}
+        {options.map((option) => (
+          <option key={option.resPath} value={option.resPath}>
+            {option.fileName}
+          </option>
+        ))}
+      </select>
+      <div className="text-xs text-white/50">Only <code>header_</code> images from <code>assets/missions</code> are listed.</div>
+    </label>
+  );
+}
+
 function SelectField({
   label,
   value,
   options,
   onChange,
   allLabel,
+  allValue = FILTER_ALL,
 }: {
   label: string;
   value: string;
   options: string[];
   onChange: (next: string) => void;
   allLabel?: string;
+  allValue?: string;
 }) {
   return (
     <label className="space-y-2">
       <div className="label">{label}</div>
       <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
-        {allLabel ? <option value={FILTER_ALL}>{allLabel}</option> : null}
+        {allLabel ? <option value={allValue}>{allLabel}</option> : null}
         {options.map((option) => (
           <option key={option} value={option}>
             {MODE_LABELS[option] ?? OBJECTIVE_LABELS[option] ?? option}

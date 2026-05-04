@@ -62,7 +62,11 @@ const WORLD_SECTION_LINKS: NavLink[] = [
   { href: "/data/tutorial", label: "Tutorial" },
 ];
 
-const SETTINGS_SECTION_LINKS: NavLink[] = [{ href: "/settings", label: "Settings Dashboard" }];
+const SETTINGS_SECTION_LINKS: NavLink[] = [
+  { href: "/settings", label: "Settings Dashboard" },
+  { href: "/settings/factions", label: "Faction Manager" },
+  { href: "/settings/classes", label: "Class Manager" },
+];
 
 const COMMS_SECTION_LINKS: NavLink[] = [{ href: "/comms", label: "Comms" }];
 

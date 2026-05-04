@@ -406,6 +406,7 @@ export default function ModWorkshop({
   const [autoGenerate, setAutoGenerate] = useState<AutoGenerateState>(EMPTY_AUTO_GENERATE_STATE);
   const [availableAbilities, setAvailableAbilities] = useState<AbilityOption[]>([]);
   const [availableModIcons, setAvailableModIcons] = useState<ModIconOption[]>([]);
+  const [classCatalogOptions, setClassCatalogOptions] = useState<string[]>(CLASS_RESTRICTION_OPTIONS.filter((value) => value !== "None"));
   const [modIconsLoading, setModIconsLoading] = useState(false);
   const [modIconStatus, setModIconStatus] = useState("");
   const [selectedModRouteId, setSelectedModRouteId] = useState("");
@@ -418,19 +419,26 @@ export default function ModWorkshop({
   useEffect(() => {
     let cancelled = false;
 
-    async function loadAbilities() {
+    async function loadAbilitiesAndTaxonomy() {
       try {
-        const response = await fetch("/api/abilities");
-        const json = await response.json().catch(() => ({ data: [] }));
+        const [abilitiesResponse, taxonomyResponse] = await Promise.all([fetch("/api/abilities"), fetch("/api/taxonomy")]);
+        const json = await abilitiesResponse.json().catch(() => ({ data: [] }));
+        const taxonomyJson = await taxonomyResponse.json().catch(() => ({ ok: false, classes: [] }));
         if (cancelled) return;
         setAvailableAbilities(Array.isArray(json.data) ? json.data : []);
+        setClassCatalogOptions(
+          taxonomyJson.ok && Array.isArray(taxonomyJson.classes)
+            ? taxonomyJson.classes.map((entry: unknown) => String(entry).trim()).filter(Boolean)
+            : CLASS_RESTRICTION_OPTIONS.filter((value) => value !== "None"),
+        );
       } catch {
         if (cancelled) return;
         setAvailableAbilities([]);
+        setClassCatalogOptions(CLASS_RESTRICTION_OPTIONS.filter((value) => value !== "None"));
       }
     }
 
-    loadAbilities();
+    loadAbilitiesAndTaxonomy();
     return () => {
       cancelled = true;
     };
@@ -1297,7 +1305,10 @@ export default function ModWorkshop({
                 <SelectField
                   label="Class Restriction"
                   value={bulkCreate.classRestriction}
-                  options={CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value }))}
+                  options={[
+                    { value: "None", label: "No restriction" },
+                    ...classCatalogOptions.map((value) => ({ value, label: value })),
+                  ]}
                   onChange={(value) => updateBulkCreate("classRestriction", value)}
                 />
               </div>
@@ -1790,8 +1801,8 @@ export default function ModWorkshop({
                     label="Class Restriction"
                     value={selectedSyncedMod.classRestriction[0] ?? ""}
                     options={[
-                      { value: "", label: "Select class restriction" },
-                      ...CLASS_RESTRICTION_OPTIONS.map((value) => ({ value, label: value })),
+                      { value: "", label: "No restriction" },
+                      ...classCatalogOptions.map((value) => ({ value, label: value })),
                     ]}
                     onChange={(value) => updateSelected((draft) => ({ ...draft, classRestriction: value ? [value] : [] }))}
                   />

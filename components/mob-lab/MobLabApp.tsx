@@ -26,7 +26,7 @@ type HailImageOption = {
 
 type FactionOption = {
   name: string;
-  defaultPoints: number;
+  defaultPoints: number | null;
   forcedPoints: number | null;
 };
 
@@ -330,6 +330,7 @@ export default function MobLabApp() {
   const [sortBy, setSortBy] = useState<MobSortKey>("display_name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [factionCatalog, setFactionCatalog] = useState<FactionOption[]>([]);
+  const [classCatalogOptions, setClassCatalogOptions] = useState<string[]>([]);
   const [factionCatalogStatus, setFactionCatalogStatus] = useState("");
   const [merchantProfiles, setMerchantProfiles] = useState<MerchantProfileDraft[]>([]);
   const [merchantProfileSearch, setMerchantProfileSearch] = useState("");
@@ -388,16 +389,8 @@ export default function MobLabApp() {
   }, [workspace]);
 
   const factionOptions = useMemo(() => {
-    const options = new Map<string, FactionOption | null>();
-    for (const faction of factionCatalog) {
-      options.set(faction.name, faction);
-    }
-    for (const mob of workspace?.mobs ?? []) {
-      const faction = mob.faction.trim();
-      if (faction && !options.has(faction)) options.set(faction, null);
-    }
-    return Array.from(options.entries()).sort(([left], [right]) => left.localeCompare(right));
-  }, [factionCatalog, workspace]);
+    return factionCatalog.map((faction) => [faction.name, faction] as const).sort(([left], [right]) => left.localeCompare(right));
+  }, [factionCatalog]);
   const aiOptions = useMemo(() => {
     return Array.from(new Set((workspace?.mobs ?? []).map((mob) => mob.ai_type.trim()).filter(Boolean))).sort((left, right) =>
       left.localeCompare(right),
@@ -489,20 +482,24 @@ export default function MobLabApp() {
 
     async function loadFactions() {
       try {
-        const response = await fetch("/api/factions");
+        const response = await fetch("/api/taxonomy");
         const payload = await response.json().catch(() => ({}));
-        const data = Array.isArray(payload?.data) ? (payload.data as FactionOption[]) : [];
+        const data = Array.isArray(payload?.factions) ? (payload.factions as FactionOption[]) : [];
+        const classes = Array.isArray(payload?.classes) ? payload.classes.map((entry: unknown) => String(entry).trim()).filter(Boolean) : [];
         if (cancelled) return;
         if (!response.ok || !payload?.ok) {
           setFactionCatalog([]);
-          setFactionCatalogStatus(payload?.error || "No faction catalog was found under the active local game root.");
+          setClassCatalogOptions([]);
+          setFactionCatalogStatus(payload?.error || "No faction catalog was found in the shared taxonomy manager.");
           return;
         }
         setFactionCatalog(data);
+        setClassCatalogOptions(classes);
         setFactionCatalogStatus("");
       } catch (error) {
         if (!cancelled) {
           setFactionCatalog([]);
+          setClassCatalogOptions([]);
           setFactionCatalogStatus(error instanceof Error ? error.message : String(error));
         }
       }
@@ -1367,7 +1364,7 @@ export default function MobLabApp() {
                         ))}
                       </select>
                       {selectedMob.faction.trim() && !selectedFaction ? (
-                        <div className="mt-1 text-xs text-yellow-100/80">This faction is used by mobs but was not found in PlayerReputation.gd.</div>
+                        <div className="mt-1 text-xs text-yellow-100/80">This faction is not in the shared Faction Manager catalog.</div>
                       ) : selectedFaction ? (
                         <div className="mt-1 text-xs text-white/45">
                           Default reputation: {selectedFaction.defaultPoints}
@@ -2010,21 +2007,33 @@ export default function MobLabApp() {
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <div>
                       <div className="label">Scan Faction</div>
-                      <input
-                        className="input mt-1"
+                      <select
+                        className="select mt-1 w-full"
                         value={selectedMob.scan_faction}
-                        placeholder="Gem"
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_faction: event.target.value }))}
-                      />
+                      >
+                        <option value="">No scan faction</option>
+                        {factionOptions.map(([name]) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <div className="label">Scan Class</div>
-                      <input
-                        className="input mt-1"
+                      <select
+                        className="select mt-1 w-full"
                         value={selectedMob.scan_class}
-                        placeholder="Support Craft"
                         onChange={(event) => updateSelectedMob((current) => ({ ...current, scan_class: event.target.value }))}
-                      />
+                      >
+                        <option value="">No scan class</option>
+                        {classCatalogOptions.map((className) => (
+                          <option key={className} value={className}>
+                            {className}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="lg:col-span-2 xl:col-span-3">
                       <div className="label">Scan Notes</div>
