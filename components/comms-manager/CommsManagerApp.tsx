@@ -667,147 +667,148 @@ export default function CommsManagerApp() {
                   ) : null}
                 </div>
 
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr),320px]">
-                  <Section title="Identity" description="Core comms contact fields exported into the keyed object map.">
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div>
-                        <div className="label">Contact ID</div>
-                        <input
-                          className={`input mt-1 ${selectedDuplicateKeys.length ? "border-red-300/35" : ""}`}
-                          value={selectedContact.id}
-                          placeholder="ava_ray"
-                          onChange={(event) => {
-                            const nextId = normalizeCommsIdValue(event.target.value);
-                            setManuallyEditedContactIds((current) => new Set(current).add(selectedContact.key));
-                            updateSelectedContact((current) => ({ ...current, id: nextId }));
-                          }}
-                        />
-                        <div className="mt-2 text-xs text-white/50">Manual IDs are normalized to lowercase underscores.</div>
+                <Section title="Identity" description="Core comms contact fields exported into the keyed object map.">
+                  <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+                    <div className="space-y-3">
+                      <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
+                        {portraitSrc ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={portraitSrc}
+                            alt={selectedContact.name || selectedContact.id || "Contact portrait"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="px-3 text-center text-xs text-white/35">No portrait</div>
+                        )}
                       </div>
-                      <div>
-                        <div className="label">Name</div>
-                        <input
-                          className="input mt-1"
-                          value={selectedContact.name}
-                          placeholder="Ava Ray"
-                          onChange={(event) =>
-                            updateSelectedContact((current) => {
-                              const nextName = event.target.value;
-                              const otherIds = (workspace?.contacts ?? [])
-                                .filter((entry) => entry.key !== current.key)
-                                .map((entry) => entry.id);
-                              const currentAutoId = generateCommsIdFromName(current.name, otherIds);
-                              const nextAutoId = generateCommsIdFromName(nextName, otherIds);
-                              const currentId = current.id.trim();
-                              const idWasManuallyEdited = manuallyEditedContactIds.has(current.key);
-                              const isGeneratedPlaceholder =
-                                current.sourceIndex === -1 && GENERATED_CONTACT_ID_PATTERN.test(currentId);
-                              const shouldAutoUpdateId =
-                                !currentId || (!idWasManuallyEdited && (currentId === currentAutoId || isGeneratedPlaceholder));
+                      <div className="rounded border border-white/10 px-3 py-2 text-xs text-white/55">
+                        {portraitOptions.length} portrait option{portraitOptions.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
 
-                              return {
-                                ...current,
-                                name: nextName,
-                                id: shouldAutoUpdateId ? nextAutoId : current.id,
-                              };
-                            })
-                          }
-                        />
-                        <div className="mt-2 text-xs text-white/50">
-                          Entering a name auto-generates a lowercase ID with underscores and no special characters. You can still edit the ID manually.
+                    <div className="min-w-0 space-y-4">
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div>
+                          <div className="label">Contact ID</div>
+                          <input
+                            className={`input mt-1 ${selectedDuplicateKeys.length ? "border-red-300/35" : ""}`}
+                            value={selectedContact.id}
+                            placeholder="ava_ray"
+                            onChange={(event) => {
+                              const nextId = normalizeCommsIdValue(event.target.value);
+                              setManuallyEditedContactIds((current) => new Set(current).add(selectedContact.key));
+                              updateSelectedContact((current) => ({ ...current, id: nextId }));
+                            }}
+                          />
+                          <div className="mt-2 text-xs text-white/50">Manual IDs are normalized to lowercase underscores.</div>
+                        </div>
+                        <div>
+                          <div className="label">Name</div>
+                          <input
+                            className="input mt-1"
+                            value={selectedContact.name}
+                            placeholder="Ava Ray"
+                            onChange={(event) =>
+                              updateSelectedContact((current) => {
+                                const nextName = event.target.value;
+                                const otherIds = (workspace?.contacts ?? [])
+                                  .filter((entry) => entry.key !== current.key)
+                                  .map((entry) => entry.id);
+                                const currentAutoId = generateCommsIdFromName(current.name, otherIds);
+                                const nextAutoId = generateCommsIdFromName(nextName, otherIds);
+                                const currentId = current.id.trim();
+                                const idWasManuallyEdited = manuallyEditedContactIds.has(current.key);
+                                const isGeneratedPlaceholder =
+                                  current.sourceIndex === -1 && GENERATED_CONTACT_ID_PATTERN.test(currentId);
+                                const shouldAutoUpdateId =
+                                  !currentId || (!idWasManuallyEdited && (currentId === currentAutoId || isGeneratedPlaceholder));
+
+                                return {
+                                  ...current,
+                                  name: nextName,
+                                  id: shouldAutoUpdateId ? nextAutoId : current.id,
+                                };
+                              })
+                            }
+                          />
+                          <div className="mt-2 text-xs text-white/50">
+                            Entering a name auto-generates a lowercase ID with underscores and no special characters. You can still edit the ID manually.
+                          </div>
                         </div>
                       </div>
-                      <div className="lg:col-span-2">
-                        <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="label">Portrait</div>
-                              <div className="mt-1 text-xs text-white/45">
-                                Choose from <code>res://assets/comms/</code>, or edit the path directly if needed.
-                              </div>
-                            </div>
-                            <div className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/55">
-                              {portraitOptions.length} portrait option{portraitOptions.length === 1 ? "" : "s"}
-                            </div>
-                          </div>
 
-                          <div className="grid gap-3 lg:grid-cols-[120px_minmax(0,1fr)]">
-                            <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
-                              {portraitSrc ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={portraitSrc}
-                                  alt={selectedContact.name || selectedContact.id || "Contact portrait"}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <div className="px-3 text-center text-xs text-white/35">No portrait</div>
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <input
-                                className="input"
-                                value={selectedContact.portrait}
-                                placeholder={DEFAULT_COMMS_PORTRAIT}
-                                onChange={(event) => updateSelectedContact((current) => ({ ...current, portrait: event.target.value }))}
-                              />
-                              <input
-                                className="input"
-                                value={portraitSearch}
-                                placeholder="Search comms portraits by file name or path..."
-                                onChange={(event) => setPortraitSearch(event.target.value)}
-                              />
-                              <div className="text-xs text-white/50">
-                                If blank, Comms Manager exports and previews the default portrait: <code>{DEFAULT_COMMS_PORTRAIT}</code>
-                              </div>
-                              {portraitCatalogStatus ? (
-                                <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{portraitCatalogStatus}</div>
-                              ) : null}
-                            </div>
+                      <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+                        <div>
+                          <div className="label">Portrait</div>
+                          <div className="mt-1 text-xs text-white/45">
+                            Choose from <code>res://assets/comms/</code>, or edit the path directly if needed.
                           </div>
+                        </div>
 
-                          <div className="max-h-80 overflow-y-auto pr-1">
-                            {filteredPortraitOptions.length ? (
-                              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                                {filteredPortraitOptions.map((option) => {
-                                  const isSelected = resolvedPortraitPath(selectedContact.portrait) === option.resPath;
-                                  return (
-                                    <button
-                                      key={option.resPath}
-                                      type="button"
-                                      className={`rounded-xl border p-2 text-left transition ${
-                                        isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
-                                      }`}
-                                      onClick={() => updateSelectedContact((current) => ({ ...current, portrait: option.resPath }))}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                                          <img
-                                            src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
-                                            alt={option.fileName}
-                                            className="h-full w-full object-cover"
-                                          />
-                                        </div>
-                                        <div className="min-w-0">
-                                          <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
-                                          <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
-                                          {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
-                                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <input
+                            className="input"
+                            value={selectedContact.portrait}
+                            placeholder={DEFAULT_COMMS_PORTRAIT}
+                            onChange={(event) => updateSelectedContact((current) => ({ ...current, portrait: event.target.value }))}
+                          />
+                          <input
+                            className="input"
+                            value={portraitSearch}
+                            placeholder="Search comms portraits by file name or path..."
+                            onChange={(event) => setPortraitSearch(event.target.value)}
+                          />
+                        </div>
+                        <div className="text-xs text-white/50">
+                          If blank, Comms Manager exports and previews the default portrait: <code>{DEFAULT_COMMS_PORTRAIT}</code>
+                        </div>
+                        {portraitCatalogStatus ? (
+                          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{portraitCatalogStatus}</div>
+                        ) : null}
+
+                        <div className="max-h-80 overflow-y-auto pr-1">
+                          {filteredPortraitOptions.length ? (
+                            <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                              {filteredPortraitOptions.map((option) => {
+                                const isSelected = resolvedPortraitPath(selectedContact.portrait) === option.resPath;
+                                return (
+                                  <button
+                                    key={option.resPath}
+                                    type="button"
+                                    className={`rounded-xl border p-2 text-left transition ${
+                                      isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                                    }`}
+                                    onClick={() => updateSelectedContact((current) => ({ ...current, portrait: option.resPath }))}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
+                                          alt={option.fileName}
+                                          className="h-full w-full object-cover"
+                                        />
                                       </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
-                                No comms portraits matched the current search.
-                              </div>
-                            )}
-                          </div>
+                                      <div className="min-w-0">
+                                        <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                                        <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
+                                        {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+                              No comms portraits matched the current search.
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="lg:col-span-2">
+
+                      <div>
                         <div className="label">Greeting</div>
                         <input
                           className="input mt-1"
@@ -816,7 +817,7 @@ export default function CommsManagerApp() {
                           onChange={(event) => updateSelectedContact((current) => ({ ...current, greeting: event.target.value }))}
                         />
                       </div>
-                      <div className="lg:col-span-2">
+                      <div>
                         <div className="label">Meta Notes</div>
                         <textarea
                           className="input mt-1 min-h-24"
@@ -826,25 +827,8 @@ export default function CommsManagerApp() {
                         />
                       </div>
                     </div>
-                  </Section>
-
-                  <Section title="Preview">
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                      <div className="flex items-start gap-4">
-                        <div className="h-28 w-28 overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
-                          {portraitSrc ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={portraitSrc} alt={selectedContact.name || selectedContact.id || "Contact"} className="h-full w-full object-cover" />
-                          ) : null}
-                        </div>
-                        <div className="min-w-0 space-y-2">
-                          <div className="text-lg font-semibold text-white">{selectedContact.name || selectedContact.id || "Unnamed Contact"}</div>
-                          <div className="text-sm text-white/80">{selectedContact.greeting || "[No greeting set]"}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </Section>
-                </div>
+                  </div>
+                </Section>
 
                 <Section title="Dialog" description="Manage additional dialog lines after the contact greeting. Blank entries are preserved if you keep them in the list.">
                   <DialogLineEditor
