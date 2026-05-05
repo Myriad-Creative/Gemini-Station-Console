@@ -395,18 +395,22 @@ export default function TutorialDataManager() {
               </button>
             </div>
 
-            <div className="space-y-2">
-              {entryList.map((entry) => (
-                <button
-                  key={entry.key}
-                  type="button"
-                  className={`w-full rounded-lg border p-3 text-left ${entry.key === selectedEntryKey ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/10 bg-black/10 hover:bg-white/5"}`}
-                  onClick={() => setSelectedEntryKey(entry.key)}
-                >
-                  <div className="font-medium text-white">{entry.id || "Untitled"}</div>
-                  <div className="text-sm text-white/55">{entry.title || "No title yet"}</div>
-                </button>
-              ))}
+            <div className="max-h-[31rem] space-y-2 overflow-y-auto pr-1">
+              {entryList.length ? (
+                entryList.map((entry) => (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    className={`w-full rounded-lg border p-3 text-left ${entry.key === selectedEntryKey ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/10 bg-black/10 hover:bg-white/5"}`}
+                    onClick={() => setSelectedEntryKey(entry.key)}
+                  >
+                    <div className="font-medium text-white">{entry.id || "Untitled"}</div>
+                    <div className="text-sm text-white/55">{entry.title || "No title yet"}</div>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-black/10 p-3 text-sm text-white/55">No tutorials match the current search.</div>
+              )}
             </div>
           </Section>
 
