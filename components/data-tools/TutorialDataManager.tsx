@@ -88,6 +88,7 @@ export default function TutorialDataManager() {
   const [selectedEventGroupKey, setSelectedEventGroupKey] = useState<string | null>(null);
   const [selectedAreaKey, setSelectedAreaKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [savingToGameData, setSavingToGameData] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; message: string }>({
     tone: "neutral",
     message: "Loading tutorial data from the local game root…",
@@ -137,6 +138,14 @@ export default function TutorialDataManager() {
   const groupDuplicates = useMemo(() => duplicateIdMap(triggersWorkspace?.groups ?? []), [triggersWorkspace]);
   const eventDuplicates = useMemo(() => duplicateIdMap(triggersWorkspace?.eventGroups ?? []), [triggersWorkspace]);
   const areaDuplicates = useMemo(() => duplicateIdMap(triggersWorkspace?.areas ?? []), [triggersWorkspace]);
+  const saveValidationErrors = useMemo(() => {
+    const errors: string[] = [];
+    if (entryDuplicates.size) errors.push("Resolve duplicate tutorial entry IDs before saving.");
+    if (groupDuplicates.size) errors.push("Resolve duplicate root trigger group IDs before saving.");
+    if (eventDuplicates.size) errors.push("Resolve duplicate event trigger group IDs before saving.");
+    if (areaDuplicates.size) errors.push("Resolve duplicate area trigger IDs before saving.");
+    return errors;
+  }, [areaDuplicates, entryDuplicates, eventDuplicates, groupDuplicates]);
 
   useEffect(() => {
     if (!entriesWorkspace?.entries.length) return;
@@ -228,6 +237,38 @@ export default function TutorialDataManager() {
     setStatus({ tone: "success", message: `Downloaded ${filename}.` });
   }
 
+  async function handleSaveToGameData() {
+    if (!entriesWorkspace || !triggersWorkspace) return;
+    if (saveValidationErrors.length) {
+      setStatus({ tone: "error", message: saveValidationErrors.join(" ") });
+      return;
+    }
+
+    setSavingToGameData(true);
+    setStatus({ tone: "neutral", message: "Saving tutorial data to the local game root…" });
+    try {
+      const response = await fetch("/api/tutorial/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entriesWorkspace, triggersWorkspace }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload?.error || "Could not save tutorial data into the configured game root.");
+      }
+      setStatus({
+        tone: "success",
+        message: `Saved ${payload.savedEntries ?? entriesWorkspace.entries.length} tutorial entries, ${
+          payload.savedTriggerGroups ?? triggersWorkspace.groups.length
+        } root trigger groups, ${payload.savedEventGroups ?? triggersWorkspace.eventGroups.length} event groups, and ${payload.savedAreas ?? triggersWorkspace.areas.length} areas to game data.`,
+      });
+    } catch (error) {
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setSavingToGameData(false);
+    }
+  }
+
   function addTriggerItem(kind: TriggerMode) {
     if (!triggersWorkspace) return;
     if (kind === "groups") {
@@ -303,14 +344,25 @@ export default function TutorialDataManager() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title mb-2">Tutorial</h1>
-        <p className="max-w-4xl text-white/65">
-          Manage tutorial codex entries and their trigger mappings from the active local game root.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title mb-2">Tutorial</h1>
+          <p className="max-w-4xl text-white/65">
+            Manage tutorial codex entries and their trigger mappings from the active local game root.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40"
+          disabled={!entriesWorkspace || !triggersWorkspace || savingToGameData || saveValidationErrors.length > 0}
+          onClick={() => void handleSaveToGameData()}
+        >
+          {savingToGameData ? "Saving..." : "Save To Game Data"}
+        </button>
       </div>
 
       <StatusBanner tone={status.tone} message={status.message} />
+      {saveValidationErrors.length ? <StatusBanner tone="error" message={saveValidationErrors.join(" ")} /> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <SummaryCard label="Entries" value={entriesWorkspace?.entries.length ?? 0} />
