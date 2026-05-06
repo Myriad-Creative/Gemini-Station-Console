@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RARITY_COLOR } from "@lib/constants";
+import { MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
@@ -539,8 +539,8 @@ function ModLootCard({
             <input
               className="input h-8 px-2 py-1 text-right text-xs"
               type="number"
-              min="0.01"
-              step="0.01"
+              min="1"
+              step="1"
               value={entry.weight}
               onChange={(event) => onWeightChange(Number(event.target.value))}
               onFocus={(event) => event.currentTarget.select()}
@@ -553,6 +553,233 @@ function ModLootCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function ModCatalogAddCard({
+  mod,
+  version,
+  weight,
+  onWeightChange,
+  onAdd,
+}: {
+  mod: LootTableModRecord;
+  version?: string;
+  weight: string;
+  onWeightChange: (value: string) => void;
+  onAdd: () => void;
+}) {
+  const stats = Object.entries(mod.stats || {}).filter(([, value]) => value !== 0);
+  const classRestriction = mod.classRestriction?.length ? mod.classRestriction.join(", ") : "None";
+  const parsedWeight = Number(weight);
+  const canAdd = Number.isFinite(parsedWeight) && parsedWeight > 0;
+
+  return (
+    <article
+      className="rounded-lg border px-4 py-4 shadow-xl"
+      style={{
+        background: "rgba(4, 6, 13, 0.94)",
+        borderColor: "rgba(35, 48, 59, 1)",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded border border-white/15 bg-black/30">
+          <img src={buildIconSrc(mod.icon || "icon_lootbox.png", mod.id, mod.name, version)} alt="" className="h-full w-full object-cover" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-2xl font-semibold leading-tight" style={rarityStyle(mod.rarity)}>
+            {mod.name}
+          </div>
+          <div className="mt-1 flex items-start justify-between gap-3 text-lg leading-6 text-white/90">
+            <span>{mod.slot}</span>
+            <span className="max-w-[45%] truncate text-right text-[#d8dee8]">{classRestriction}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-1 text-lg leading-7 text-[#dfe7f1]">
+        {stats.length ? (
+          stats.map(([key, value]) => (
+            <div key={key}>
+              {statValue(value)} {statLabel(key)}
+            </div>
+          ))
+        ) : (
+          <div>No stats</div>
+        )}
+        <div>Requires Level {mod.levelRequirement}</div>
+        {mod.durability !== undefined ? <div>Durability: {formatNumber(mod.durability)}</div> : null}
+      </div>
+
+      {mod.description ? <div className="mt-3 line-clamp-3 text-sm leading-5 text-white/55">{mod.description}</div> : null}
+
+      <div className="mt-4 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="mb-2 text-lg leading-none text-[#45c7dc]">Ability</div>
+          <div className="flex flex-wrap gap-2">
+            {mod.abilities.length ? (
+              mod.abilities.map((ability) => <AbilityIconButton key={`${mod.id}-${ability.id}`} ability={ability} version={version} />)
+            ) : (
+              <span className="text-sm text-white/45">None</span>
+            )}
+          </div>
+        </div>
+        <div className="grid w-28 shrink-0 gap-2 text-right text-xs text-white/45">
+          <label>
+            <span className="mb-1 block text-white/45">Drop weight</span>
+            <input
+              className="input h-8 px-2 py-1 text-right text-xs"
+              type="number"
+              min="1"
+              step="1"
+              value={weight}
+              onChange={(event) => onWeightChange(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+          <button type="button" onClick={onAdd} disabled={!canAdd} className="rounded border border-cyan-300/35 px-2 py-1 text-xs text-cyan-100 hover:bg-cyan-300/10 disabled:opacity-50">
+            Add Mod
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ModAddControl({
+  catalog,
+  existingIds,
+  version,
+  onAdd,
+}: {
+  catalog: LootTableModRecord[];
+  existingIds: Set<string>;
+  version?: string;
+  onAdd: (id: string, weight: number) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [minLevel, setMinLevel] = useState("");
+  const [maxLevel, setMaxLevel] = useState("");
+  const [rarity, setRarity] = useState("all");
+  const [slot, setSlot] = useState("all");
+  const [weights, setWeights] = useState<Record<string, string>>({});
+
+  const availableCatalog = useMemo(() => catalog.filter((mod) => !existingIds.has(normalizeClientId(mod.id))), [catalog, existingIds]);
+  const rarityOptions = useMemo(() => [...new Set(availableCatalog.map((mod) => mod.rarity))].sort((left, right) => left - right), [availableCatalog]);
+  const slotOptions = useMemo(() => {
+    const catalogSlots = availableCatalog.map((mod) => mod.slot).filter(Boolean);
+    return [...new Set([...MOD_SLOT_OPTIONS, ...catalogSlots])].sort((left, right) => left.localeCompare(right));
+  }, [availableCatalog]);
+
+  const filteredMods = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const min = minLevel.trim() ? Number(minLevel) : null;
+    const max = maxLevel.trim() ? Number(maxLevel) : null;
+
+    return availableCatalog.filter((mod) => {
+      if (min !== null && Number.isFinite(min) && mod.levelRequirement < min) return false;
+      if (max !== null && Number.isFinite(max) && mod.levelRequirement > max) return false;
+      if (rarity !== "all" && mod.rarity !== Number(rarity)) return false;
+      if (slot !== "all" && mod.slot !== slot) return false;
+      if (!query) return true;
+      const haystack = [
+        mod.id,
+        mod.name,
+        mod.slot,
+        RARITY_LABEL[mod.rarity],
+        mod.description,
+        ...(mod.classRestriction ?? []),
+        ...mod.abilities.flatMap((ability) => [ability.id, ability.name, ability.damageType, ability.primaryModSlot, ability.description]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [availableCatalog, maxLevel, minLevel, rarity, search, slot]);
+
+  const visibleMods = filteredMods.slice(0, 120);
+
+  function resetFilters() {
+    setSearch("");
+    setMinLevel("");
+    setMaxLevel("");
+    setRarity("all");
+    setSlot("all");
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold text-white">Add Mods</div>
+          <div className="mt-1 text-sm text-white/55">
+            Showing {visibleMods.length} of {filteredMods.length} matching available mods
+          </div>
+        </div>
+        <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/75 hover:bg-white/10" onClick={resetFilters}>
+          Reset Filters
+        </button>
+      </div>
+
+      <div className="grid gap-3 rounded-lg border border-white/10 bg-panel p-4 md:grid-cols-2 xl:grid-cols-[minmax(12rem,1.3fr),7rem,7rem,10rem,10rem]">
+        <label>
+          <span className="label mb-1 block">Search</span>
+          <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, ID, ability, class" />
+        </label>
+        <label>
+          <span className="label mb-1 block">Min Level</span>
+          <input className="input" type="number" min="0" step="1" value={minLevel} onChange={(event) => setMinLevel(event.target.value)} />
+        </label>
+        <label>
+          <span className="label mb-1 block">Max Level</span>
+          <input className="input" type="number" min="0" step="1" value={maxLevel} onChange={(event) => setMaxLevel(event.target.value)} />
+        </label>
+        <label>
+          <span className="label mb-1 block">Rarity</span>
+          <select className="select w-full" value={rarity} onChange={(event) => setRarity(event.target.value)}>
+            <option value="all">All rarities</option>
+            {rarityOptions.map((option) => (
+              <option key={option} value={option}>
+                {RARITY_LABEL[option] ?? `Rarity ${option}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="label mb-1 block">Slot</span>
+          <select className="select w-full" value={slot} onChange={(event) => setSlot(event.target.value)}>
+            <option value="all">All slots</option>
+            {slotOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {filteredMods.length > visibleMods.length ? <div className="text-sm text-white/45">Narrow the filters to see the remaining {filteredMods.length - visibleMods.length} mods.</div> : null}
+
+      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        {visibleMods.map((mod) => {
+          const id = normalizeClientId(mod.id);
+          const weight = weights[id] ?? "50";
+          return (
+            <ModCatalogAddCard
+              key={id}
+              mod={mod}
+              version={version}
+              weight={weight}
+              onWeightChange={(value) => setWeights((current) => ({ ...current, [id]: value }))}
+              onAdd={() => onAdd(id, Number(weight))}
+            />
+          );
+        })}
+      </div>
+
+      {!visibleMods.length ? <div className="rounded-lg border border-white/10 bg-panel p-4 text-sm text-white/55">No available mods match these filters.</div> : null}
+    </section>
   );
 }
 
@@ -661,7 +888,7 @@ function EntryAddControl<TRecord extends { id: string; name: string }>({
         </select>
         <label>
           <span className="label mb-1 block">Drop weight</span>
-          <input className="input" type="number" min="0.01" step="0.01" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <input className="input" type="number" min="1" step="1" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
         </label>
         <button
           type="button"
@@ -692,18 +919,6 @@ function ModTableView({
 
   return (
     <div className="space-y-4">
-      <EntryAddControl
-        kind="mods"
-        catalog={catalog}
-        existingIds={existingIds}
-        onAdd={(id, weight) =>
-          onChange({
-            ...table,
-            entries: [...table.entries, { id, weight, probability: 0, name: null, missing: true, record: null }],
-          })
-        }
-      />
-
       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {table.entries.map((entry, entryIndex) => (
           <ModLootCard
@@ -727,6 +942,18 @@ function ModTableView({
       </div>
 
       <AbilitiesTable rows={abilityRows} version={version} />
+
+      <ModAddControl
+        catalog={catalog}
+        existingIds={existingIds}
+        version={version}
+        onAdd={(id, weight) =>
+          onChange({
+            ...table,
+            entries: [...table.entries, { id, weight, probability: 0, name: null, missing: true, record: null }],
+          })
+        }
+      />
     </div>
   );
 }
@@ -800,8 +1027,8 @@ function ItemTableView({
                   <input
                     className="input h-8 px-2 py-1 text-right text-xs"
                     type="number"
-                    min="0.01"
-                    step="0.01"
+                    min="1"
+                    step="1"
                     value={entry.weight}
                     onChange={(event) =>
                       onChange({
@@ -1102,8 +1329,8 @@ export default function LootTableManagerApp() {
                         <input
                           className="input mt-1"
                           type="number"
-                          min="0.01"
-                          step="0.01"
+                          min="1"
+                          step="1"
                           value={selectedTable.rolls}
                           onChange={(event) => updateSelectedTable({ ...selectedTable, rolls: Number(event.target.value) } as typeof selectedTable)}
                           onFocus={(event) => event.currentTarget.select()}
