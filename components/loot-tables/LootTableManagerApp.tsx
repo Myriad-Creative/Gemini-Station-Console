@@ -301,32 +301,39 @@ function AbilityIconButton({
   ability,
   version,
   active = false,
+  sizeClass = "h-12 w-12",
   onActivate,
 }: {
   ability: LootTableAbility;
   version?: string;
   active?: boolean;
+  sizeClass?: string;
   onActivate?: (ability: LootTableAbility) => void;
 }) {
   const iconSrc = buildIconSrc(ability.icon || "icon_lootbox.png", ability.id, ability.name, version);
 
   return (
-    <button
-      type="button"
-      onMouseEnter={() => onActivate?.(ability)}
-      onFocus={() => onActivate?.(ability)}
-      onClick={() => onActivate?.(ability)}
-      className={`h-12 w-12 shrink-0 overflow-hidden rounded border bg-black/30 transition ${
-        active
-          ? "border-cyan-200 shadow-[0_0_0_2px_rgba(34,211,238,0.18)]"
-          : ability.missing
-            ? "border-amber-300/35 hover:border-amber-200"
-            : "border-white/15 hover:border-cyan-300/60"
-      }`}
-      title={ability.name}
-    >
-      <img src={iconSrc} alt={ability.name} className="h-full w-full object-cover" />
-    </button>
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        onMouseEnter={() => onActivate?.(ability)}
+        onFocus={() => onActivate?.(ability)}
+        onClick={() => onActivate?.(ability)}
+        className={`${sizeClass} shrink-0 overflow-hidden rounded border bg-black/30 transition ${
+          active
+            ? "border-cyan-200 shadow-[0_0_0_2px_rgba(34,211,238,0.18)]"
+            : ability.missing
+              ? "border-amber-300/35 hover:border-amber-200"
+              : "border-white/15 hover:border-cyan-300/60"
+        }`}
+        aria-label={ability.name}
+      >
+        <img src={iconSrc} alt="" className="h-full w-full object-cover" />
+      </button>
+      <span className="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-50 hidden w-[min(520px,calc(100vw-2rem))] group-hover:block group-focus-within:block">
+        <AbilityTooltip ability={ability} />
+      </span>
+    </span>
   );
 }
 
@@ -334,6 +341,7 @@ type AbilityTableRow = {
   ability: LootTableAbility;
   mods: LootTableModRecord[];
   totalWeight: number;
+  probability: number;
 };
 
 function collectAbilityRows(table: LootTableOption<LootTableModRecord>) {
@@ -341,14 +349,19 @@ function collectAbilityRows(table: LootTableOption<LootTableModRecord>) {
   for (const entry of table.entries) {
     if (!entry.record) continue;
     for (const ability of entry.record.abilities) {
-      const current = rows.get(ability.id) ?? { ability, mods: [], totalWeight: 0 };
+      const current = rows.get(ability.id) ?? { ability, mods: [], totalWeight: 0, probability: 0 };
       if (!current.mods.some((mod) => mod.id === entry.record?.id)) current.mods.push(entry.record);
       current.totalWeight += entry.weight;
       rows.set(ability.id, current);
     }
   }
 
-  return [...rows.values()].sort((left, right) => left.ability.name.localeCompare(right.ability.name, undefined, { numeric: true, sensitivity: "base" }));
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      probability: table.totalWeight > 0 && row.totalWeight > 0 ? row.totalWeight / table.totalWeight : 0,
+    }))
+    .sort((left, right) => left.ability.name.localeCompare(right.ability.name, undefined, { numeric: true, sensitivity: "base" }));
 }
 
 function TablePicker({
@@ -445,15 +458,11 @@ function SummaryStrip({
 function ModLootCard({
   entry,
   version,
-  activeAbilityId,
-  onActivateAbility,
   onRemove,
   onWeightChange,
 }: {
   entry: LootTableEntry<LootTableModRecord>;
   version?: string;
-  activeAbilityId?: string | null;
-  onActivateAbility: (ability: LootTableAbility) => void;
   onRemove: () => void;
   onWeightChange: (weight: number) => void;
 }) {
@@ -463,7 +472,7 @@ function ModLootCard({
       <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">
         <div className="font-mono text-base">Missing mod {entry.id}</div>
         <div className="mt-2 text-xs">
-          Weight {entry.weight} • {formatPercent(entry.probability)}
+          Drop weight {entry.weight} • chance {formatPercent(entry.probability)}
         </div>
       </div>
     );
@@ -517,13 +526,7 @@ function ModLootCard({
           <div className="flex flex-wrap gap-2">
             {mod.abilities.length ? (
               mod.abilities.map((ability) => (
-                <AbilityIconButton
-                  key={`${mod.id}-${ability.id}`}
-                  ability={ability}
-                  version={version}
-                  active={activeAbilityId === ability.id}
-                  onActivate={onActivateAbility}
-                />
+                <AbilityIconButton key={`${mod.id}-${ability.id}`} ability={ability} version={version} />
               ))
             ) : (
               <span className="text-sm text-white/45">None</span>
@@ -532,7 +535,7 @@ function ModLootCard({
         </div>
         <div className="grid w-28 shrink-0 gap-2 text-right text-xs text-white/45">
           <label>
-            <span className="sr-only">Weight</span>
+            <span className="mb-1 block text-white/45">Drop weight</span>
             <input
               className="input h-8 px-2 py-1 text-right text-xs"
               type="number"
@@ -543,7 +546,7 @@ function ModLootCard({
               onFocus={(event) => event.currentTarget.select()}
             />
           </label>
-          <div>{formatPercent(entry.probability)}</div>
+          <div>Chance {formatPercent(entry.probability)}</div>
           <button type="button" onClick={onRemove} className="rounded border border-red-300/25 px-2 py-1 text-xs text-red-100 hover:bg-red-400/10">
             Remove
           </button>
@@ -556,13 +559,9 @@ function ModLootCard({
 function AbilitiesTable({
   rows,
   version,
-  activeAbilityId,
-  onActivateAbility,
 }: {
   rows: AbilityTableRow[];
   version?: string;
-  activeAbilityId?: string | null;
-  onActivateAbility: (ability: LootTableAbility) => void;
 }) {
   if (!rows.length) {
     return <div className="rounded-lg border border-white/10 bg-panel p-4 text-sm text-white/55">No linked abilities in this mod table.</div>;
@@ -575,44 +574,38 @@ function AbilitiesTable({
         <div className="mt-1 text-sm text-white/55">{rows.length} unique abilities from the selected mod entries</div>
       </div>
       <div className="overflow-x-auto">
-        <table className="table min-w-[56rem]">
+        <table className="table min-w-[44rem]">
           <thead>
             <tr>
               <th className="px-4 py-3">Ability</th>
               <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">Mods</th>
-              <th className="px-4 py-3">Cost</th>
-              <th className="px-4 py-3">Cooldown</th>
-              <th className="px-4 py-3">Range</th>
-              <th className="px-4 py-3">Effects</th>
+              <th className="px-4 py-3">Ability Chance</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
               const ability = row.ability;
-              const active = activeAbilityId === ability.id;
               return (
-                <tr key={ability.id} onMouseEnter={() => onActivateAbility(ability)} className={active ? "bg-cyan-300/10" : "hover:bg-white/[0.03]"}>
+                <tr key={ability.id} className="hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
-                    <button type="button" onFocus={() => onActivateAbility(ability)} onClick={() => onActivateAbility(ability)} className="flex min-w-0 items-center gap-3 text-left">
-                      <span className="h-10 w-10 shrink-0 overflow-hidden rounded border border-white/15 bg-black/30">
-                        <img src={buildIconSrc(ability.icon || "icon_lootbox.png", ability.id, ability.name, version)} alt="" className="h-full w-full object-cover" />
-                      </span>
+                    <div className="flex min-w-0 items-center gap-3 text-left">
+                      <AbilityIconButton ability={ability} version={version} sizeClass="h-10 w-10" />
                       <span className="min-w-0">
                         <span className={`block truncate font-medium ${ability.missing ? "text-amber-100" : "text-white"}`}>{ability.name}</span>
                         <span className="block truncate text-xs text-white/45">{ability.damageType || ability.primaryModSlot || "Ship Ability"}</span>
                       </span>
-                    </button>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-white/65">{ability.id}</td>
                   <td className="px-4 py-3">
                     <div className="max-w-72 truncate text-white/70">{row.mods.map((mod) => mod.name).join(", ")}</div>
                     <div className="mt-1 text-xs text-white/40">combined weight {formatNumber(row.totalWeight)}</div>
                   </td>
-                  <td className="px-4 py-3 text-white/70">{formatEnergyCost(ability)}</td>
-                  <td className="px-4 py-3 text-white/70">{formatCooldown(ability)}</td>
-                  <td className="px-4 py-3 text-white/70">{ability.attackRange ? `${formatNumber(ability.attackRange)}m` : "-"}</td>
-                  <td className="px-4 py-3 text-white/70">{ability.effectNames.length ? ability.effectNames.join(", ") : "-"}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-white">{formatPercent(row.probability)}</div>
+                    <div className="mt-1 text-xs text-white/40">per mod roll</div>
+                  </td>
                 </tr>
               );
             })}
@@ -666,7 +659,10 @@ function EntryAddControl<TRecord extends { id: string; name: string }>({
           ))}
           {!available.length ? <option value="">No available {label.toLowerCase()}s</option> : null}
         </select>
-        <input className="input" type="number" min="0.01" step="0.01" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+        <label>
+          <span className="label mb-1 block">Drop weight</span>
+          <input className="input" type="number" min="0.01" step="0.01" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+        </label>
         <button
           type="button"
           className="btn whitespace-nowrap disabled:cursor-default disabled:opacity-50"
@@ -692,17 +688,7 @@ function ModTableView({
   onChange: (table: LootTableOption<LootTableModRecord>) => void;
 }) {
   const abilityRows = useMemo(() => collectAbilityRows(table), [table]);
-  const [activeAbilityId, setActiveAbilityId] = useState<string | null>(null);
-  const activeAbility = abilityRows.find((row) => row.ability.id === activeAbilityId)?.ability ?? abilityRows[0]?.ability ?? null;
   const existingIds = useMemo(() => new Set(table.entries.map((entry) => normalizeClientId(entry.id))), [table.entries]);
-
-  useEffect(() => {
-    setActiveAbilityId(abilityRows[0]?.ability.id ?? null);
-  }, [abilityRows, table.id]);
-
-  function activateAbility(ability: LootTableAbility) {
-    setActiveAbilityId(ability.id);
-  }
 
   return (
     <div className="space-y-4">
@@ -718,40 +704,29 @@ function ModTableView({
         }
       />
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr),minmax(22rem,28rem)]">
-        <div className="grid gap-3 lg:grid-cols-2">
-          {table.entries.map((entry, entryIndex) => (
-            <ModLootCard
-              key={entry.id}
-              entry={entry}
-              version={version}
-              activeAbilityId={activeAbility?.id ?? null}
-              onActivateAbility={activateAbility}
-              onRemove={() =>
-                onChange({
-                  ...table,
-                  entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex),
-                })
-              }
-              onWeightChange={(weight) =>
-                onChange({
-                  ...table,
-                  entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight } : current)),
-                })
-              }
-            />
-          ))}
-        </div>
-
-        <aside className="rounded-lg border border-white/10 bg-panel p-4">
-          <div className="mb-3">
-            <div className="text-lg font-semibold text-white">Ability Tooltip Preview</div>
-          </div>
-          {activeAbility ? <AbilityTooltip ability={activeAbility} /> : <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">No ability selected.</div>}
-        </aside>
+      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        {table.entries.map((entry, entryIndex) => (
+          <ModLootCard
+            key={entry.id}
+            entry={entry}
+            version={version}
+            onRemove={() =>
+              onChange({
+                ...table,
+                entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex),
+              })
+            }
+            onWeightChange={(weight) =>
+              onChange({
+                ...table,
+                entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight } : current)),
+              })
+            }
+          />
+        ))}
       </div>
 
-      <AbilitiesTable rows={abilityRows} version={version} activeAbilityId={activeAbility?.id ?? null} onActivateAbility={activateAbility} />
+      <AbilitiesTable rows={abilityRows} version={version} />
     </div>
   );
 }
@@ -790,7 +765,7 @@ function ItemTableView({
               <div key={entry.id} className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
                 <div className="font-mono">Missing item {entry.id}</div>
                 <div className="mt-2 text-xs">
-                  Weight {entry.weight} • {formatPercent(entry.probability)}
+                  Drop weight {entry.weight} • chance {formatPercent(entry.probability)}
                 </div>
                 <button
                   type="button"
@@ -818,22 +793,25 @@ function ItemTableView({
                 </div>
               </div>
               {item.description ? <div className="mt-3 line-clamp-3 text-sm leading-5 text-white/60">{item.description}</div> : null}
-              <div className="mt-3 grid grid-cols-[1fr,5.5rem,auto] items-center gap-2 border-t border-white/10 pt-3 text-xs text-white/55">
-                <span>{formatPercent(entry.probability)}</span>
-                <input
-                  className="input h-8 px-2 py-1 text-right text-xs"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={entry.weight}
-                  onChange={(event) =>
-                    onChange({
-                      ...table,
-                      entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight: Number(event.target.value) } : current)),
-                    })
-                  }
-                  onFocus={(event) => event.currentTarget.select()}
-                />
+              <div className="mt-3 grid grid-cols-[1fr,5.5rem,auto] items-end gap-2 border-t border-white/10 pt-3 text-xs text-white/55">
+                <span className="pb-2">Chance {formatPercent(entry.probability)}</span>
+                <label>
+                  <span className="mb-1 block text-right text-white/45">Drop weight</span>
+                  <input
+                    className="input h-8 px-2 py-1 text-right text-xs"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={entry.weight}
+                    onChange={(event) =>
+                      onChange({
+                        ...table,
+                        entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight: Number(event.target.value) } : current)),
+                      })
+                    }
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => onChange({ ...table, entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex) })}
