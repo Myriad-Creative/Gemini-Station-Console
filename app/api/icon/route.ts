@@ -4,8 +4,19 @@ import path from "path";
 import { getPreferredAssetsRepoRoot } from "@lib/shared-source";
 
 const FALLBACK_ICON = "icon_lootbox.png";
+const ICONS_ASSET_DIR = "icons";
+const RETIRED_ICON_ASSET_FOLDERS = new Set(["abilities", "status_effects"]);
 
-function slugify(s:string){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+function canonicalizeCleanedPath(cleaned: string) {
+  const normalized = cleaned.replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  const retiredFolder = parts[0] === "assets" ? parts[1] : parts[0];
+  if (RETIRED_ICON_ASSET_FOLDERS.has(retiredFolder)) {
+    return `assets/${ICONS_ASSET_DIR}/${path.basename(normalized)}`;
+  }
+  return normalized;
+}
+
 function searchRecursive(dir: string, name: string): string | null {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -21,15 +32,19 @@ function searchRecursive(dir: string, name: string): string | null {
   return null;
 }
 
-function resolveFromRoot(root: string, cleaned: string, id: string, name: string): string | null {
-  const direct = path.join(root, cleaned);
+function resolveFromRoot(root: string, cleaned: string): string | null {
+  const canonicalCleaned = canonicalizeCleanedPath(cleaned);
+  const direct = path.join(root, canonicalCleaned);
   if (fs.existsSync(direct)) return direct;
 
-  const base = path.basename(cleaned);
-  const assetRelative = cleaned.toLowerCase().startsWith("assets/") ? cleaned.slice("assets/".length) : cleaned;
+  const base = path.basename(canonicalCleaned);
+  const assetRelative = canonicalCleaned.toLowerCase().startsWith("assets/") ? canonicalCleaned.slice("assets/".length) : canonicalCleaned;
+  const isExplicitAssetSubdirectory = canonicalCleaned.startsWith("assets/") && assetRelative.includes("/");
   const tries = [
+    ...(!isExplicitAssetSubdirectory ? [path.join(root, "assets", ICONS_ASSET_DIR, base)] : []),
     path.join(root, "assets", assetRelative),
     path.join(root, "assets", base),
+    path.join(root, "assets", ICONS_ASSET_DIR, base),
     path.join(root, "assets", "mods", base),
     path.join(root, "assets", "items", base),
     path.join(root, "assets", "comms", base),
@@ -47,6 +62,7 @@ function resolveFromRoot(root: string, cleaned: string, id: string, name: string
   }
 
   const scopedSearchDirs = [
+    path.join(root, "assets", ICONS_ASSET_DIR),
     path.join(root, "assets", "mods"),
     path.join(root, "assets", "items"),
     path.join(root, "assets", "comms"),
@@ -59,24 +75,6 @@ function resolveFromRoot(root: string, cleaned: string, id: string, name: string
     if (match) return match;
   }
 
-  const bases = Array.from(
-    new Set([
-      base,
-      slugify(id) + ".png",
-      slugify(name) + ".png",
-      slugify(id) + ".webp",
-      slugify(name) + ".webp",
-      slugify(id) + ".jpg",
-      slugify(name) + ".jpg",
-    ]),
-  ).filter(Boolean);
-
-  const assetsRoot = path.join(root, "assets");
-  for (const lookup of bases) {
-    const found = searchRecursive(assetsRoot, lookup);
-    if (found) return found;
-  }
-
   return null;
 }
 
@@ -86,16 +84,14 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const resParam = url.searchParams.get("res") || FALLBACK_ICON;
-  const id = url.searchParams.get("id") || "";
-  const name = url.searchParams.get("name") || "";
 
   let p = resParam;
   if (p.startsWith("res://")) p = p.slice("res://".length);
   const cleaned = p.replace(/^\/+/, "");
   const preferredAssetsRoot = getPreferredAssetsRepoRoot();
-  let abs: string | null = preferredAssetsRoot ? resolveFromRoot(preferredAssetsRoot, cleaned, id, name) : null;
+  let abs: string | null = preferredAssetsRoot ? resolveFromRoot(preferredAssetsRoot, cleaned) : null;
   if (!abs && preferredAssetsRoot) {
-    abs = resolveFromRoot(preferredAssetsRoot, FALLBACK_ICON, id, name);
+    abs = resolveFromRoot(preferredAssetsRoot, FALLBACK_ICON);
   }
 
   if (abs && fs.existsSync(abs)) {

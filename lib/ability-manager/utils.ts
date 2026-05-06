@@ -19,6 +19,16 @@ type JsonObject = Record<string, unknown>;
 let abilityDraftCounter = 10_000;
 let statusEffectDraftCounter = 10_000;
 
+export const DEFAULT_STATUS_EFFECT_ICON = "res://assets/icons/icon_default_effect.png";
+const RETIRED_ICON_ASSET_FOLDERS = new Set(["abilities", "status_effects"]);
+
+function retiredIconFileName(cleaned: string) {
+  const parts = cleaned.split("/").filter(Boolean);
+  if (parts[0] === "assets" && RETIRED_ICON_ASSET_FOLDERS.has(parts[1])) return parts[parts.length - 1] ?? "";
+  if (RETIRED_ICON_ASSET_FOLDERS.has(parts[0])) return parts[parts.length - 1] ?? "";
+  return "";
+}
+
 function createAbilityKey() {
   abilityDraftCounter += 1;
   return `ability-client-${abilityDraftCounter}`;
@@ -74,15 +84,27 @@ function deriveAbilityFileNameFallback(fileName: string) {
   return baseName.slice(underscoreIndex + 1) || "new_ability";
 }
 
-function normalizeIconPath(value: string, assetFolder: "abilities" | "status_effects") {
+function normalizeIconPath(value: string, fallback = "") {
   const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("res://")) return trimmed;
+  if (!trimmed) return fallback;
+
+  if (trimmed.startsWith("res://")) {
+    const cleaned = trimmed.slice("res://".length).replace(/^\/+/, "");
+    const retiredFileName = retiredIconFileName(cleaned);
+    if (retiredFileName) {
+      return `res://assets/icons/${retiredFileName}`;
+    }
+    return trimmed;
+  }
 
   const cleaned = trimmed.replace(/^\/+/, "");
+  const retiredFileName = retiredIconFileName(cleaned);
+  if (retiredFileName) {
+    return `res://assets/icons/${retiredFileName}`;
+  }
   if (cleaned.startsWith("assets/")) return `res://${cleaned}`;
-  if (cleaned.startsWith(`${assetFolder}/`)) return `res://assets/${cleaned}`;
-  return `res://assets/${assetFolder}/${cleaned}`;
+  if (cleaned.startsWith("icons/")) return `res://assets/${cleaned}`;
+  return `res://assets/icons/${cleaned}`;
 }
 
 function parseJsonBlock(text: string, label: string) {
@@ -472,7 +494,7 @@ export function syncDerivedAbilityFields(draft: AbilityDraft): AbilityDraft {
   return {
     ...draft,
     fileName: deriveAbilityFileName(draft.id, draft.name, deriveAbilityFileNameFallback(draft.fileName)),
-    icon: normalizeIconPath(draft.icon, "abilities"),
+    icon: normalizeIconPath(draft.icon),
     primaryModSlot: draft.primaryModSlot.trim(),
     secondaryModSlot: draft.secondaryModSlot.trim(),
     linkedEffects: sanitizeAbilityLinkedEffects(draft.linkedEffects),
@@ -484,7 +506,7 @@ export function syncDerivedStatusEffectFields(draft: StatusEffectDraft): StatusE
     ...draft,
     fileName: deriveStatusEffectFileName(draft.numericId, draft.name),
     effectId: deriveStatusEffectId(draft.name),
-    icon: normalizeIconPath(draft.icon, "status_effects"),
+    icon: normalizeIconPath(draft.icon, DEFAULT_STATUS_EFFECT_ICON),
   };
 }
 

@@ -7,13 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
-const ICON_FOLDERS = [
-  { folder: "abilities", label: "Abilities" },
-  { folder: "status_effects", label: "Status Effects" },
-] as const;
+const ICON_FOLDER = "icons";
 
-async function collectImageFiles(assetsRoot: string, folder: (typeof ICON_FOLDERS)[number]) {
-  const directory = path.join(assetsRoot, folder.folder);
+async function collectImageFiles(assetsRoot: string, directory: string) {
   const entries = await fs.promises.readdir(directory, { withFileTypes: true }).catch(() => []);
   const icons: Array<{
     fileName: string;
@@ -24,14 +20,19 @@ async function collectImageFiles(assetsRoot: string, folder: (typeof ICON_FOLDER
   }> = [];
 
   for (const entry of entries) {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      icons.push(...(await collectImageFiles(assetsRoot, absolutePath)));
+      continue;
+    }
     if (!entry.isFile() || !IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-    const relativePath = `${folder.folder}/${entry.name}`;
+    const relativePath = path.relative(assetsRoot, absolutePath).split(path.sep).join("/");
     icons.push({
       fileName: entry.name,
       relativePath,
       resPath: `res://assets/${relativePath}`,
-      folder: folder.folder,
-      folderLabel: folder.label,
+      folder: ICON_FOLDER,
+      folderLabel: "Icons",
     });
   }
 
@@ -53,15 +54,15 @@ export async function GET() {
     );
   }
 
-  const data = (await Promise.all(ICON_FOLDERS.map((folder) => collectImageFiles(localSource.assetsRootPath!, folder))))
-    .flat()
+  const iconsRoot = path.join(localSource.assetsRootPath, ICON_FOLDER);
+  const data = (await collectImageFiles(localSource.assetsRootPath, iconsRoot))
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath, undefined, { numeric: true, sensitivity: "base" }));
 
   return NextResponse.json(
     {
       ok: true,
       data,
-      message: data.length ? "" : "No ability icons were found in assets/abilities or assets/status_effects.",
+      message: data.length ? "" : "No ability or status effect icons were found in assets/icons.",
     },
     {
       headers: { "Cache-Control": "no-store, max-age=0" },

@@ -10,6 +10,7 @@ import {
   type TimedStatusState,
 } from "@components/ability-manager/common";
 import type { ValidationMessage } from "@lib/authoring";
+import { buildIconSrc } from "@lib/icon-src";
 import { parseLooseJson } from "@lib/json";
 import type { NormalizedMission } from "@lib/mission-lab/types";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
@@ -692,6 +693,7 @@ export default function MissionWorkshop({
               <MissionHeaderImageSelect
                 value={selectedMission.image}
                 options={missionHeaderOptions}
+                version={sharedDataVersion}
                 onChange={(value) => updateSelected((draft) => ({ ...draft, image: value }))}
               />
               <LookupIdField
@@ -1982,27 +1984,105 @@ function TextAreaField({
 function MissionHeaderImageSelect({
   value,
   options,
+  version,
   onChange,
 }: {
   value: string;
   options: MissionHeaderImageOption[];
+  version?: string;
   onChange: (next: string) => void;
 }) {
-  const hasCurrentValue = Boolean(value.trim()) && !options.some((option) => option.resPath === value.trim());
+  const [search, setSearch] = useState("");
+  const trimmedValue = value.trim();
+  const hasCurrentValue = Boolean(trimmedValue) && !options.some((option) => option.resPath === trimmedValue);
+  const filteredOptions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return options;
+    return options.filter((option) => [option.fileName, option.label, option.resPath].join(" ").toLowerCase().includes(query));
+  }, [options, search]);
+  const previewSrc = trimmedValue ? buildIconSrc(trimmedValue, trimmedValue, trimmedValue, version) : "";
+
   return (
-    <label className="space-y-2">
-      <div className="label">Image Header</div>
-      <select className="input" value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select mission header</option>
-        {hasCurrentValue ? <option value={value}>{value} (missing from assets/missions)</option> : null}
-        {options.map((option) => (
-          <option key={option.resPath} value={option.resPath}>
-            {option.fileName}
-          </option>
-        ))}
-      </select>
-      <div className="text-xs text-white/50">Only <code>header_</code> images from <code>assets/missions</code> are listed.</div>
-    </label>
+    <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3 md:col-span-2">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="label">Image Header</div>
+          <div className="mt-1 text-xs text-white/45">
+            Choose from <code>res://assets/missions/</code>, or edit the path directly if needed.
+          </div>
+        </div>
+        <div className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/55">
+          {options.length} header option{options.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="flex h-24 w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b] lg:h-28">
+          {previewSrc ? (
+            <img src={previewSrc} alt={trimmedValue || "Mission header"} className="h-full w-full object-cover" />
+          ) : (
+            <div className="px-3 text-center text-xs text-white/35">No header selected</div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <input
+            className="input"
+            value={value}
+            placeholder="res://assets/missions/header_example.png"
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <input
+            className="input"
+            value={search}
+            placeholder="Search mission headers by file name or path..."
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <div className="text-xs text-white/50">
+            Only <code>header_</code> images from <code>assets/missions</code> are listed.
+          </div>
+          {hasCurrentValue ? (
+            <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+              Current path is not in the loaded mission header catalog.
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="max-h-80 overflow-y-auto pr-1">
+        {filteredOptions.length ? (
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {filteredOptions.map((option) => {
+              const isSelected = trimmedValue === option.resPath;
+              return (
+                <button
+                  key={option.resPath}
+                  type="button"
+                  className={`rounded-xl border p-2 text-left transition ${
+                    isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                  }`}
+                  onClick={() => onChange(option.resPath)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                      <img src={buildIconSrc(option.resPath, option.fileName, option.label, version)} alt={option.fileName} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
+                      <div className="mt-1 truncate font-mono text-xs text-white/45">{option.resPath}</div>
+                      {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+            No mission headers matched the current search.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

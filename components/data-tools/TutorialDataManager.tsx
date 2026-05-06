@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { buildIconSrc } from "@lib/icon-src";
+import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 import { duplicateIdMap, insertAfterIndex, removeAtIndex, setAtIndex } from "@lib/data-tools/common";
 import {
   cloneTutorialArea,
@@ -79,6 +81,7 @@ function StringArrayEditor({
 }
 
 export default function TutorialDataManager() {
+  const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [entriesWorkspace, setEntriesWorkspace] = useState<TutorialEntriesWorkspace | null>(null);
   const [triggersWorkspace, setTriggersWorkspace] = useState<TutorialTriggersWorkspace | null>(null);
   const [activeTab, setActiveTab] = useState<TutorialTab>("entries");
@@ -477,9 +480,22 @@ export default function TutorialDataManager() {
                   <div className="label">Title</div>
                   <input className="input" value={selectedEntry.title} onChange={(event) => updateEntry({ ...selectedEntry, title: event.target.value })} />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <div className="label">Image</div>
-                  <input className="input" value={selectedEntry.image} onChange={(event) => updateEntry({ ...selectedEntry, image: event.target.value })} />
+                  <div className="mt-1 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)]">
+                    <div className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                      {selectedEntry.image.trim() ? (
+                        <img
+                          src={buildIconSrc(selectedEntry.image, selectedEntry.id || "tutorial", selectedEntry.title || "Tutorial", sharedDataVersion)}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="px-3 text-center text-xs text-white/35">No image</div>
+                      )}
+                    </div>
+                    <input className="input" value={selectedEntry.image} onChange={(event) => updateEntry({ ...selectedEntry, image: event.target.value })} />
+                  </div>
                 </div>
                 <div>
                   <div className="label">Category</div>

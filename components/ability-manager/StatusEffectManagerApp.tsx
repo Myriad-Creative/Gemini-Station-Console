@@ -9,6 +9,7 @@ import {
   buildStatusEffectBundleFiles,
   cloneStatusEffectDraft,
   createBlankStatusEffect,
+  DEFAULT_STATUS_EFFECT_ICON,
   deleteStatusEffectAt,
   isStatusEffectExcludedFromAbilityLinkChecks,
   insertStatusEffectAfter,
@@ -261,7 +262,7 @@ export default function StatusEffectManagerApp() {
     };
   }, [status]);
   const previewIcon = buildIconSrc(
-    selectedStatusEffect?.icon || "icon_lootbox.png",
+    selectedStatusEffect?.icon || DEFAULT_STATUS_EFFECT_ICON,
     selectedStatusEffect?.numericId || "status-effect",
     selectedStatusEffect?.name || "Status Effect",
     sharedDataVersion,
@@ -652,7 +653,7 @@ export default function StatusEffectManagerApp() {
                     >
                       <div className="flex items-start gap-3">
                         <img
-                          src={buildIconSrc(draft.icon, draft.numericId || "status-effect", draft.name || "Status Effect", sharedDataVersion)}
+                          src={buildIconSrc(draft.icon || DEFAULT_STATUS_EFFECT_ICON, draft.numericId || "status-effect", draft.name || "Status Effect", sharedDataVersion)}
                           alt=""
                           className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
                         />
@@ -730,7 +731,12 @@ export default function StatusEffectManagerApp() {
                   </div>
                   <div className="md:col-span-2">
                     <div className="label">Icon</div>
-                    <input className="input mt-1" value={selectedStatusEffect.icon} onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, icon: event.target.value }))} />
+                    <input
+                      className="input mt-1"
+                      value={selectedStatusEffect.icon}
+                      placeholder={DEFAULT_STATUS_EFFECT_ICON}
+                      onChange={(event) => updateSelectedStatusEffect((current) => ({ ...current, icon: event.target.value }))}
+                    />
                   </div>
                   <div className="md:col-span-2">
                     <div className="label">Description</div>

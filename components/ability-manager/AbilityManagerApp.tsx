@@ -12,6 +12,7 @@ import {
   computeAbilityLinkedMods,
   cloneAbilityDraft,
   createBlankAbility,
+  DEFAULT_STATUS_EFFECT_ICON,
   deleteAbilityAt,
   inferAbilityDeliveryType,
   insertAbilityAfter,
@@ -1409,7 +1410,7 @@ export default function AbilityManagerApp() {
                           <div key={effect.numericId} className="rounded-lg border border-white/5 px-3 py-3">
                             <div className="flex items-start gap-3">
                               <img
-                                src={buildIconSrc(effect.icon, String(effect.numericId), effect.name || "Status Effect", sharedDataVersion)}
+                                src={buildIconSrc(effect.icon || DEFAULT_STATUS_EFFECT_ICON, String(effect.numericId), effect.name || "Status Effect", sharedDataVersion)}
                                 alt=""
                                 className="h-12 w-12 shrink-0 rounded-lg border border-white/10 bg-[#07111d] object-cover"
                               />
@@ -1533,7 +1534,7 @@ export default function AbilityManagerApp() {
             </aside>
 
             <div className="space-y-6 xl:col-span-2 xl:min-w-0">
-              <Section title="Icon" description="Choose from the local assets/abilities and assets/status_effects catalogs.">
+              <Section title="Icon" description="Choose from the shared local assets/icons catalog.">
                 <AbilityIconField
                   label="Icon"
                   value={selectedAbility.icon}
@@ -1758,7 +1759,7 @@ function AbilityIconField({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="label mb-2">{label}</div>
-          <div className="text-xs text-white/50">Choose from the local assets/abilities and assets/status_effects catalogs.</div>
+          <div className="text-xs text-white/50">Choose from the shared local assets/icons catalog.</div>
         </div>
         <div className="rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
           {loading ? "Loading icons…" : `${iconOptions.length} icon option(s)`}
@@ -1771,7 +1772,7 @@ function AbilityIconField({
           <img src={previewSrc} alt={selectedOption?.fileName || "Ability icon preview"} className="h-full w-full object-cover" />
         </div>
         <div className="space-y-2">
-          <input className="input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="res://assets/abilities/icon_AutoCannon.png" />
+          <input className="input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="res://assets/icons/icon_AutoCannon.png" />
           <div className="text-xs text-white/50">
             {selectedOption ? `Selected file: ${selectedOption.fileName}` : "Choose an ability icon below, or edit the path directly if needed."}
           </div>
@@ -1814,7 +1815,7 @@ function AbilityIconField({
           </div>
         ) : (
           <div className="rounded border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/50">
-            No ability icons were found in assets/abilities or assets/status_effects.
+            No ability or status effect icons were found in assets/icons.
           </div>
         )}
       </div>

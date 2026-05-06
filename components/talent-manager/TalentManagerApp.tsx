@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
 import { buildIconSrc } from "@lib/icon-src";
 import type { TalentClass, TalentIconOption, TalentSpecialization, TalentTemplate, TalentTemplateOverride, TalentValidationIssue, TalentWorkspace } from "@lib/talent-manager/types";
 import { MAX_TALENT_POINTS, clampTalentMaxPoints, expandedTalentsForSpec, normalizeTalentRowRequirements, sanitizeTalentId, talentTemplatesForSpec, templateRequirementText, treePointsRequiredForGridRow, validateTalentWorkspace } from "@lib/talent-manager/utils";
@@ -178,6 +178,42 @@ function requirementClearingPatches(templates: TalentTemplate[], movedIds: Set<s
     };
   }
   return patches;
+}
+
+function clearDeletedTalentRequirement(template: TalentTemplate, deletedTemplateId: string): TalentTemplate {
+  if (template.requires_talent !== deletedTemplateId) return template;
+  return {
+    ...template,
+    requires_talent: "",
+    requires_talent_full: false,
+    requires_rank: 1,
+  };
+}
+
+function clearDeletedTalentOverrideRequirement(override: TalentTemplateOverride, deletedTemplateId: string): TalentTemplateOverride {
+  if (override.requires_talent !== deletedTemplateId) return override;
+  return {
+    ...override,
+    requires_talent: "",
+    requires_talent_full: false,
+    requires_rank: 1,
+  };
+}
+
+function removeDeletedTalentFromSpec(spec: TalentSpecialization, deletedTemplateId: string): TalentSpecialization {
+  const nextOverrides = Object.fromEntries(
+    Object.entries(spec.talent_overrides ?? {})
+      .filter(([templateId]) => templateId !== deletedTemplateId)
+      .map(([templateId, override]) => [templateId, clearDeletedTalentOverrideRequirement(override, deletedTemplateId)]),
+  ) as Record<string, TalentTemplateOverride>;
+
+  return {
+    ...spec,
+    talent_templates: (spec.talent_templates ?? [])
+      .filter((template) => template.id !== deletedTemplateId)
+      .map((template) => clearDeletedTalentRequirement(template, deletedTemplateId)),
+    talent_overrides: nextOverrides,
+  };
 }
 
 export default function TalentManagerApp() {
@@ -612,6 +648,37 @@ export default function TalentManagerApp() {
     addTalentTemplateAt(position.row, position.column);
   }
 
+  function deleteTalentTemplate(templateId: string, event?: MouseEvent<HTMLButtonElement>) {
+    event?.stopPropagation();
+    const targetTemplate = selectedTalentTemplates.find((template) => template.id === templateId);
+    if (!workspace || !selectedSpec || !targetTemplate) return;
+
+    const removesGlobalTemplate = targetTemplate.source === "global";
+    const scopeText = removesGlobalTemplate ? "the global talent template and all references to it" : `this talent from "${selectedSpec.name || selectedSpec.id}"`;
+    if (!window.confirm(`Delete "${targetTemplate.name || templateId}"? This removes ${scopeText} when saved.`)) return;
+
+    const nextTemplateId = selectedTalentTemplates.find((template) => template.id !== templateId)?.id ?? "";
+    mutateWorkspace((current) => {
+      if (!removesGlobalTemplate) {
+        return mutateSelectedSpec(current, (spec) => removeDeletedTalentFromSpec(spec, templateId));
+      }
+
+      return {
+        ...current,
+        talent_templates: current.talent_templates
+          .filter((template) => template.id !== templateId)
+          .map((template) => clearDeletedTalentRequirement(template, templateId)),
+        classes: current.classes.map((talentClass) => ({
+          ...talentClass,
+          specializations: talentClass.specializations.map((spec) => removeDeletedTalentFromSpec(spec, templateId)),
+        })),
+      };
+    });
+
+    setSelectedTemplateId(nextTemplateId);
+    setIconTarget(nextTemplateId ? "talent" : "spec");
+  }
+
   function moveTalentTemplateTo(templateId: string, row: number, column: number) {
     if (!workspace) return;
     const movingTemplate = selectedTalentTemplates.find((template) => template.id === templateId);
@@ -933,11 +1000,12 @@ export default function TalentManagerApp() {
                     const isDragging = draggedTemplateId === talent.template_id;
                     const linkedEndpoint = linkedTalentEndpoints.get(talent.template_id);
                     return (
-                      <button
+                      <div
                         key={talent.talent_id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         draggable
-                        className={`relative min-h-24 overflow-visible rounded-lg border p-3 text-left transition ${
+                        className={`relative min-h-24 cursor-pointer overflow-visible rounded-lg border p-3 pb-9 text-left transition ${
                           isSelected
                             ? "border-cyan-300/55 bg-cyan-300/12"
                             : isDropTarget
@@ -945,6 +1013,12 @@ export default function TalentManagerApp() {
                               : "border-white/10 bg-white/[0.04] hover:border-cyan-300/30 hover:bg-white/[0.06]"
                         } ${isDragging ? "opacity-45" : ""}`}
                         onClick={() => {
+                          setSelectedTemplateId(talent.template_id);
+                          setIconTarget("talent");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
                           setSelectedTemplateId(talent.template_id);
                           setIconTarget("talent");
                         }}
@@ -983,13 +1057,26 @@ export default function TalentManagerApp() {
                       >
                         {linkedEndpoint?.requiresAbove ? <span className="pointer-events-none absolute left-1/2 top-[-13px] h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
                         {linkedEndpoint?.requiredByBelow ? <span className="pointer-events-none absolute bottom-[-13px] left-1/2 h-3.5 w-1 -translate-x-1/2 rounded-full bg-cyan-300/70 shadow-[0_0_14px_rgba(103,232,249,0.45)]" /> : null}
-                        <div className="absolute right-3 top-3 rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-xs font-semibold text-cyan-100">
+                        <button
+                          type="button"
+                          aria-label={`Delete ${talent.name || talent.template_id}`}
+                          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded border border-red-300/25 bg-red-400/10 text-[11px] font-semibold text-red-100 transition hover:border-red-200/45 hover:bg-red-400/20"
+                          draggable={false}
+                          onClick={(event) => deleteTalentTemplate(talent.template_id, event)}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onDragStart={(event) => event.stopPropagation()}
+                        >
+                          X
+                        </button>
+                        <div className="absolute bottom-3 right-3 rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[10px] font-semibold text-cyan-100">
                           {formatPointCount(talentMaxPoints(talent))}
                         </div>
-                        <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-14 w-14 rounded border border-white/10 bg-black/30 object-cover" />
-                        <div className="mt-3 line-clamp-3 w-full text-base font-semibold leading-snug text-white">{talent.name}</div>
+                        <div className="flex items-start gap-2 pr-7">
+                          <img src={iconSrc(talent.icon, talent.talent_id, talent.name, dataVersion)} alt="" className="h-12 w-12 shrink-0 rounded border border-white/10 bg-black/30 object-cover" />
+                          <div className="line-clamp-4 min-w-0 pt-0.5 text-[10px] font-semibold leading-tight text-white">{talent.name}</div>
+                        </div>
                         {hasTalentRequirement(talent) ? <div className={`mt-3 rounded border px-2 py-1 text-[11px] ${requirementBadgeClass()}`}>{templateRequirementText(workspace, talent, selectedTalentTemplates)}</div> : null}
-                      </button>
+                      </div>
                     );
                   }),
                 ])}
