@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { RARITY_COLOR } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
@@ -77,10 +77,19 @@ type LootTablePayload = {
   data?: {
     mods: LootTableOption<LootTableModRecord>[];
     items: LootTableOption<LootTableItemRecord>[];
+    catalogs: {
+      mods: LootTableModRecord[];
+      items: LootTableItemRecord[];
+    };
   };
 };
 
 type LootKind = "mods" | "items";
+type StatusTone = "neutral" | "success" | "error";
+type SaveStatus = {
+  tone: StatusTone;
+  message: string;
+};
 
 function rarityStyle(rarity: number) {
   return { color: RARITY_COLOR[rarity] || "#C0C0C0" };
@@ -125,7 +134,106 @@ function statValue(value: number) {
   return `${sign}${formatNumber(value)}`;
 }
 
-function AbilityTooltip({ ability }: { ability: LootTableAbility }) {
+function normalizeClientId(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^-?\d+(?:\.0+)?$/.test(raw)) return String(Math.trunc(Number(raw)));
+  return raw;
+}
+
+function rebuildTable<TRecord extends { id: string; name: string }>(table: LootTableOption<TRecord>, catalogById: Map<string, TRecord>): LootTableOption<TRecord> {
+  const entriesWithoutProbability = table.entries
+    .map((entry) => {
+      const id = normalizeClientId(entry.id);
+      const weight = Number(entry.weight);
+      const record = catalogById.get(id) ?? null;
+      return {
+        id,
+        weight: Number.isFinite(weight) ? weight : 0,
+        name: record?.name ?? null,
+        missing: !record,
+        record,
+      };
+    })
+    .filter((entry) => entry.id);
+  const totalWeight = entriesWithoutProbability.reduce((total, entry) => total + (entry.weight > 0 ? entry.weight : 0), 0);
+  return {
+    ...table,
+    rolls: Number.isFinite(Number(table.rolls)) ? Number(table.rolls) : 1,
+    entryCount: entriesWithoutProbability.length,
+    totalWeight,
+    entries: entriesWithoutProbability.map((entry) => ({
+      ...entry,
+      probability: totalWeight > 0 && entry.weight > 0 ? entry.weight / totalWeight : 0,
+    })),
+  };
+}
+
+function tableIdBase(kind: LootKind) {
+  return kind === "mods" ? "new_mod_loot_table" : "new_item_loot_table";
+}
+
+function makeUniqueTableId(baseId: string, tables: Array<Pick<LootTableOption<unknown>, "id">>) {
+  const normalizedBase = (baseId.trim() || "new_loot_table").replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^_+|_+$/g, "") || "new_loot_table";
+  const existing = new Set(tables.map((table) => table.id.toLowerCase()));
+  if (!existing.has(normalizedBase.toLowerCase())) return normalizedBase;
+  for (let index = 2; index < 10_000; index += 1) {
+    const candidate = `${normalizedBase}_${index}`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${normalizedBase}_${Date.now()}`;
+}
+
+function exportTables<TRecord>(tables: LootTableOption<TRecord>[]) {
+  return tables.map((table) => ({
+    id: table.id,
+    rolls: Number(table.rolls),
+    entries: table.entries.map((entry) => ({
+      id: normalizeClientId(entry.id),
+      weight: Number(entry.weight),
+    })),
+  }));
+}
+
+function validateDraftTables<TRecord>(kind: LootKind, tables: LootTableOption<TRecord>[], catalogById: Map<string, TRecord>) {
+  const errors: string[] = [];
+  const tableIds = new Set<string>();
+  for (const table of tables) {
+    const id = table.id.trim();
+    if (!id) {
+      errors.push("Every loot table needs an ID.");
+    } else if (!/^[A-Za-z0-9_.:-]+$/.test(id)) {
+      errors.push(`Table "${id}" can only use letters, numbers, underscores, hyphens, periods, and colons.`);
+    } else if (tableIds.has(id.toLowerCase())) {
+      errors.push(`Duplicate table ID "${id}".`);
+    }
+    if (id) tableIds.add(id.toLowerCase());
+
+    if (!Number.isFinite(Number(table.rolls)) || Number(table.rolls) <= 0) {
+      errors.push(`Table "${id || "Untitled"}" needs a positive rolls value.`);
+    }
+
+    const entryIds = new Set<string>();
+    for (const entry of table.entries) {
+      const entryId = normalizeClientId(entry.id);
+      if (!entryId) {
+        errors.push(`Table "${id || "Untitled"}" has an entry with no ${kind === "mods" ? "mod" : "item"} ID.`);
+      } else if (entryIds.has(entryId)) {
+        errors.push(`Table "${id || "Untitled"}" contains duplicate ${kind === "mods" ? "mod" : "item"} ID "${entryId}".`);
+      } else if (!catalogById.has(entryId)) {
+        errors.push(`Table "${id || "Untitled"}" references unknown ${kind === "mods" ? "mod" : "item"} ID "${entryId}".`);
+      }
+      if (entryId) entryIds.add(entryId);
+
+      if (!Number.isFinite(Number(entry.weight)) || Number(entry.weight) <= 0) {
+        errors.push(`Table "${id || "Untitled"}" entry "${entryId || "unknown"}" needs a positive weight.`);
+      }
+    }
+  }
+  return errors;
+}
+
+function AbilityTooltip({ ability, className = "" }: { ability: LootTableAbility; className?: string }) {
   const headerLines = [
     ability.damageType,
     ability.attackRange ? `Range: ${formatNumber(ability.attackRange)}m` : null,
@@ -142,9 +250,9 @@ function AbilityTooltip({ ability }: { ability: LootTableAbility }) {
 
   return (
     <div
-      className="pointer-events-none rounded-lg border px-3.5 py-3 text-left shadow-2xl"
+      className={`rounded-lg border px-3.5 py-3 text-left shadow-2xl ${className}`}
       style={{
-        width: "min(520px, calc(100vw - 2rem))",
+        width: "100%",
         background: "rgba(4, 6, 13, 0.97)",
         borderColor: "rgba(35, 48, 59, 1)",
       }}
@@ -189,28 +297,58 @@ function AbilityTooltip({ ability }: { ability: LootTableAbility }) {
   );
 }
 
-function AbilityChip({ ability, version }: { ability: LootTableAbility; version?: string }) {
+function AbilityIconButton({
+  ability,
+  version,
+  active = false,
+  onActivate,
+}: {
+  ability: LootTableAbility;
+  version?: string;
+  active?: boolean;
+  onActivate?: (ability: LootTableAbility) => void;
+}) {
   const iconSrc = buildIconSrc(ability.icon || "icon_lootbox.png", ability.id, ability.name, version);
 
   return (
-    <span className="group relative inline-flex">
-      <span
-        className={`inline-flex max-w-full items-center gap-2 rounded border px-2 py-1 text-xs ${
-          ability.missing
-            ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
-            : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
-        }`}
-      >
-        <span className="h-7 w-7 shrink-0 overflow-hidden rounded border border-white/10 bg-black/30">
-          <img src={iconSrc} alt="" className="h-full w-full object-cover" />
-        </span>
-        <span className="min-w-0 truncate">{ability.name}</span>
-      </span>
-      <span className="absolute left-0 top-[calc(100%+8px)] z-50 hidden group-hover:block group-focus-within:block">
-        <AbilityTooltip ability={ability} />
-      </span>
-    </span>
+    <button
+      type="button"
+      onMouseEnter={() => onActivate?.(ability)}
+      onFocus={() => onActivate?.(ability)}
+      onClick={() => onActivate?.(ability)}
+      className={`h-12 w-12 shrink-0 overflow-hidden rounded border bg-black/30 transition ${
+        active
+          ? "border-cyan-200 shadow-[0_0_0_2px_rgba(34,211,238,0.18)]"
+          : ability.missing
+            ? "border-amber-300/35 hover:border-amber-200"
+            : "border-white/15 hover:border-cyan-300/60"
+      }`}
+      title={ability.name}
+    >
+      <img src={iconSrc} alt={ability.name} className="h-full w-full object-cover" />
+    </button>
   );
+}
+
+type AbilityTableRow = {
+  ability: LootTableAbility;
+  mods: LootTableModRecord[];
+  totalWeight: number;
+};
+
+function collectAbilityRows(table: LootTableOption<LootTableModRecord>) {
+  const rows = new Map<string, AbilityTableRow>();
+  for (const entry of table.entries) {
+    if (!entry.record) continue;
+    for (const ability of entry.record.abilities) {
+      const current = rows.get(ability.id) ?? { ability, mods: [], totalWeight: 0 };
+      if (!current.mods.some((mod) => mod.id === entry.record?.id)) current.mods.push(entry.record);
+      current.totalWeight += entry.weight;
+      rows.set(ability.id, current);
+    }
+  }
+
+  return [...rows.values()].sort((left, right) => left.ability.name.localeCompare(right.ability.name, undefined, { numeric: true, sensitivity: "base" }));
 }
 
 function TablePicker({
@@ -304,108 +442,405 @@ function SummaryStrip({
   );
 }
 
-function ModHoverCard({ mod, version }: { mod: LootTableModRecord; version?: string }) {
+function ModLootCard({
+  entry,
+  version,
+  activeAbilityId,
+  onActivateAbility,
+  onRemove,
+  onWeightChange,
+}: {
+  entry: LootTableEntry<LootTableModRecord>;
+  version?: string;
+  activeAbilityId?: string | null;
+  onActivateAbility: (ability: LootTableAbility) => void;
+  onRemove: () => void;
+  onWeightChange: (weight: number) => void;
+}) {
+  const mod = entry.record;
+  if (!mod) {
+    return (
+      <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">
+        <div className="font-mono text-base">Missing mod {entry.id}</div>
+        <div className="mt-2 text-xs">
+          Weight {entry.weight} • {formatPercent(entry.probability)}
+        </div>
+      </div>
+    );
+  }
+
   const stats = Object.entries(mod.stats || {}).filter(([, value]) => value !== 0);
+  const classRestriction = mod.classRestriction?.length ? mod.classRestriction.join(", ") : "None";
+
   return (
-    <div className="tooltip-card w-96">
+    <article
+      className="rounded-lg border px-4 py-4 shadow-xl"
+      style={{
+        background: "rgba(4, 6, 13, 0.94)",
+        borderColor: "rgba(35, 48, 59, 1)",
+      }}
+    >
       <div className="flex items-start gap-3">
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded border border-white/10 bg-black/30">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded border border-white/15 bg-black/30">
           <img src={buildIconSrc(mod.icon || "icon_lootbox.png", mod.id, mod.name, version)} alt="" className="h-full w-full object-cover" />
         </div>
-        <div className="min-w-0">
-          <div className="font-semibold" style={rarityStyle(mod.rarity)}>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-2xl font-semibold leading-tight" style={rarityStyle(mod.rarity)}>
             {mod.name}
           </div>
-          <div className="mt-1 text-xs text-white/60">
-            {mod.slot} • Level {mod.levelRequirement} • {RARITY_LABEL[mod.rarity] ?? `Rarity ${mod.rarity}`}
+          <div className="mt-1 flex items-start justify-between gap-3 text-lg leading-6 text-white/90">
+            <span>{mod.slot}</span>
+            <span className="max-w-[45%] truncate text-right text-[#d8dee8]">{classRestriction}</span>
           </div>
         </div>
       </div>
-      {mod.description ? <div className="mt-3 text-sm leading-5 text-white/70">{mod.description}</div> : null}
-      {stats.length ? (
-        <div className="mt-3 grid gap-1 text-sm">
-          {stats.map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-4">
-              <span className="text-white/55">{statLabel(key)}</span>
-              <span className="text-white">{statValue(value)}</span>
+
+      <div className="mt-3 space-y-1 text-lg leading-7 text-[#dfe7f1]">
+        {stats.length ? (
+          stats.map(([key, value]) => (
+            <div key={key}>
+              {statValue(value)} {statLabel(key)}
             </div>
-          ))}
+          ))
+        ) : (
+          <div>No stats</div>
+        )}
+        <div>Requires Level {mod.levelRequirement}</div>
+        {mod.durability !== undefined ? <div>Durability: {formatNumber(mod.durability)}</div> : null}
+      </div>
+
+      {mod.description ? <div className="mt-3 line-clamp-3 text-sm leading-5 text-white/55">{mod.description}</div> : null}
+
+      <div className="mt-4 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="mb-2 text-lg leading-none text-[#45c7dc]">Ability</div>
+          <div className="flex flex-wrap gap-2">
+            {mod.abilities.length ? (
+              mod.abilities.map((ability) => (
+                <AbilityIconButton
+                  key={`${mod.id}-${ability.id}`}
+                  ability={ability}
+                  version={version}
+                  active={activeAbilityId === ability.id}
+                  onActivate={onActivateAbility}
+                />
+              ))
+            ) : (
+              <span className="text-sm text-white/45">None</span>
+            )}
+          </div>
         </div>
-      ) : null}
+        <div className="grid w-28 shrink-0 gap-2 text-right text-xs text-white/45">
+          <label>
+            <span className="sr-only">Weight</span>
+            <input
+              className="input h-8 px-2 py-1 text-right text-xs"
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={entry.weight}
+              onChange={(event) => onWeightChange(Number(event.target.value))}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+          <div>{formatPercent(entry.probability)}</div>
+          <button type="button" onClick={onRemove} className="rounded border border-red-300/25 px-2 py-1 text-xs text-red-100 hover:bg-red-400/10">
+            Remove
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AbilitiesTable({
+  rows,
+  version,
+  activeAbilityId,
+  onActivateAbility,
+}: {
+  rows: AbilityTableRow[];
+  version?: string;
+  activeAbilityId?: string | null;
+  onActivateAbility: (ability: LootTableAbility) => void;
+}) {
+  if (!rows.length) {
+    return <div className="rounded-lg border border-white/10 bg-panel p-4 text-sm text-white/55">No linked abilities in this mod table.</div>;
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-panel">
+      <div className="border-b border-white/10 px-4 py-3">
+        <div className="text-lg font-semibold text-white">Abilities In This Table</div>
+        <div className="mt-1 text-sm text-white/55">{rows.length} unique abilities from the selected mod entries</div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="table min-w-[56rem]">
+          <thead>
+            <tr>
+              <th className="px-4 py-3">Ability</th>
+              <th className="px-4 py-3">ID</th>
+              <th className="px-4 py-3">Mods</th>
+              <th className="px-4 py-3">Cost</th>
+              <th className="px-4 py-3">Cooldown</th>
+              <th className="px-4 py-3">Range</th>
+              <th className="px-4 py-3">Effects</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const ability = row.ability;
+              const active = activeAbilityId === ability.id;
+              return (
+                <tr key={ability.id} onMouseEnter={() => onActivateAbility(ability)} className={active ? "bg-cyan-300/10" : "hover:bg-white/[0.03]"}>
+                  <td className="px-4 py-3">
+                    <button type="button" onFocus={() => onActivateAbility(ability)} onClick={() => onActivateAbility(ability)} className="flex min-w-0 items-center gap-3 text-left">
+                      <span className="h-10 w-10 shrink-0 overflow-hidden rounded border border-white/15 bg-black/30">
+                        <img src={buildIconSrc(ability.icon || "icon_lootbox.png", ability.id, ability.name, version)} alt="" className="h-full w-full object-cover" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className={`block truncate font-medium ${ability.missing ? "text-amber-100" : "text-white"}`}>{ability.name}</span>
+                        <span className="block truncate text-xs text-white/45">{ability.damageType || ability.primaryModSlot || "Ship Ability"}</span>
+                      </span>
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-white/65">{ability.id}</td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-72 truncate text-white/70">{row.mods.map((mod) => mod.name).join(", ")}</div>
+                    <div className="mt-1 text-xs text-white/40">combined weight {formatNumber(row.totalWeight)}</div>
+                  </td>
+                  <td className="px-4 py-3 text-white/70">{formatEnergyCost(ability)}</td>
+                  <td className="px-4 py-3 text-white/70">{formatCooldown(ability)}</td>
+                  <td className="px-4 py-3 text-white/70">{ability.attackRange ? `${formatNumber(ability.attackRange)}m` : "-"}</td>
+                  <td className="px-4 py-3 text-white/70">{ability.effectNames.length ? ability.effectNames.join(", ") : "-"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function ModTableView({ table, version }: { table: LootTableOption<LootTableModRecord>; version?: string }) {
+function EntryAddControl<TRecord extends { id: string; name: string }>({
+  kind,
+  catalog,
+  existingIds,
+  onAdd,
+}: {
+  kind: LootKind;
+  catalog: TRecord[];
+  existingIds: Set<string>;
+  onAdd: (id: string, weight: number) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [weight, setWeight] = useState("50");
+  const label = kind === "mods" ? "Mod" : "Item";
+  const available = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return catalog
+      .filter((entry) => !existingIds.has(normalizeClientId(entry.id)))
+      .filter((entry) => {
+        if (!query) return true;
+        return [entry.id, entry.name].join(" ").toLowerCase().includes(query);
+      })
+      .slice(0, 200);
+  }, [catalog, existingIds, search]);
+
+  useEffect(() => {
+    if (available.some((entry) => normalizeClientId(entry.id) === selectedId)) return;
+    setSelectedId(normalizeClientId(available[0]?.id ?? ""));
+  }, [available, selectedId]);
+
   return (
-    <div className="overflow-visible rounded-lg border border-white/10 bg-panel">
-      <div className="grid grid-cols-[minmax(18rem,1.4fr),8rem,7rem,9rem,minmax(15rem,1fr),minmax(16rem,1.2fr)] gap-3 border-b border-white/10 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white/45">
-        <div>Mod</div>
-        <div>Slot</div>
-        <div>Level</div>
-        <div>Weight</div>
-        <div>Stats</div>
-        <div>Abilities</div>
+    <div className="rounded-lg border border-white/10 bg-panel p-4">
+      <div className="grid gap-3 lg:grid-cols-[minmax(11rem,1fr),minmax(14rem,1.4fr),7rem,auto]">
+        <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${label.toLowerCase()} catalog`} />
+        <select className="select w-full" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={!available.length}>
+          {available.map((entry) => (
+            <option key={entry.id} value={normalizeClientId(entry.id)}>
+              {entry.name} ({entry.id})
+            </option>
+          ))}
+          {!available.length ? <option value="">No available {label.toLowerCase()}s</option> : null}
+        </select>
+        <input className="input" type="number" min="0.01" step="0.01" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+        <button
+          type="button"
+          className="btn whitespace-nowrap disabled:cursor-default disabled:opacity-50"
+          disabled={!selectedId || !Number.isFinite(Number(weight)) || Number(weight) <= 0}
+          onClick={() => onAdd(selectedId, Number(weight))}
+        >
+          Add {label}
+        </button>
       </div>
-      <div className="divide-y divide-white/5">
-        {table.entries.map((entry) => {
-          const mod = entry.record;
-          if (!mod) {
+    </div>
+  );
+}
+
+function ModTableView({
+  table,
+  catalog,
+  version,
+  onChange,
+}: {
+  table: LootTableOption<LootTableModRecord>;
+  catalog: LootTableModRecord[];
+  version?: string;
+  onChange: (table: LootTableOption<LootTableModRecord>) => void;
+}) {
+  const abilityRows = useMemo(() => collectAbilityRows(table), [table]);
+  const [activeAbilityId, setActiveAbilityId] = useState<string | null>(null);
+  const activeAbility = abilityRows.find((row) => row.ability.id === activeAbilityId)?.ability ?? abilityRows[0]?.ability ?? null;
+  const existingIds = useMemo(() => new Set(table.entries.map((entry) => normalizeClientId(entry.id))), [table.entries]);
+
+  useEffect(() => {
+    setActiveAbilityId(abilityRows[0]?.ability.id ?? null);
+  }, [abilityRows, table.id]);
+
+  function activateAbility(ability: LootTableAbility) {
+    setActiveAbilityId(ability.id);
+  }
+
+  return (
+    <div className="space-y-4">
+      <EntryAddControl
+        kind="mods"
+        catalog={catalog}
+        existingIds={existingIds}
+        onAdd={(id, weight) =>
+          onChange({
+            ...table,
+            entries: [...table.entries, { id, weight, probability: 0, name: null, missing: true, record: null }],
+          })
+        }
+      />
+
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr),minmax(22rem,28rem)]">
+        <div className="grid gap-3 lg:grid-cols-2">
+          {table.entries.map((entry, entryIndex) => (
+            <ModLootCard
+              key={entry.id}
+              entry={entry}
+              version={version}
+              activeAbilityId={activeAbility?.id ?? null}
+              onActivateAbility={activateAbility}
+              onRemove={() =>
+                onChange({
+                  ...table,
+                  entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex),
+                })
+              }
+              onWeightChange={(weight) =>
+                onChange({
+                  ...table,
+                  entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight } : current)),
+                })
+              }
+            />
+          ))}
+        </div>
+
+        <aside className="rounded-lg border border-white/10 bg-panel p-4">
+          <div className="mb-3">
+            <div className="text-lg font-semibold text-white">Ability Tooltip Preview</div>
+          </div>
+          {activeAbility ? <AbilityTooltip ability={activeAbility} /> : <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">No ability selected.</div>}
+        </aside>
+      </div>
+
+      <AbilitiesTable rows={abilityRows} version={version} activeAbilityId={activeAbility?.id ?? null} onActivateAbility={activateAbility} />
+    </div>
+  );
+}
+
+function ItemTableView({
+  table,
+  catalog,
+  version,
+  onChange,
+}: {
+  table: LootTableOption<LootTableItemRecord>;
+  catalog: LootTableItemRecord[];
+  version?: string;
+  onChange: (table: LootTableOption<LootTableItemRecord>) => void;
+}) {
+  const existingIds = useMemo(() => new Set(table.entries.map((entry) => normalizeClientId(entry.id))), [table.entries]);
+  return (
+    <div className="space-y-4">
+      <EntryAddControl
+        kind="items"
+        catalog={catalog}
+        existingIds={existingIds}
+        onAdd={(id, weight) =>
+          onChange({
+            ...table,
+            entries: [...table.entries, { id, weight, probability: 0, name: null, missing: true, record: null }],
+          })
+        }
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {table.entries.map((entry, entryIndex) => {
+          const item = entry.record;
+          if (!item) {
             return (
-              <div key={entry.id} className="grid grid-cols-[minmax(18rem,1.4fr),8rem,7rem,9rem,minmax(15rem,1fr),minmax(16rem,1.2fr)] gap-3 px-4 py-3 text-sm text-amber-100">
-                <div className="font-mono">Missing mod {entry.id}</div>
-                <div>—</div>
-                <div>—</div>
-                <div>{entry.weight} / {formatPercent(entry.probability)}</div>
-                <div>—</div>
-                <div>—</div>
+              <div key={entry.id} className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
+                <div className="font-mono">Missing item {entry.id}</div>
+                <div className="mt-2 text-xs">
+                  Weight {entry.weight} • {formatPercent(entry.probability)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...table, entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex) })}
+                  className="mt-3 rounded border border-red-300/25 px-2 py-1 text-xs text-red-100 hover:bg-red-400/10"
+                >
+                  Remove
+                </button>
               </div>
             );
           }
 
-          const stats = Object.entries(mod.stats || {}).filter(([, value]) => value !== 0);
           return (
-            <div
-              key={`${entry.id}-${mod.id}`}
-              className="grid grid-cols-[minmax(18rem,1.4fr),8rem,7rem,9rem,minmax(15rem,1fr),minmax(16rem,1.2fr)] gap-3 px-4 py-3 text-sm text-white/80"
-            >
-              <div className="group relative flex min-w-0 items-center gap-3">
-                <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-white/10 bg-black/30">
-                  <img src={buildIconSrc(mod.icon || "icon_lootbox.png", mod.id, mod.name, version)} alt="" className="h-full w-full object-cover" />
+            <div key={`${entry.id}-${item.id}`} className="rounded-lg border border-white/10 bg-panel p-3">
+              <div className="flex items-start gap-3">
+                <div className="h-16 w-16 shrink-0 overflow-hidden rounded border border-white/10 bg-black/30">
+                  <img src={buildIconSrc(item.icon || "icon_lootbox.png", item.id, item.name, version)} alt="" className="h-full w-full object-cover" />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate font-medium" style={rarityStyle(mod.rarity)}>
-                    {mod.name}
+                  <div className="truncate font-medium" style={rarityStyle(item.rarity)}>
+                    {item.name}
                   </div>
-                  <div className="truncate font-mono text-xs text-white/45">{mod.id}</div>
-                </div>
-                <div className="tooltip hidden group-hover:block">
-                  <ModHoverCard mod={mod} version={version} />
+                  <div className="mt-1 text-xs text-white/55">{item.type || "Unknown type"}</div>
+                  <div className="mt-1 font-mono text-xs text-white/40">{item.id}</div>
                 </div>
               </div>
-              <div>{mod.slot}</div>
-              <div>{mod.levelRequirement}</div>
-              <div>
-                <div>{entry.weight}</div>
-                <div className="text-xs text-white/45">{formatPercent(entry.probability)}</div>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {stats.length ? (
-                  stats.map(([key, value]) => (
-                    <span key={key} className="rounded border border-white/10 bg-white/5 px-2 py-1 text-xs">
-                      {statLabel(key)} {statValue(value)}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-white/45">None</span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 overflow-visible">
-                {mod.abilities.length ? (
-                  mod.abilities.map((ability) => <AbilityChip key={`${mod.id}-${ability.id}`} ability={ability} version={version} />)
-                ) : (
-                  <span className="text-white/45">None</span>
-                )}
+              {item.description ? <div className="mt-3 line-clamp-3 text-sm leading-5 text-white/60">{item.description}</div> : null}
+              <div className="mt-3 grid grid-cols-[1fr,5.5rem,auto] items-center gap-2 border-t border-white/10 pt-3 text-xs text-white/55">
+                <span>{formatPercent(entry.probability)}</span>
+                <input
+                  className="input h-8 px-2 py-1 text-right text-xs"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={entry.weight}
+                  onChange={(event) =>
+                    onChange({
+                      ...table,
+                      entries: table.entries.map((current, currentIndex) => (currentIndex === entryIndex ? { ...current, weight: Number(event.target.value) } : current)),
+                    })
+                  }
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...table, entries: table.entries.filter((_, currentIndex) => currentIndex !== entryIndex) })}
+                  className="rounded border border-red-300/25 px-2 py-1 text-xs text-red-100 hover:bg-red-400/10"
+                >
+                  Remove
+                </button>
               </div>
             </div>
           );
@@ -415,54 +850,18 @@ function ModTableView({ table, version }: { table: LootTableOption<LootTableModR
   );
 }
 
-function ItemTableView({ table, version }: { table: LootTableOption<LootTableItemRecord>; version?: string }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {table.entries.map((entry) => {
-        const item = entry.record;
-        if (!item) {
-          return (
-            <div key={entry.id} className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100">
-              <div className="font-mono">Missing item {entry.id}</div>
-              <div className="mt-2 text-xs">Weight {entry.weight} • {formatPercent(entry.probability)}</div>
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${entry.id}-${item.id}`} className="rounded-lg border border-white/10 bg-panel p-3">
-            <div className="flex items-start gap-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded border border-white/10 bg-black/30">
-                <img src={buildIconSrc(item.icon || "icon_lootbox.png", item.id, item.name, version)} alt="" className="h-full w-full object-cover" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate font-medium" style={rarityStyle(item.rarity)}>
-                  {item.name}
-                </div>
-                <div className="mt-1 text-xs text-white/55">{item.type || "Unknown type"}</div>
-                <div className="mt-1 font-mono text-xs text-white/40">{item.id}</div>
-              </div>
-            </div>
-            {item.description ? <div className="mt-3 line-clamp-3 text-sm leading-5 text-white/60">{item.description}</div> : null}
-            <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-white/55">
-              <span>Weight {entry.weight}</span>
-              <span>{formatPercent(entry.probability)}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function LootTableManagerApp() {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   const [payload, setPayload] = useState<LootTablePayload | null>(null);
+  const [modTables, setModTables] = useState<LootTableOption<LootTableModRecord>[]>([]);
+  const [itemTables, setItemTables] = useState<LootTableOption<LootTableItemRecord>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<LootKind>("mods");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tableSearch, setTableSearch] = useState("");
+  const [dirty, setDirty] = useState<Record<LootKind, boolean>>({ mods: false, items: false });
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ tone: "neutral", message: "" });
 
   useEffect(() => {
     let cancelled = false;
@@ -477,6 +876,9 @@ export default function LootTableManagerApp() {
         }
         if (cancelled) return;
         setPayload(nextPayload);
+        setModTables(nextPayload.data.mods);
+        setItemTables(nextPayload.data.items);
+        setDirty({ mods: false, items: false });
         setError(null);
       } catch (nextError) {
         if (cancelled) return;
@@ -493,10 +895,20 @@ export default function LootTableManagerApp() {
     };
   }, [sharedDataVersion]);
 
-  const modTables = useMemo(() => payload?.data?.mods ?? [], [payload]);
-  const itemTables = useMemo(() => payload?.data?.items ?? [], [payload]);
+  const modCatalog = useMemo(() => payload?.data?.catalogs.mods ?? [], [payload]);
+  const itemCatalog = useMemo(() => payload?.data?.catalogs.items ?? [], [payload]);
+  const modCatalogById = useMemo(() => new Map(modCatalog.map((entry) => [normalizeClientId(entry.id), entry])), [modCatalog]);
+  const itemCatalogById = useMemo(() => new Map(itemCatalog.map((entry) => [normalizeClientId(entry.id), entry])), [itemCatalog]);
   const selectedTables = kind === "mods" ? modTables : itemTables;
-  const selectedTable = useMemo(() => selectedTables.find((table) => table.id === selectedId) ?? selectedTables[0] ?? null, [selectedId, selectedTables]);
+  const selectedTableIndex = useMemo(() => {
+    const exactIndex = selectedTables.findIndex((table) => table.id === selectedId);
+    return exactIndex >= 0 ? exactIndex : selectedTables.length ? 0 : -1;
+  }, [selectedId, selectedTables]);
+  const selectedTable = selectedTableIndex >= 0 ? selectedTables[selectedTableIndex] : null;
+  const validationErrors = useMemo(() => {
+    if (kind === "mods") return validateDraftTables("mods", modTables, modCatalogById);
+    return validateDraftTables("items", itemTables, itemCatalogById);
+  }, [itemCatalogById, itemTables, kind, modCatalogById, modTables]);
 
   useEffect(() => {
     if (!selectedTables.length) {
@@ -508,6 +920,114 @@ export default function LootTableManagerApp() {
     }
   }, [selectedId, selectedTables]);
 
+  function markDirty(nextKind = kind) {
+    setDirty((current) => ({ ...current, [nextKind]: true }));
+    setSaveStatus({ tone: "neutral", message: "" });
+  }
+
+  function updateSelectedTable(nextTable: LootTableOption<LootTableModRecord> | LootTableOption<LootTableItemRecord>) {
+    if (selectedTableIndex < 0) return;
+    if (kind === "mods") {
+      const rebuilt = rebuildTable(nextTable as LootTableOption<LootTableModRecord>, modCatalogById);
+      setModTables((current) => current.map((table, index) => (index === selectedTableIndex ? rebuilt : table)));
+      setSelectedId(rebuilt.id);
+      markDirty("mods");
+      return;
+    }
+
+    const rebuilt = rebuildTable(nextTable as LootTableOption<LootTableItemRecord>, itemCatalogById);
+    setItemTables((current) => current.map((table, index) => (index === selectedTableIndex ? rebuilt : table)));
+    setSelectedId(rebuilt.id);
+    markDirty("items");
+  }
+
+  function createTable() {
+    const nextId = makeUniqueTableId(tableIdBase(kind), selectedTables);
+    if (kind === "mods") {
+      const nextTable = rebuildTable<LootTableModRecord>({ id: nextId, rolls: 1, entryCount: 0, totalWeight: 0, entries: [] }, modCatalogById);
+      setModTables((current) => [...current, nextTable]);
+      setSelectedId(nextId);
+      markDirty("mods");
+      return;
+    }
+
+    const nextTable = rebuildTable<LootTableItemRecord>({ id: nextId, rolls: 1, entryCount: 0, totalWeight: 0, entries: [] }, itemCatalogById);
+    setItemTables((current) => [...current, nextTable]);
+    setSelectedId(nextId);
+    markDirty("items");
+  }
+
+  function duplicateSelectedTable() {
+    if (!selectedTable) return;
+    const nextId = makeUniqueTableId(`${selectedTable.id}_copy`, selectedTables);
+    const baseTable = {
+      ...selectedTable,
+      id: nextId,
+      entries: selectedTable.entries.map((entry) => ({
+        ...entry,
+        id: normalizeClientId(entry.id),
+        weight: Number(entry.weight),
+      })),
+    };
+
+    if (kind === "mods") {
+      const nextTable = rebuildTable(baseTable as LootTableOption<LootTableModRecord>, modCatalogById);
+      setModTables((current) => [...current, nextTable]);
+      setSelectedId(nextId);
+      markDirty("mods");
+      return;
+    }
+
+    const nextTable = rebuildTable(baseTable as LootTableOption<LootTableItemRecord>, itemCatalogById);
+    setItemTables((current) => [...current, nextTable]);
+    setSelectedId(nextId);
+    markDirty("items");
+  }
+
+  function deleteSelectedTable() {
+    if (!selectedTable) return;
+    if (!window.confirm(`Delete loot table "${selectedTable.id}" from the ${kind === "mods" ? "mod" : "item"} loot table workspace?`)) return;
+    const nextSelection = selectedTables[selectedTableIndex + 1]?.id ?? selectedTables[selectedTableIndex - 1]?.id ?? null;
+    if (kind === "mods") {
+      setModTables((current) => current.filter((_, index) => index !== selectedTableIndex));
+      setSelectedId(nextSelection);
+      markDirty("mods");
+      return;
+    }
+    setItemTables((current) => current.filter((_, index) => index !== selectedTableIndex));
+    setSelectedId(nextSelection);
+    markDirty("items");
+  }
+
+  async function saveCurrentKind() {
+    const errors = validationErrors;
+    if (errors.length) {
+      setSaveStatus({ tone: "error", message: errors.slice(0, 4).join(" ") });
+      return;
+    }
+
+    try {
+      setSaveStatus({ tone: "neutral", message: "Saving..." });
+      const response = await fetch("/api/loot-tables", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          tables: kind === "mods" ? exportTables(modTables) : exportTables(itemTables),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "Could not save loot tables.");
+      }
+
+      setDirty((current) => ({ ...current, [kind]: false }));
+      setSaveStatus({ tone: "success", message: `Saved ${result.savedCount ?? selectedTables.length} ${kind === "mods" ? "mod" : "item"} loot tables.` });
+    } catch (saveError) {
+      setSaveStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -515,27 +1035,66 @@ export default function LootTableManagerApp() {
           <h1 className="page-title mb-1">Loot Tables</h1>
           <div className="text-sm text-white/55">{payload?.sourceLabel ?? "Local game source"}</div>
         </div>
-        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
-          {(["mods", "items"] as LootKind[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => {
-                setKind(option);
-                setTableSearch("");
-              }}
-              className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition ${
-                kind === option ? "bg-cyan-300 text-black" : "text-white/70 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
+        <div className="flex flex-wrap justify-end gap-2">
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+            {(["mods", "items"] as LootKind[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  setKind(option);
+                  setTableSearch("");
+                  setSaveStatus({ tone: "neutral", message: "" });
+                }}
+                className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition ${
+                  kind === option ? "bg-cyan-300 text-black" : "text-white/70 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {option}
+                {dirty[option] ? " *" : ""}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/75 hover:bg-white/10" onClick={createTable} disabled={loading || Boolean(error)}>
+            New Table
+          </button>
+          <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/75 hover:bg-white/10 disabled:opacity-50" onClick={duplicateSelectedTable} disabled={!selectedTable}>
+            Duplicate
+          </button>
+          <button type="button" className="rounded border border-red-300/25 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10 disabled:opacity-50" onClick={deleteSelectedTable} disabled={!selectedTable}>
+            Delete
+          </button>
+          <button
+            type="button"
+            className="btn disabled:cursor-default disabled:opacity-50"
+            onClick={saveCurrentKind}
+            disabled={!dirty[kind] || validationErrors.length > 0 || loading || Boolean(error)}
+          >
+            Save {kind === "mods" ? "Mod" : "Item"} Tables
+          </button>
         </div>
       </div>
 
       {loading ? <div className="rounded-lg border border-white/10 bg-panel p-4 text-sm text-white/60">Loading loot tables...</div> : null}
       {error ? <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100">{error}</div> : null}
+      {saveStatus.message ? (
+        <div
+          className={`rounded-lg border p-4 text-sm ${
+            saveStatus.tone === "error"
+              ? "border-red-400/30 bg-red-400/10 text-red-100"
+              : saveStatus.tone === "success"
+                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                : "border-white/10 bg-panel text-white/65"
+          }`}
+        >
+          {saveStatus.message}
+        </div>
+      ) : null}
+      {validationErrors.length ? (
+        <div className="rounded-lg border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+          {validationErrors.slice(0, 5).join(" ")}
+        </div>
+      ) : null}
 
       {!loading && !error && payload?.data ? (
         <>
@@ -555,20 +1114,43 @@ export default function LootTableManagerApp() {
               {selectedTable ? (
                 <>
                   <div className="rounded-lg border border-white/10 bg-panel px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="font-mono text-lg font-semibold text-white">{selectedTable.id}</div>
-                        <div className="mt-1 text-sm text-white/55">
-                          {selectedTable.entryCount} entries • {formatNumber(selectedTable.rolls)} rolls • total weight {formatNumber(selectedTable.totalWeight)}
-                        </div>
+                    <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr),7rem,minmax(15rem,auto)]">
+                      <label>
+                        <span className="label">Table ID</span>
+                        <input className="input mt-1 font-mono" value={selectedTable.id} onChange={(event) => updateSelectedTable({ ...selectedTable, id: event.target.value } as typeof selectedTable)} />
+                      </label>
+                      <label>
+                        <span className="label">Rolls</span>
+                        <input
+                          className="input mt-1"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={selectedTable.rolls}
+                          onChange={(event) => updateSelectedTable({ ...selectedTable, rolls: Number(event.target.value) } as typeof selectedTable)}
+                          onFocus={(event) => event.currentTarget.select()}
+                        />
+                      </label>
+                      <div className="self-end pb-2 text-sm text-white/55">
+                        {selectedTable.entryCount} entries • total weight {formatNumber(selectedTable.totalWeight)}
                       </div>
                     </div>
                   </div>
 
                   {kind === "mods" ? (
-                    <ModTableView table={selectedTable as LootTableOption<LootTableModRecord>} version={sharedDataVersion} />
+                    <ModTableView
+                      table={selectedTable as LootTableOption<LootTableModRecord>}
+                      catalog={modCatalog}
+                      version={sharedDataVersion}
+                      onChange={(table) => updateSelectedTable(table)}
+                    />
                   ) : (
-                    <ItemTableView table={selectedTable as LootTableOption<LootTableItemRecord>} version={sharedDataVersion} />
+                    <ItemTableView
+                      table={selectedTable as LootTableOption<LootTableItemRecord>}
+                      catalog={itemCatalog}
+                      version={sharedDataVersion}
+                      onChange={(table) => updateSelectedTable(table)}
+                    />
                   )}
                 </>
               ) : (

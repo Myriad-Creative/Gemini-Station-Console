@@ -1,6 +1,7 @@
 import fsp from "fs/promises";
 import path from "path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { loadAll } from "@lib/datastore";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { parseLooseJson } from "@lib/json";
 import { loadAbilityManagerDatabase } from "@lib/ability-manager/load";
@@ -61,6 +62,19 @@ type LootTableOption<TRecord> = {
   totalWeight: number;
   entries: LootTableEntry<TRecord>[];
 };
+
+type EditableLootTableEntry = {
+  id: string;
+  weight: number;
+};
+
+type EditableLootTableDraft = {
+  id: string;
+  rolls: number;
+  entries: EditableLootTableEntry[];
+};
+
+type LootKind = "mods" | "items";
 
 function asObject(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -352,6 +366,118 @@ function parseTables<TRecord>(root: unknown, catalog: Map<string, TRecord>, getN
     .sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: "base" }));
 }
 
+function catalogValues<TRecord extends { id: string; name: string }>(catalog: Map<string, TRecord>) {
+  return [...catalog.values()].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+function normalizeTableId(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function toJsonId(id: string) {
+  return /^\d+$/.test(id) ? Number(id) : id;
+}
+
+function validateEditableTables(kind: LootKind, rawTables: unknown, catalog: Map<string, unknown>) {
+  if (!Array.isArray(rawTables)) {
+    return { tables: [] as EditableLootTableDraft[], errors: ["A loot table array is required."] };
+  }
+
+  const errors: string[] = [];
+  const tableIds = new Set<string>();
+  const tables = rawTables.map((rawTable, tableIndex): EditableLootTableDraft => {
+    const table = asObject(rawTable);
+    const id = normalizeTableId(table.id);
+    const rolls = Number(table.rolls ?? 1);
+    const entriesRaw = Array.isArray(table.entries) ? table.entries : [];
+
+    if (!id) {
+      errors.push(`Table ${tableIndex + 1} is missing an ID.`);
+    } else if (!/^[A-Za-z0-9_.:-]+$/.test(id)) {
+      errors.push(`Table "${id}" can only use letters, numbers, underscores, hyphens, periods, and colons.`);
+    } else if (tableIds.has(id.toLowerCase())) {
+      errors.push(`Duplicate table ID "${id}".`);
+    }
+    if (id) tableIds.add(id.toLowerCase());
+
+    if (!Number.isFinite(rolls) || rolls <= 0) {
+      errors.push(`Table "${id || tableIndex + 1}" must have a positive rolls value.`);
+    }
+
+    const entryIds = new Set<string>();
+    const entries = entriesRaw.map((rawEntry, entryIndex): EditableLootTableEntry => {
+      const entry = asObject(rawEntry);
+      const entryId = normalizeId(entry.id);
+      const weight = Number(entry.weight ?? 0);
+      const label = `Table "${id || tableIndex + 1}" entry ${entryIndex + 1}`;
+
+      if (!entryId) {
+        errors.push(`${label} is missing an ID.`);
+      } else if (entryIds.has(entryId)) {
+        errors.push(`Table "${id || tableIndex + 1}" contains duplicate ${kind === "mods" ? "mod" : "item"} ID "${entryId}".`);
+      } else if (!catalog.has(entryId)) {
+        errors.push(`Table "${id || tableIndex + 1}" references unknown ${kind === "mods" ? "mod" : "item"} ID "${entryId}".`);
+      }
+      if (entryId) entryIds.add(entryId);
+
+      if (!Number.isFinite(weight) || weight <= 0) {
+        errors.push(`${label} must have a positive weight.`);
+      }
+
+      return {
+        id: entryId,
+        weight: Number.isFinite(weight) ? weight : 0,
+      };
+    });
+
+    return {
+      id,
+      rolls: Number.isFinite(rolls) ? rolls : 1,
+      entries,
+    };
+  });
+
+  return { tables, errors };
+}
+
+function stringifyLootTables(tables: EditableLootTableDraft[]) {
+  const root = {
+    tables: Object.fromEntries(
+      tables.map((table) => [
+        table.id,
+        {
+          rolls: table.rolls,
+          entries: table.entries.map((entry) => ({
+            id: toJsonId(entry.id),
+            weight: entry.weight,
+          })),
+        },
+      ]),
+    ),
+  };
+  return `${JSON.stringify(root, null, 2)}\n`;
+}
+
+async function loadLootWorkspace(root: string) {
+  const [itemTablesRoot, modTablesRoot, itemsRoot, modsRoot] = await Promise.all([
+    readLooseJsonFile(path.join(root, "scripts", "system", "loot", "ItemsLootTables.json")),
+    readLooseJsonFile(path.join(root, "scripts", "system", "loot", "ModsLootTables.json")),
+    readLooseJsonFile(path.join(root, "data", "database", "items", "items.json")).catch(() => null),
+    readLooseJsonFile(path.join(root, "data", "database", "mods", "Mods.json")).catch(() => null),
+  ]);
+  const abilityDatabase = loadAbilityManagerDatabase(root);
+  const abilityCatalog = buildAbilityCatalog(abilityDatabase.abilities, abilityDatabase.statusEffects);
+  const itemCatalog = buildItemCatalog(parseItemsFromData(itemsRoot as Record<string, unknown> | unknown[] | null));
+  const modCatalog = buildModCatalog(parseModsFromData(modsRoot as { mods: unknown[] | Record<string, unknown> } | unknown[] | null), abilityCatalog);
+
+  return {
+    itemTablesRoot,
+    modTablesRoot,
+    itemCatalog,
+    modCatalog,
+  };
+}
+
 export async function GET() {
   const localGameSource = getLocalGameSourceState();
   if (!localGameSource.active || !localGameSource.gameRootPath) {
@@ -360,16 +486,7 @@ export async function GET() {
 
   try {
     const root = localGameSource.gameRootPath;
-    const [itemTablesRoot, modTablesRoot, itemsRoot, modsRoot] = await Promise.all([
-      readLooseJsonFile(path.join(root, "scripts", "system", "loot", "ItemsLootTables.json")),
-      readLooseJsonFile(path.join(root, "scripts", "system", "loot", "ModsLootTables.json")),
-      readLooseJsonFile(path.join(root, "data", "database", "items", "items.json")).catch(() => null),
-      readLooseJsonFile(path.join(root, "data", "database", "mods", "Mods.json")).catch(() => null),
-    ]);
-    const abilityDatabase = loadAbilityManagerDatabase(root);
-    const abilityCatalog = buildAbilityCatalog(abilityDatabase.abilities, abilityDatabase.statusEffects);
-    const itemCatalog = buildItemCatalog(parseItemsFromData(itemsRoot as Record<string, unknown> | unknown[] | null));
-    const modCatalog = buildModCatalog(parseModsFromData(modsRoot as { mods: unknown[] | Record<string, unknown> } | unknown[] | null), abilityCatalog);
+    const { itemTablesRoot, modTablesRoot, itemCatalog, modCatalog } = await loadLootWorkspace(root);
 
     return NextResponse.json({
       ok: true,
@@ -377,7 +494,53 @@ export async function GET() {
       data: {
         items: parseTables(itemTablesRoot, itemCatalog, (item) => item.name),
         mods: parseTables(modTablesRoot, modCatalog, (mod) => mod.name),
+        catalogs: {
+          items: catalogValues(itemCatalog),
+          mods: catalogValues(modCatalog),
+        },
       },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const localGameSource = getLocalGameSourceState();
+  if (!localGameSource.active || !localGameSource.gameRootPath) {
+    return NextResponse.json({ ok: false, error: "No active local game root is configured." }, { status: 404 });
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const kind = body?.kind === "items" ? "items" : body?.kind === "mods" ? "mods" : null;
+    if (!kind) {
+      return NextResponse.json({ ok: false, error: "Save requires kind to be either mods or items." }, { status: 400 });
+    }
+
+    const root = localGameSource.gameRootPath;
+    const { itemCatalog, modCatalog } = await loadLootWorkspace(root);
+    const catalog = kind === "mods" ? modCatalog : itemCatalog;
+    const { tables, errors } = validateEditableTables(kind, body?.tables, catalog);
+    if (errors.length) {
+      return NextResponse.json({ ok: false, error: errors.join(" ") }, { status: 400 });
+    }
+
+    const filePath = path.join(root, "scripts", "system", "loot", kind === "mods" ? "ModsLootTables.json" : "ItemsLootTables.json");
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, stringifyLootTables(tables), "utf-8");
+    await loadAll();
+
+    return NextResponse.json({
+      ok: true,
+      savedPath: filePath,
+      savedCount: tables.length,
     });
   } catch (error) {
     return NextResponse.json(
