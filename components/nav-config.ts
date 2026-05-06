@@ -49,6 +49,7 @@ const INVENTORY_SECTION_LINKS: NavLink[] = [
   { href: "/mods", label: "Mods Dashboard" },
   { href: "/mods/explorer", label: "Mod Explorer" },
   { href: "/mods/manager", label: "Mod Manager", aliases: ["/authoring", "/mods/builder"] },
+  { href: "/mods/loot-tables", label: "Loot Tables" },
   { href: "/merchant-lab", label: "Merchant Profiles" },
 ];
 

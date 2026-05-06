@@ -11,6 +11,11 @@ const modLinks = [
     title: "Mod Manager",
     description: "Edit the full current mod list, batch create, auto-generate, validate, and export Mods.json with the current budget rules.",
   },
+  {
+    href: "/mods/loot-tables",
+    title: "Loot Tables",
+    description: "Review item and mod loot tables with resolved icons, weights, stats, and linked ability hover cards.",
+  },
 ];
 
 export default function ModsPage() {
@@ -23,7 +28,7 @@ export default function ModsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         {modLinks.map((link) => (
           <Link key={link.href} href={link.href} className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
             <div className="text-xl font-semibold text-white">{link.title}</div>
