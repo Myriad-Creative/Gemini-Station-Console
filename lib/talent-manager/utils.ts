@@ -299,7 +299,10 @@ export function validateTalentWorkspace(workspace: TalentWorkspace): TalentValid
   const issues: TalentValidationIssue[] = [];
   if (workspace.tree_columns < 1) issues.push({ level: "error", message: "Tree columns must be at least 1." });
   if (workspace.tree_rows < 1) issues.push({ level: "error", message: "Tree rows must be at least 1." });
-  if (!workspace.talent_templates.length) issues.push({ level: "error", message: "At least one talent template is required." });
+  const hasAnyTalentTemplate =
+    workspace.talent_templates.length > 0 ||
+    workspace.classes.some((talentClass) => talentClass.specializations.some((spec) => talentTemplatesForSpec(workspace, spec).length > 0));
+  if (!hasAnyTalentTemplate) issues.push({ level: "error", message: "At least one talent template is required." });
   if (!workspace.classes.length) issues.push({ level: "error", message: "At least one class is required." });
 
   const templateIds = new Set<string>();

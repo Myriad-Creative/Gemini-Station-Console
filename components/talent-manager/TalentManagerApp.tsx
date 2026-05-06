@@ -1208,6 +1208,19 @@ export default function TalentManagerApp() {
                   Description Template
                   <textarea className="input mt-1 min-h-28" value={selectedTemplate.description} onChange={(event) => updateSelectedTemplate({ description: event.target.value })} />
                 </label>
+                <label className="block text-sm text-white/65">
+                  Max Points
+                  <select className="select mt-1 w-full" value={selectedTemplateMaxPoints} onChange={(event) => updateSelectedTemplate({ max_rank: clampTalentMaxPoints(event.target.value) })}>
+                    {Array.from({ length: MAX_TALENT_POINTS }, (_entry, index) => {
+                      const value = index + 1;
+                      return (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
                 {selectedTemplateMaxPoints > 1 ? (
                   <div className="space-y-3 rounded-lg border border-white/10 bg-black/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1256,10 +1269,6 @@ export default function TalentManagerApp() {
                   <label className="text-sm text-white/65">
                     Column
                     <input className="input mt-1" type="number" min="1" value={selectedTemplate.column} onChange={(event) => updateSelectedTemplatePosition({ column: Number(event.target.value) })} />
-                  </label>
-                  <label className="text-sm text-white/65">
-                    Max Points
-                    <input className="input mt-1" type="number" min="1" max={MAX_TALENT_POINTS} value={selectedTemplateMaxPoints} onChange={(event) => updateSelectedTemplate({ max_rank: clampTalentMaxPoints(event.target.value) })} />
                   </label>
                 </div>
                 <label className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${requireAboveCandidate ? "border-white/10 bg-black/20 text-white/80" : "border-white/10 bg-black/10 text-white/35"}`}>
