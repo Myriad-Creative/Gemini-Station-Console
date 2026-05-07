@@ -4436,22 +4436,22 @@ export default function SystemMapViewer() {
     if (mobDrag) {
       const zone = mapZones.find((entry) => zoneIdentity(entry) === mobDrag.zoneId);
       const mob = zone?.mobs.find((entry) => mobIdentity(entry) === mobDrag.mobKey);
-      if (mobDrag.moved) {
-        setStatus({ tone: "success", message: `Moved "${mob?.displayName || mobDrag.mobKey}". Use Save Changes To Build to write the spawn position into Zones.json.` });
+      if (mobDrag.moved && zone) {
+        setStatus({ tone: "success", message: `Moved "${mob?.displayName || mobDrag.mobKey}". Use Save Changes To Build to write the spawn position into ${zoneSaveTargetName(zone)}.` });
       }
     }
     const stageDrag = stageDragRef.current;
     if (stageDrag) {
       const zone = mapZones.find((entry) => zoneIdentity(entry) === stageDrag.zoneId);
       const stage = zone?.stages.find((entry) => stageIdentity(entry) === stageDrag.stageKey);
-      if (stageDrag.moved) {
-        setStatus({ tone: "success", message: `Moved "${stage?.name || stageDrag.stageKey}". Use Save Changes To Build to write the stage position into Zones.json.` });
+      if (stageDrag.moved && zone) {
+        setStatus({ tone: "success", message: `Moved "${stage?.name || stageDrag.stageKey}". Use Save Changes To Build to write the stage position into ${zoneSaveTargetName(zone)}.` });
       }
     }
     const zoneDrag = zoneDragRef.current;
     if (zoneDrag?.moved) {
       const zone = mapZones.find((entry) => zoneIdentity(entry) === zoneDrag.zoneId);
-      setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Changes To Build to write the new coordinates into Zones.json.` });
+      setStatus({ tone: "success", message: `Moved "${zone?.name || zoneDrag.zoneId}". Use Save Changes To Build to write the new coordinates into ${zone ? zoneSaveTargetName(zone) : "the zone file"}.` });
     }
     const gateDrag = gateDragRef.current;
     if (gateDrag) {
@@ -4562,6 +4562,30 @@ export default function SystemMapViewer() {
     }
   }
 
+  function contextMenuDeleteLabel(target: ContextMenuEditTarget) {
+    switch (target.kind) {
+      case "zone":
+        return "Delete Zone";
+      case "stage":
+        return "Delete Stage";
+      case "mob":
+        return "Delete Mob Spawn";
+      case "environmental_barrier":
+        return "Delete Barrier";
+      case "environmental_region":
+        return "Delete Region";
+      case "mineable_asteroid":
+        return "Delete Mineable Asteroid Field";
+      case "route":
+      case "gate":
+        return "";
+    }
+  }
+
+  function canDeleteContextMenuTarget(target: ContextMenuEditTarget) {
+    return Boolean(contextMenuDeleteLabel(target));
+  }
+
   function openContextMenuEditTarget(target: ContextMenuEditTarget) {
     if (target.kind === "zone") {
       const zone = mapZones.find((entry) => zoneIdentity(entry) === target.zoneId);
@@ -4595,6 +4619,32 @@ export default function SystemMapViewer() {
     if (target.kind === "mineable_asteroid" && element.type === "mineable_asteroid") openMineableAsteroidEditor(element);
     if (target.kind === "environmental_barrier" && element.type === "hazard_barrier") openEnvironmentalBarrierEditor(element);
     if (target.kind === "environmental_region" && element.type === "environment_region") openEnvironmentalRegionEditor(element);
+  }
+
+  function deleteContextMenuTarget(target: ContextMenuEditTarget) {
+    if (target.kind === "zone") {
+      removeZone(target.zoneId);
+      return;
+    }
+    if (target.kind === "stage") {
+      removeStagePlacement(target.zoneId, target.stageKey);
+      return;
+    }
+    if (target.kind === "mob") {
+      removeMobSpawn(target.zoneId, target.mobKey);
+      return;
+    }
+    if (target.kind === "environmental_barrier") {
+      removeEnvironmentalBarrier(target.elementId);
+      return;
+    }
+    if (target.kind === "environmental_region") {
+      removeEnvironmentalRegion(target.elementId);
+      return;
+    }
+    if (target.kind === "mineable_asteroid") {
+      removeMineableAsteroid(target.elementId);
+    }
   }
 
   function clearHover() {
@@ -7477,7 +7527,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Background dots are faint world-space measurement points and use 1,000 units as the finest increment. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Background dots are faint world-space measurement points and use 1,000 units as the finest increment. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit or delete it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
       </div>
 
       {contextMenu ? (
@@ -7501,7 +7551,7 @@ export default function SystemMapViewer() {
               {contextMenuEditLabel(contextMenu.editTarget)}
             </button>
           ) : null}
-          {contextMenu.editTarget?.kind === "zone" || contextMenu.editTarget?.kind === "mob" ? (
+          {contextMenu.editTarget && canDeleteContextMenuTarget(contextMenu.editTarget) ? (
             <button
               type="button"
               className="mt-1 w-full rounded-lg px-3 py-2 text-left text-red-100 hover:bg-red-400/15"
@@ -7509,11 +7559,10 @@ export default function SystemMapViewer() {
                 const target = contextMenu.editTarget;
                 setContextMenu(null);
                 if (!target) return;
-                if (target.kind === "zone") removeZone(target.zoneId);
-                if (target.kind === "mob") removeMobSpawn(target.zoneId, target.mobKey);
+                deleteContextMenuTarget(target);
               }}
             >
-              {contextMenu.editTarget.kind === "zone" ? "Delete Zone" : "Delete Mob Spawn"}
+              {contextMenuDeleteLabel(contextMenu.editTarget)}
             </button>
           ) : null}
           {contextMenu.zoneId ? (
