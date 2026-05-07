@@ -696,7 +696,11 @@ function isGeneratedAreaZone(zone: SystemMapZone | null | undefined) {
 }
 
 function generatedAreaEditMessage(zone: SystemMapZone) {
-  return `"${zone.name || zone.id}" is stored in generated area core data. Use Data > Generated Areas to edit or reject it.`;
+  return `"${zone.name || zone.id}" is stored in generated area core data. Move stages, mobs, and the zone directly on the map; use Data > Generated Areas to reject it.`;
+}
+
+function zoneSaveTargetName(zone: SystemMapZone) {
+  return isGeneratedAreaZone(zone) ? "generated_areas.json" : "Zones.json";
 }
 
 function stageIdentity(stage: SystemMapStagePlacement) {
@@ -3838,10 +3842,6 @@ export default function SystemMapViewer() {
 
     const existingZone = payload.zones.find((zone) => (zone.originalId ?? zone.id) === zoneId || zone.id === zoneId);
     if (!existingZone) return;
-    if (isGeneratedAreaZone(existingZone)) {
-      setStatus({ tone: "neutral", message: generatedAreaEditMessage(existingZone) });
-      return;
-    }
     const delta = {
       x: roundedWorld.x - existingZone.world.x,
       y: roundedWorld.y - existingZone.world.y,
@@ -4325,11 +4325,6 @@ export default function SystemMapViewer() {
     }
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
-      if (isGeneratedAreaZone(targetMobSpawn.zone)) {
-        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetMobSpawn.zone) });
-        clearHover();
-        return;
-      }
       event.currentTarget.setPointerCapture(event.pointerId);
       mobDragRef.current = {
         zoneId: zoneIdentity(targetMobSpawn.zone),
@@ -4345,11 +4340,6 @@ export default function SystemMapViewer() {
     }
     const targetStagePlacement = toggles.stages ? findStageDotAtWorld(world) : null;
     if (targetStagePlacement) {
-      if (isGeneratedAreaZone(targetStagePlacement.zone)) {
-        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetStagePlacement.zone) });
-        clearHover();
-        return;
-      }
       event.currentTarget.setPointerCapture(event.pointerId);
       stageDragRef.current = {
         zoneId: zoneIdentity(targetStagePlacement.zone),
@@ -4365,11 +4355,6 @@ export default function SystemMapViewer() {
     }
     const targetZone = toggles.zones ? findZoneDotAtWorld(world) : null;
     if (targetZone) {
-      if (isGeneratedAreaZone(targetZone)) {
-        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetZone) });
-        clearHover();
-        return;
-      }
       const targetZoneId = zoneIdentity(targetZone);
       event.currentTarget.setPointerCapture(event.pointerId);
       zoneDragRef.current = {
@@ -5293,10 +5278,6 @@ export default function SystemMapViewer() {
   }
 
   function openStagePlacementEditor(zone: SystemMapZone, stage: SystemMapStagePlacement) {
-    if (isGeneratedAreaZone(zone)) {
-      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
-      return;
-    }
     setStagePlacementForm({
       mode: "edit",
       zoneId: zoneIdentity(zone),
@@ -5311,10 +5292,6 @@ export default function SystemMapViewer() {
   }
 
   function openMobSpawnEditor(zone: SystemMapZone, mob: SystemMapMobSpawn) {
-    if (isGeneratedAreaZone(zone)) {
-      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
-      return;
-    }
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
@@ -5836,20 +5813,22 @@ export default function SystemMapViewer() {
       };
     });
     setStagePlacementForm(null);
-    setStatus({ tone: "success", message: `${stagePlacementForm.mode === "create" ? "Added" : "Updated"} stage placement "${nextStage.name || nextStage.stageId}". Use Save Changes To Build to write it into Zones.json.` });
+    setStatus({ tone: "success", message: `${stagePlacementForm.mode === "create" ? "Added" : "Updated"} stage placement "${nextStage.name || nextStage.stageId}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.` });
   }
 
   function removeStagePlacement(zoneId: string, stageKey: string) {
+    const targetZone = mapZones.find((zone) => zoneIdentity(zone) === zoneId);
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
       modified: zone.draft ? zone.modified : true,
       stages: zone.stages.filter((stage) => stageIdentity(stage) !== stageKey),
     }));
     setStagePlacementForm(null);
-    setStatus({ tone: "success", message: "Removed the stage placement. Use Save Changes To Build to write it into Zones.json." });
+    setStatus({ tone: "success", message: `Removed the stage placement. Use Save Changes To Build to write it into ${targetZone ? zoneSaveTargetName(targetZone) : "the zone file"}.` });
   }
 
   function removeMobSpawn(zoneId: string, mobKey: string) {
+    const targetZone = mapZones.find((zone) => zoneIdentity(zone) === zoneId);
     updateZoneInMap(zoneId, (zone) => ({
       ...zone,
       modified: zone.draft ? zone.modified : true,
@@ -5857,7 +5836,7 @@ export default function SystemMapViewer() {
     }));
     setMobSpawnForm(null);
     setDraggingMobKey((current) => (current === mobKey ? null : current));
-    setStatus({ tone: "success", message: "Removed the mob spawn. Use Save Changes To Build to write it into Zones.json." });
+    setStatus({ tone: "success", message: `Removed the mob spawn. Use Save Changes To Build to write it into ${targetZone ? zoneSaveTargetName(targetZone) : "the zone file"}.` });
   }
 
   function saveMobSpawnForm() {
@@ -5909,7 +5888,7 @@ export default function SystemMapViewer() {
     });
     setMobSpawnForm(null);
     setActiveMobSpawnAreaPointAddKey(null);
-    setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into Zones.json.` });
+    setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.` });
   }
 
   async function handleSaveZoneChangesToBuild(suppressStatus = false) {
@@ -5917,45 +5896,12 @@ export default function SystemMapViewer() {
     setSavingZones(true);
     if (!suppressStatus) setStatus(null);
     try {
-      const sourceResponse = await fetch("/api/settings/data/source?kind=zones", { cache: "no-store" });
-      const sourcePayload = await sourceResponse.json().catch(() => ({}));
-      if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
-        if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current Zones.json before saving." });
-        return false;
-      }
-
-      const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
       const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.originalId ?? zone.id));
-      const deletedZoneIdSet = new Set(deletedZoneIds);
-      const updatedExistingZones = workspace.zones
-        .filter((draft) => !deletedZoneIdSet.has(draft.id))
-        .map((draft) => {
-          const editedZone = editedZones.find((zone) => (zone.originalId ?? zone.id) === draft.id);
-          return editedZone ? applyZoneDetailsToManagerDraft(draft, editedZone) : draft;
-        });
-      const existingIds = updatedExistingZones.map((zone) => zone.id);
-      const managerDrafts: ZoneDraft[] = [];
-      for (const zone of draftZones) {
-        const managerDraft = zoneToManagerDraft(zone, [...existingIds, ...managerDrafts.map((entry) => entry.id)]);
-        managerDrafts.push(managerDraft);
-      }
-      const nextWorkspace: ZonesManagerWorkspace = {
-        ...workspace,
-        zones: [...updatedExistingZones, ...managerDrafts],
-      };
-
-      const saveResponse = await fetch("/api/zones/save", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ workspace: nextWorkspace }),
-      });
-      const savePayload = await saveResponse.json().catch(() => ({}));
-      if (!saveResponse.ok || !savePayload?.ok) {
-        if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save zone drafts into Zones.json." });
-        return false;
-      }
+      const editedGeneratedZones = editedZones.filter(isGeneratedAreaZone);
+      const editedStandardZones = editedZones.filter((zone) => !isGeneratedAreaZone(zone));
+      let standardSavedCount = 0;
+      let generatedSavedCount = 0;
+      let savedZones: SystemMapZone[] = [];
 
       const markZoneSaved = (zone: SystemMapZone): SystemMapZone => ({
         ...zone,
@@ -5965,12 +5911,72 @@ export default function SystemMapViewer() {
         stages: zone.stages.map((stage) => ({ ...stage, draft: false, modified: false })),
         mobs: zone.mobs.map((mob) => ({ ...mob, draft: false, modified: false })),
       });
-      const savedZones = draftZones.map((zone, index) =>
-        markZoneSaved({
-          ...zone,
-          id: managerDrafts[index]?.id ?? zone.id,
-        }),
-      );
+
+      if (draftZones.length || editedStandardZones.length || deletedZoneIds.length) {
+        const sourceResponse = await fetch("/api/settings/data/source?kind=zones", { cache: "no-store" });
+        const sourcePayload = await sourceResponse.json().catch(() => ({}));
+        if (!sourceResponse.ok || !sourcePayload?.ok || typeof sourcePayload.text !== "string") {
+          if (!suppressStatus) setStatus({ tone: "error", message: sourcePayload?.error || "Could not load the current Zones.json before saving." });
+          return false;
+        }
+
+        const workspace = importZonesManagerWorkspace(sourcePayload.text, sourcePayload.sourceLabel || "Local game source");
+        const deletedZoneIdSet = new Set(deletedZoneIds);
+        const updatedExistingZones = workspace.zones
+          .filter((draft) => !deletedZoneIdSet.has(draft.id))
+          .map((draft) => {
+            const editedZone = editedStandardZones.find((zone) => (zone.originalId ?? zone.id) === draft.id);
+            return editedZone ? applyZoneDetailsToManagerDraft(draft, editedZone) : draft;
+          });
+        const existingIds = updatedExistingZones.map((zone) => zone.id);
+        const managerDrafts: ZoneDraft[] = [];
+        for (const zone of draftZones) {
+          const managerDraft = zoneToManagerDraft(zone, [...existingIds, ...managerDrafts.map((entry) => entry.id)]);
+          managerDrafts.push(managerDraft);
+        }
+        const nextWorkspace: ZonesManagerWorkspace = {
+          ...workspace,
+          zones: [...updatedExistingZones, ...managerDrafts],
+        };
+
+        const saveResponse = await fetch("/api/zones/save", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ workspace: nextWorkspace }),
+        });
+        const savePayload = await saveResponse.json().catch(() => ({}));
+        if (!saveResponse.ok || !savePayload?.ok) {
+          if (!suppressStatus) setStatus({ tone: "error", message: savePayload?.error || "Could not save zone drafts into Zones.json." });
+          return false;
+        }
+
+        standardSavedCount = draftZones.length + editedStandardZones.length + deletedZoneIds.length;
+        savedZones = draftZones.map((zone, index) =>
+          markZoneSaved({
+            ...zone,
+            id: managerDrafts[index]?.id ?? zone.id,
+          }),
+        );
+      }
+
+      if (editedGeneratedZones.length) {
+        const saveGeneratedResponse = await fetch("/api/system-map/generated-zones/save", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ zones: editedGeneratedZones }),
+        });
+        const saveGeneratedPayload = await saveGeneratedResponse.json().catch(() => ({}));
+        if (!saveGeneratedResponse.ok || !saveGeneratedPayload?.ok) {
+          if (!suppressStatus) setStatus({ tone: "error", message: saveGeneratedPayload?.error || "Could not save generated area zones into generated_areas.json." });
+          return false;
+        }
+        generatedSavedCount = Number(saveGeneratedPayload.savedCount) || editedGeneratedZones.length;
+      }
+
       setPayload((current) =>
         current
           ? {
@@ -5983,8 +5989,9 @@ export default function SystemMapViewer() {
       setDraftZones([]);
       setEditedZoneIds([]);
       setDeletedZoneIds([]);
-      const savedCount = savedZones.length + editedZones.length + deletedZoneIds.length;
-      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into the live Zones.json file.` });
+      const savedCount = standardSavedCount + generatedSavedCount;
+      const targets = [standardSavedCount ? "Zones.json" : "", generatedSavedCount ? "generated_areas.json" : ""].filter(Boolean).join(" and ");
+      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into ${targets || "zone data"}.` });
       return true;
     } catch (saveError) {
       if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
