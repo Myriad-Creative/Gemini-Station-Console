@@ -322,6 +322,29 @@ async function loadDataFile(gameRootPath: string, kind: UploadedDataFileKind, la
   };
 }
 
+async function loadGameRootJsonFile(gameRootPath: string, relativePath: string, label: string): Promise<LoadedJson> {
+  const absolute = path.join(gameRootPath, relativePath);
+  if (!fs.existsSync(absolute)) {
+    return {
+      value: null,
+      warnings: [],
+    };
+  }
+
+  const text = await fs.promises.readFile(absolute, "utf-8");
+  const parsed = parseTolerantJsonText(text);
+  return {
+    value: parsed.value,
+    warnings: parsed.errors.map((error) => `${label}: ${error}`),
+  };
+}
+
+function namedDictionary(value: unknown, rootKey: string) {
+  const root = asRecord(value);
+  const named = asRecord(root[rootKey]);
+  return Object.prototype.hasOwnProperty.call(root, rootKey) ? named : root;
+}
+
 function buildSectors(): SystemMapSector[] {
   const sectors: SystemMapSector[] = [];
   for (let y = SECTOR_MAX; y >= SECTOR_MIN; y -= 1) {
@@ -937,7 +960,14 @@ function buildMobSpawn(
   };
 }
 
-function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknown, mobCatalog: Map<string, JsonRecord>, hazardBarrierProfilesJson: unknown): SystemMapZone[] {
+function buildZones(
+  gameRootPath: string,
+  zonesJson: unknown,
+  stagesJson: unknown,
+  mobCatalog: Map<string, JsonRecord>,
+  hazardBarrierProfilesJson: unknown,
+  options: { source: SystemMapZone["source"]; sourceFile: string } = { source: "zones", sourceFile: "Zones.json" },
+): SystemMapZone[] {
   const stages = asRecord(stagesJson);
   return Object.entries(asRecord(zonesJson)).map(([id, rawZone]) => {
     const zone = asRecord(rawZone);
@@ -953,6 +983,10 @@ function buildZones(gameRootPath: string, zonesJson: unknown, stagesJson: unknow
     return {
       id,
       name,
+      source: options.source,
+      sourceFile: options.sourceFile,
+      generated: boolValue(zone.generated),
+      archetype: stringValue(zone.archetype, ""),
       active: boolValue(zone.active),
       showHudOnEnter: boolValue(zone.show_hud_on_enter),
       poiMap: boolValue(zone.poi_map),
@@ -1149,6 +1183,7 @@ export async function GET() {
 
   const [
     zonesResult,
+    generatedZonesResult,
     stagesResult,
     hazardBarrierProfilesResult,
     environmentalElementsResult,
@@ -1161,6 +1196,7 @@ export async function GET() {
     playerSpawnResult,
   ] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
+    loadGameRootJsonFile(local.gameRootPath, path.join("data", "database", "zones", "generated_areas.json"), "Generated area zones"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
     loadDataFile(local.gameRootPath, "environmentalElements", "EnvironmentalElements.json"),
@@ -1175,6 +1211,7 @@ export async function GET() {
 
   const warnings = [
     ...zonesResult.warnings,
+    ...generatedZonesResult.warnings,
     ...stagesResult.warnings,
     ...hazardBarrierProfilesResult.warnings,
     ...environmentalElementsResult.warnings,
@@ -1188,7 +1225,16 @@ export async function GET() {
   ];
 
   const mobCatalog = buildMobCatalog(mobsResult.value);
-  const zones = buildZones(local.gameRootPath, zonesResult.value, stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value);
+  const zones = [
+    ...buildZones(local.gameRootPath, zonesResult.value, stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value, {
+      source: "zones",
+      sourceFile: "data/database/zones/Zones.json",
+    }),
+    ...buildZones(local.gameRootPath, namedDictionary(generatedZonesResult.value, "zones"), stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value, {
+      source: "generated-core",
+      sourceFile: "data/database/zones/generated_areas.json",
+    }),
+  ];
   const payload: SystemMapPayload = {
     ok: true,
     sourceRoot: local.gameRootPath,

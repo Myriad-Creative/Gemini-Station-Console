@@ -691,6 +691,14 @@ function zoneIdentity(zone: SystemMapZone) {
   return zone.originalId ?? zone.id;
 }
 
+function isGeneratedAreaZone(zone: SystemMapZone | null | undefined) {
+  return zone?.source === "generated-core";
+}
+
+function generatedAreaEditMessage(zone: SystemMapZone) {
+  return `"${zone.name || zone.id}" is stored in generated area core data. Use Data > Generated Areas to edit or reject it.`;
+}
+
 function stageIdentity(stage: SystemMapStagePlacement) {
   return stage.key || `zone-stage-${stage.originalIndex ?? "new"}`;
 }
@@ -3421,6 +3429,10 @@ export default function SystemMapViewer() {
       setStatus({ tone: "error", message: "Could not find the zone to delete." });
       return;
     }
+    if (isGeneratedAreaZone(zone)) {
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
+      return;
+    }
     if (!window.confirm(`Delete zone "${zone.name || zone.id}"? This also removes its stage placements and mob spawns from Zones.json when saved.`)) return;
 
     detachMineableAsteroidsFromDeletedZone(zone);
@@ -3826,6 +3838,10 @@ export default function SystemMapViewer() {
 
     const existingZone = payload.zones.find((zone) => (zone.originalId ?? zone.id) === zoneId || zone.id === zoneId);
     if (!existingZone) return;
+    if (isGeneratedAreaZone(existingZone)) {
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(existingZone) });
+      return;
+    }
     const delta = {
       x: roundedWorld.x - existingZone.world.x,
       y: roundedWorld.y - existingZone.world.y,
@@ -3846,6 +3862,11 @@ export default function SystemMapViewer() {
   }
 
   function openZoneEditor(zone: SystemMapZone) {
+    if (isGeneratedAreaZone(zone)) {
+      setZoneForm(null);
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
+      return;
+    }
     setGateForm(null);
     setRouteForm(null);
     setEnvironmentalBarrierForm(null);
@@ -4304,6 +4325,11 @@ export default function SystemMapViewer() {
     }
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
+      if (isGeneratedAreaZone(targetMobSpawn.zone)) {
+        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetMobSpawn.zone) });
+        clearHover();
+        return;
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
       mobDragRef.current = {
         zoneId: zoneIdentity(targetMobSpawn.zone),
@@ -4319,6 +4345,11 @@ export default function SystemMapViewer() {
     }
     const targetStagePlacement = toggles.stages ? findStageDotAtWorld(world) : null;
     if (targetStagePlacement) {
+      if (isGeneratedAreaZone(targetStagePlacement.zone)) {
+        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetStagePlacement.zone) });
+        clearHover();
+        return;
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
       stageDragRef.current = {
         zoneId: zoneIdentity(targetStagePlacement.zone),
@@ -4334,6 +4365,11 @@ export default function SystemMapViewer() {
     }
     const targetZone = toggles.zones ? findZoneDotAtWorld(world) : null;
     if (targetZone) {
+      if (isGeneratedAreaZone(targetZone)) {
+        setStatus({ tone: "neutral", message: generatedAreaEditMessage(targetZone) });
+        clearHover();
+        return;
+      }
       const targetZoneId = zoneIdentity(targetZone);
       event.currentTarget.setPointerCapture(event.pointerId);
       zoneDragRef.current = {
@@ -4830,6 +4866,7 @@ export default function SystemMapViewer() {
             subtitle: `${zone.draft ? "Unsaved draft" : zone.modified ? "Unsaved coordinate edit" : zone.active ? "Active" : "Inactive"} zone · sector ${zone.sector.x}, ${zone.sector.y}`,
             lines: [
               `Zone ID: ${zone.id}`,
+              `Source: ${zone.sourceFile || "Zones.json"}`,
               `POI: ${zone.poiMap ? zone.poiLabel || zone.name : "not shown on map"}`,
               `Activation radius: ${formatNumber(zone.activationRadius)}`,
               zone.bounds.shape.toLowerCase() === "polygon" ? `Bounds: polygon (${zone.bounds.points.length} points)` : `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
@@ -5256,6 +5293,10 @@ export default function SystemMapViewer() {
   }
 
   function openStagePlacementEditor(zone: SystemMapZone, stage: SystemMapStagePlacement) {
+    if (isGeneratedAreaZone(zone)) {
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
+      return;
+    }
     setStagePlacementForm({
       mode: "edit",
       zoneId: zoneIdentity(zone),
@@ -5270,6 +5311,10 @@ export default function SystemMapViewer() {
   }
 
   function openMobSpawnEditor(zone: SystemMapZone, mob: SystemMapMobSpawn) {
+    if (isGeneratedAreaZone(zone)) {
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(zone) });
+      return;
+    }
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
@@ -5723,6 +5768,10 @@ export default function SystemMapViewer() {
     const baseZone = mapZones.find((zone) => (zone.originalId ?? zone.id) === originalId);
     if (!baseZone) {
       setStatus({ tone: "error", message: `Could not find zone "${originalId}" on the map.` });
+      return;
+    }
+    if (isGeneratedAreaZone(baseZone)) {
+      setStatus({ tone: "neutral", message: generatedAreaEditMessage(baseZone) });
       return;
     }
 

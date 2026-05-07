@@ -229,6 +229,10 @@ export type SystemMapMobCatalogEntry = {
 export type SystemMapZone = {
   id: string;
   name: string;
+  source?: "zones" | "generated-core";
+  sourceFile?: string;
+  generated?: boolean;
+  archetype?: string;
   draft?: boolean;
   modified?: boolean;
   originalId?: string;

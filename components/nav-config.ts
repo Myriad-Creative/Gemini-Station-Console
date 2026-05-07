@@ -57,6 +57,7 @@ const WORLD_SECTION_LINKS: NavLink[] = [
   { href: "/data", label: "Data Dashboard" },
   { href: "/data/map", label: "Map Data" },
   { href: "/data/zones", label: "Zones" },
+  { href: "/data/generated-areas", label: "Generated Areas" },
   { href: "/data/routes", label: "Trade Routes" },
   { href: "/data/asteroid-belt-gates", label: "Belt Gates" },
   { href: "/data/systems", label: "Systems" },
