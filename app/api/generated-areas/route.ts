@@ -22,6 +22,7 @@ const GENERATED_AREA_PATHS = {
   coreMobs: path.join("data", "database", "mobs", "generated_area_mobs.json"),
   coreMissions: path.join("scripts", "system", "missions", "missions", "generated_areas"),
   stages: path.join("data", "database", "stages", "Stages.json"),
+  mobs: path.join("data", "database", "mobs", "mobs.json"),
   generatorScript: path.join("scripts", "tools", "generated_areas", "generate_generated_areas.gd"),
 };
 
@@ -218,6 +219,21 @@ async function loadStageCatalog(gameRoot: string) {
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
+async function loadMobCatalog(gameRoot: string) {
+  const root = await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.mobs), []);
+  const mobs = Array.isArray(root) ? root : asArray(asObject(root).mobs);
+  return mobs
+    .map(asObject)
+    .map((mob) => ({
+      id: stringValue(mob.id),
+      name: stringValue(mob.display_name, stringValue(mob.name, stringValue(mob.id))),
+      faction: stringValue(mob.faction),
+      level: numberValue(mob.level),
+    }))
+    .filter((mob) => mob.id)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
 async function loadWorkspace(gameRoot: string, warnings: string[] = []): Promise<GeneratedAreasWorkspace> {
   const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
   const stagedZones = await readNamedDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedZones), "zones");
@@ -260,6 +276,7 @@ async function loadWorkspace(gameRoot: string, warnings: string[] = []): Promise
     paths: Object.fromEntries(Object.entries(GENERATED_AREA_PATHS).map(([key, relativePath]) => [key, gamePath(gameRoot, relativePath)])),
     entries,
     stageCatalog: await loadStageCatalog(gameRoot),
+    mobCatalog: await loadMobCatalog(gameRoot),
     summary: {
       requestCount: areas.length,
       draftCount: entries.filter((entry) => entry.status === "draft").length,

@@ -8,6 +8,13 @@ export type GeneratedAreaStageCatalogEntry = {
   height: number | null;
 };
 
+export type GeneratedAreaMobCatalogEntry = {
+  id: string;
+  name: string;
+  faction: string;
+  level: number | null;
+};
+
 export type GeneratedAreaMissionArtifact = {
   id: string;
   title: string;
@@ -50,6 +57,7 @@ export type GeneratedAreasWorkspace = {
   paths: Record<string, string>;
   entries: GeneratedAreaEntry[];
   stageCatalog: GeneratedAreaStageCatalogEntry[];
+  mobCatalog: GeneratedAreaMobCatalogEntry[];
   summary: GeneratedAreasSummary;
   warnings: string[];
 };

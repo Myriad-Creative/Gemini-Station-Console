@@ -46,6 +46,22 @@ type StageForm = {
   extraJson: string;
 };
 
+type MobSpawnerForm = {
+  key: string;
+  mobId: string;
+  count: string;
+  rank: string;
+  levelMin: string;
+  levelMax: string;
+  posX: string;
+  posY: string;
+  radius: string;
+  respawnDelay: string;
+  angleDeg: string;
+  overridesJson: string;
+  extraJson: string;
+};
+
 type ZoneForm = {
   target: "staged" | "core";
   name: string;
@@ -62,6 +78,7 @@ type ZoneForm = {
   boundsWidth: string;
   boundsHeight: string;
   stages: StageForm[];
+  mobs: MobSpawnerForm[];
 };
 
 function asObject(value: unknown): JsonObject {
@@ -126,12 +143,16 @@ function stageExtraJson(stage: JsonObject) {
   return Object.keys(extra).length ? formatJson(extra) : "{}";
 }
 
-function parseStageExtraJson(value: string, label: string) {
+function parseJsonObject(value: string, label: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed === "{}") return {};
   const parsed = JSON.parse(trimmed);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must be a JSON object.`);
   return parsed as JsonObject;
+}
+
+function parseStageExtraJson(value: string, label: string) {
+  return parseJsonObject(value, label);
 }
 
 function createStageForm(stage: unknown, index: number): StageForm {
@@ -151,6 +172,61 @@ function blankStageForm(): StageForm {
     stageId: "",
     posX: "0",
     posY: "0",
+    extraJson: "{}",
+  };
+}
+
+function mobSpawnerExtraJson(spawner: JsonObject) {
+  const {
+    mob_id: _mobId,
+    count: _count,
+    rank: _rank,
+    level_min: _levelMin,
+    level_max: _levelMax,
+    pos: _pos,
+    radius: _radius,
+    respawn_delay: _respawnDelay,
+    angle_deg: _angleDeg,
+    overrides: _overrides,
+    ...extra
+  } = spawner;
+  return Object.keys(extra).length ? formatJson(extra) : "{}";
+}
+
+function createMobSpawnerForm(spawner: unknown, index: number): MobSpawnerForm {
+  const entry = asObject(spawner);
+  const overrides = asObject(entry.overrides);
+  return {
+    key: `${stringValue(entry.mob_id, "mob")}-${index}-${Math.random().toString(36).slice(2)}`,
+    mobId: stringValue(entry.mob_id),
+    count: numberText(entry.count, "1"),
+    rank: stringValue(entry.rank, "normal"),
+    levelMin: numberText(entry.level_min, "1"),
+    levelMax: numberText(entry.level_max, "1"),
+    posX: vectorText(entry.pos, 0),
+    posY: vectorText(entry.pos, 1),
+    radius: numberText(entry.radius, "0"),
+    respawnDelay: numberText(entry.respawn_delay, "60"),
+    angleDeg: numberText(entry.angle_deg, "0"),
+    overridesJson: Object.keys(overrides).length ? formatJson(overrides) : "{}",
+    extraJson: mobSpawnerExtraJson(entry),
+  };
+}
+
+function blankMobSpawnerForm(levelMin = "1", levelMax = "1"): MobSpawnerForm {
+  return {
+    key: `mob-${Math.random().toString(36).slice(2)}`,
+    mobId: "",
+    count: "1",
+    rank: "normal",
+    levelMin,
+    levelMax,
+    posX: "0",
+    posY: "0",
+    radius: "0",
+    respawnDelay: "60",
+    angleDeg: "0",
+    overridesJson: "{}",
     extraJson: "{}",
   };
 }
@@ -209,6 +285,7 @@ function createZoneFormForTarget(entry: GeneratedAreaEntry, target: "staged" | "
     boundsWidth: numberText(bounds.width, "36000"),
     boundsHeight: numberText(bounds.height, "30000"),
     stages: asArray(zone.stages).map(createStageForm),
+    mobs: asArray(zone.mobs).map(createMobSpawnerForm),
   };
 }
 
@@ -256,8 +333,41 @@ function requestFromForm(form: RequestForm, original: JsonObject): JsonObject {
   return next;
 }
 
+function mobSpawnerFromForm(form: MobSpawnerForm, index: number): JsonObject {
+  const mobId = form.mobId.trim();
+  if (!mobId) throw new Error(`Mob spawner ${index + 1} needs a mob ID.`);
+  const overrides = parseJsonObject(form.overridesJson, `Overrides JSON for mob spawner ${index + 1}`);
+  const extra = parseJsonObject(form.extraJson, `Extra JSON for mob spawner ${index + 1}`);
+  return {
+    ...extra,
+    mob_id: mobId,
+    count: parseNumber(form.count, 1),
+    rank: form.rank.trim() || "normal",
+    level_min: parseNumber(form.levelMin, 1),
+    level_max: parseNumber(form.levelMax, parseNumber(form.levelMin, 1)),
+    pos: [parseNumber(form.posX), parseNumber(form.posY)],
+    radius: parseNumber(form.radius),
+    respawn_delay: parseNumber(form.respawnDelay),
+    angle_deg: parseNumber(form.angleDeg),
+    ...(Object.keys(overrides).length ? { overrides } : {}),
+  };
+}
+
 function zoneFromForm(form: ZoneForm, original: JsonObject): JsonObject {
   const originalBounds = asObject(original.bounds);
+  const mobs = form.mobs.map(mobSpawnerFromForm);
+  const overrideIds = new Map<string, number[]>();
+  for (const [index, mob] of mobs.entries()) {
+    const overrideId = stringValue(asObject(mob.overrides).id).trim();
+    if (!overrideId) continue;
+    const current = overrideIds.get(overrideId) ?? [];
+    current.push(index + 1);
+    overrideIds.set(overrideId, current);
+  }
+  const duplicateOverrideIds = Array.from(overrideIds.entries()).filter(([, indexes]) => indexes.length > 1);
+  if (duplicateOverrideIds.length) {
+    throw new Error(`Duplicate mob override ID "${duplicateOverrideIds[0][0]}" in generated zone mob spawners.`);
+  }
   return {
     ...original,
     name: form.name.trim(),
@@ -279,15 +389,25 @@ function zoneFromForm(form: ZoneForm, original: JsonObject): JsonObject {
       pos: [parseNumber(stage.posX), parseNumber(stage.posY)],
       ...parseStageExtraJson(stage.extraJson, `Extra JSON for stage ${index + 1}`),
     })),
+    mobs,
   };
 }
 
+function zoneArray(zone: JsonObject | null, key: string) {
+  return asArray(asObject(zone ?? {})[key]).map(asObject).filter((entry) => Object.keys(entry).length);
+}
+
 function artifactsCount(artifacts: GeneratedAreaArtifacts) {
+  const zone = artifacts.zone ? asObject(artifacts.zone) : null;
   return {
     zones: artifacts.zone ? 1 : 0,
     contacts: Object.keys(artifacts.contacts).length,
-    mobs: artifacts.mobs.length,
+    mobSpawns: zoneArray(zone, "mobs").length,
+    mobRecords: artifacts.mobs.length,
     missions: artifacts.missions.length,
+    stages: zoneArray(zone, "stages").length,
+    environment: zoneArray(zone, "environment_elements").length,
+    lockboxes: zoneArray(zone, "lockboxes").length,
   };
 }
 
@@ -323,26 +443,26 @@ function uniqueAreaId(base: string, entries: GeneratedAreaEntry[]) {
 
 function ArtifactSummary({ label, artifacts }: { label: string; artifacts: GeneratedAreaArtifacts }) {
   const counts = artifactsCount(artifacts);
+  const metrics = [
+    ["Zone", counts.zones],
+    ["Stages", counts.stages],
+    ["Mob Spawns", counts.mobSpawns],
+    ["Lockboxes", counts.lockboxes],
+    ["Env", counts.environment],
+    ["Comms", counts.contacts],
+    ["Mob Records", counts.mobRecords],
+    ["Missions", counts.missions],
+  ] as const;
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
       <div className="text-sm font-semibold text-white">{label}</div>
-      <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs text-white/55">
-        <div>
-          <div className="text-lg font-semibold text-white">{counts.zones}</div>
-          zones
-        </div>
-        <div>
-          <div className="text-lg font-semibold text-white">{counts.contacts}</div>
-          comms
-        </div>
-        <div>
-          <div className="text-lg font-semibold text-white">{counts.mobs}</div>
-          mobs
-        </div>
-        <div>
-          <div className="text-lg font-semibold text-white">{counts.missions}</div>
-          missions
-        </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-center text-xs text-white/55 sm:grid-cols-4">
+        {metrics.map(([metricLabel, value]) => (
+          <div key={metricLabel} className="rounded bg-white/[0.03] px-2 py-2">
+            <div className="text-lg font-semibold text-white">{value}</div>
+            {metricLabel}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -350,9 +470,18 @@ function ArtifactSummary({ label, artifacts }: { label: string; artifacts: Gener
 
 function ArtifactDetails({ artifacts }: { artifacts: GeneratedAreaArtifacts }) {
   const contacts = Object.entries(artifacts.contacts);
+  const zone = artifacts.zone ? asObject(artifacts.zone) : null;
+  const stagePlacements = zoneArray(zone, "stages");
+  const mobSpawners = zoneArray(zone, "mobs");
+  const environmentalElements = zoneArray(zone, "environment_elements");
+  const lockboxes = zoneArray(zone, "lockboxes");
   return (
     <div className="space-y-3">
       {artifacts.zone ? <JsonTextArea label="Zone JSON Preview" value={formatJson(artifacts.zone)} rows={8} onChange={() => {}} /> : null}
+      {stagePlacements.length ? <JsonTextArea label="Embedded Stage Placements" value={formatJson(stagePlacements)} rows={6} onChange={() => {}} /> : null}
+      {mobSpawners.length ? <JsonTextArea label="Embedded Mob Spawners" value={formatJson(mobSpawners)} rows={8} onChange={() => {}} /> : null}
+      {environmentalElements.length ? <JsonTextArea label="Embedded Environmental Elements" value={formatJson(environmentalElements)} rows={8} onChange={() => {}} /> : null}
+      {lockboxes.length ? <JsonTextArea label="Embedded Lockboxes" value={formatJson(lockboxes)} rows={8} onChange={() => {}} /> : null}
       {contacts.length ? <JsonTextArea label="Comms JSON Preview" value={formatJson(artifacts.contacts)} rows={8} onChange={() => {}} /> : null}
       {artifacts.mobs.length ? <JsonTextArea label="Generated Mob JSON Preview" value={formatJson({ mobs: artifacts.mobs })} rows={8} onChange={() => {}} /> : null}
       {artifacts.missions.length ? (
@@ -518,6 +647,20 @@ export default function GeneratedAreasManager() {
 
   function removeStage(index: number) {
     setZoneForm((current) => (current ? { ...current, stages: current.stages.filter((_stage, stageIndex) => stageIndex !== index) } : current));
+  }
+
+  function updateMobSpawner(index: number, patch: Partial<MobSpawnerForm>) {
+    setZoneForm((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        mobs: current.mobs.map((mob, mobIndex) => (mobIndex === index ? { ...mob, ...patch } : mob)),
+      };
+    });
+  }
+
+  function removeMobSpawner(index: number) {
+    setZoneForm((current) => (current ? { ...current, mobs: current.mobs.filter((_mob, mobIndex) => mobIndex !== index) } : current));
   }
 
   function updateRequestStage(index: number, patch: Partial<StageForm>) {
@@ -916,6 +1059,105 @@ export default function GeneratedAreasManager() {
                             </details>
                           </div>
                         ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-white">Mob Spawners</div>
+                          <div className="mt-1 text-xs text-white/45">These are saved inside the generated zone entry under mobs.</div>
+                        </div>
+                        <button
+                          className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                          onClick={() => setZoneForm({ ...zoneForm, mobs: [...zoneForm.mobs, blankMobSpawnerForm(requestForm.levelMin || "1", requestForm.levelMax || requestForm.levelMin || "1")] })}
+                        >
+                          Add Mob Spawner
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {zoneForm.mobs.length ? (
+                          zoneForm.mobs.map((mob, index) => {
+                            const catalogEntry = workspace.mobCatalog.find((entry) => entry.id === mob.mobId);
+                            return (
+                              <div key={mob.key} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-semibold text-white">Spawner {index + 1}</div>
+                                    <div className="mt-1 text-xs text-white/45">
+                                      {catalogEntry ? `${catalogEntry.name}${catalogEntry.faction ? ` · ${catalogEntry.faction}` : ""}${catalogEntry.level ? ` · level ${catalogEntry.level}` : ""}` : "Select a base mob from mobs.json."}
+                                    </div>
+                                  </div>
+                                  <button className="rounded border border-red-400/20 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10" onClick={() => removeMobSpawner(index)}>
+                                    Remove
+                                  </button>
+                                </div>
+                                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                                  <label className="text-sm text-white/65 md:col-span-2">
+                                    Base Mob
+                                    <select className="select mt-1 w-full" value={mob.mobId} onChange={(event) => updateMobSpawner(index, { mobId: event.target.value })}>
+                                      <option value="">Select mob</option>
+                                      {workspace.mobCatalog.map((entry) => (
+                                        <option key={entry.id} value={entry.id}>
+                                          {entry.name && entry.name !== entry.id ? `${entry.id} - ${entry.name}` : entry.id}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Count
+                                    <input className="input mt-1" type="number" min="1" value={mob.count} onChange={(event) => updateMobSpawner(index, { count: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Rank
+                                    <select className="select mt-1 w-full" value={mob.rank} onChange={(event) => updateMobSpawner(index, { rank: event.target.value })}>
+                                      <option value="normal">normal</option>
+                                      <option value="elite">elite</option>
+                                    </select>
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Level Min
+                                    <input className="input mt-1" type="number" min="1" value={mob.levelMin} onChange={(event) => updateMobSpawner(index, { levelMin: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Level Max
+                                    <input className="input mt-1" type="number" min="1" value={mob.levelMax} onChange={(event) => updateMobSpawner(index, { levelMax: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    X
+                                    <input className="input mt-1" type="number" value={mob.posX} onChange={(event) => updateMobSpawner(index, { posX: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Y
+                                    <input className="input mt-1" type="number" value={mob.posY} onChange={(event) => updateMobSpawner(index, { posY: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Radius
+                                    <input className="input mt-1" type="number" min="0" value={mob.radius} onChange={(event) => updateMobSpawner(index, { radius: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Respawn Delay
+                                    <input className="input mt-1" type="number" min="0" value={mob.respawnDelay} onChange={(event) => updateMobSpawner(index, { respawnDelay: event.target.value })} />
+                                  </label>
+                                  <label className="text-sm text-white/65">
+                                    Angle
+                                    <input className="input mt-1" type="number" value={mob.angleDeg} onChange={(event) => updateMobSpawner(index, { angleDeg: event.target.value })} />
+                                  </label>
+                                </div>
+                                <details className="mt-3">
+                                  <summary className="cursor-pointer text-xs text-white/50">Overrides JSON</summary>
+                                  <textarea className="input mt-2 min-h-36 font-mono text-xs" value={mob.overridesJson} onChange={(event) => updateMobSpawner(index, { overridesJson: event.target.value })} />
+                                </details>
+                                <details className="mt-3">
+                                  <summary className="cursor-pointer text-xs text-white/50">Extra JSON</summary>
+                                  <textarea className="input mt-2 min-h-24 font-mono text-xs" value={mob.extraJson} onChange={(event) => updateMobSpawner(index, { extraJson: event.target.value })} />
+                                </details>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-white/45">No mob spawners are assigned to this generated zone.</div>
+                        )}
                       </div>
                     </div>
                   </Section>
