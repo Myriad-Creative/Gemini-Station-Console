@@ -1685,13 +1685,13 @@ export default function MobLabApp() {
                         </div>
                       </div>
 
-                      <div className="grid gap-3 lg:grid-cols-[120px_minmax(0,1fr)]">
-                        <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                      <div className="grid gap-3 lg:grid-cols-[minmax(280px,420px)_minmax(0,1fr)]">
+                        <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
                           {hailImagePreviewSrc ? (
                             <img
                               src={hailImagePreviewSrc}
                               alt={selectedMob.hail_name || selectedMob.display_name || selectedMob.id || "Hail image"}
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-contain"
                             />
                           ) : (
                             <div className="px-3 text-center text-xs text-white/35">No hail image</div>
@@ -1716,33 +1716,30 @@ export default function MobLabApp() {
                         </div>
                       </div>
 
-                      <div className="max-h-80 overflow-y-auto pr-1">
+                      <div className="max-h-[720px] overflow-y-auto pr-1">
                         {filteredHailImageOptions.length ? (
-                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                             {filteredHailImageOptions.map((option) => {
                               const isSelected = selectedMob.hail_image.trim() === option.resPath;
                               return (
                                 <button
                                   key={option.resPath}
                                   type="button"
+                                  title={option.resPath}
                                   className={`rounded-xl border p-2 text-left transition ${
                                     isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
                                   }`}
                                   onClick={() => updateSelectedMob((current) => ({ ...current, hail_image: option.resPath }))}
                                 >
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex h-16 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
-                                      <img
-                                        src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
-                                        alt={option.fileName}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
-                                      <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
-                                      {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
-                                    </div>
+                                  <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                                    <img
+                                      src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
+                                      alt={option.fileName}
+                                      className="h-full w-full object-contain"
+                                    />
+                                  </div>
+                                  <div className="mt-2 flex min-h-5 items-center justify-end">
+                                    <span className={isSelected ? "text-xs font-medium text-cyan-100" : "sr-only"}>{isSelected ? "Selected" : option.fileName}</span>
                                   </div>
                                 </button>
                               );

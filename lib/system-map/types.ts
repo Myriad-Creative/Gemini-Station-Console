@@ -229,7 +229,7 @@ export type SystemMapMobCatalogEntry = {
 export type SystemMapZone = {
   id: string;
   name: string;
-  source?: "zones" | "generated-core";
+  source?: "zones";
   sourceFile?: string;
   generated?: boolean;
   archetype?: string;

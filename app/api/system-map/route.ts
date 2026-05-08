@@ -1183,7 +1183,6 @@ export async function GET() {
 
   const [
     zonesResult,
-    generatedZonesResult,
     stagesResult,
     hazardBarrierProfilesResult,
     environmentalElementsResult,
@@ -1196,7 +1195,6 @@ export async function GET() {
     playerSpawnResult,
   ] = await Promise.all([
     loadDataFile(local.gameRootPath, "zones", "Zones.json"),
-    loadGameRootJsonFile(local.gameRootPath, path.join("data", "database", "zones", "generated_areas.json"), "Generated area zones"),
     loadDataFile(local.gameRootPath, "stages", "Stages.json"),
     loadDataFile(local.gameRootPath, "hazardBarrierProfiles", "HazardBarrierProfiles.json"),
     loadDataFile(local.gameRootPath, "environmentalElements", "EnvironmentalElements.json"),
@@ -1211,7 +1209,6 @@ export async function GET() {
 
   const warnings = [
     ...zonesResult.warnings,
-    ...generatedZonesResult.warnings,
     ...stagesResult.warnings,
     ...hazardBarrierProfilesResult.warnings,
     ...environmentalElementsResult.warnings,
@@ -1229,10 +1226,6 @@ export async function GET() {
     ...buildZones(local.gameRootPath, zonesResult.value, stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value, {
       source: "zones",
       sourceFile: "data/database/zones/Zones.json",
-    }),
-    ...buildZones(local.gameRootPath, namedDictionary(generatedZonesResult.value, "zones"), stagesResult.value, mobCatalog, hazardBarrierProfilesResult.value, {
-      source: "generated-core",
-      sourceFile: "data/database/zones/generated_areas.json",
     }),
   ];
   const payload: SystemMapPayload = {

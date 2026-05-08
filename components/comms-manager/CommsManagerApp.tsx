@@ -669,7 +669,7 @@ export default function CommsManagerApp() {
 
                 <Section title="Identity" description="Core comms contact fields exported into the keyed object map.">
                   <div className="space-y-6">
-                    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
+                    <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
                       <div className="space-y-3">
                         <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#06101b]">
                           {portraitSrc ? (
@@ -677,7 +677,7 @@ export default function CommsManagerApp() {
                             <img
                               src={portraitSrc}
                               alt={selectedContact.name || selectedContact.id || "Contact portrait"}
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-contain"
                             />
                           ) : (
                             <div className="px-3 text-center text-xs text-white/35">No portrait</div>
@@ -788,34 +788,34 @@ export default function CommsManagerApp() {
                           <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{portraitCatalogStatus}</div>
                         ) : null}
 
-                        <div className="max-h-80 overflow-y-auto pr-1">
+                        <div className="max-h-[720px] overflow-y-auto pr-1">
                           {filteredPortraitOptions.length ? (
-                            <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                               {filteredPortraitOptions.map((option) => {
                                 const isSelected = resolvedPortraitPath(selectedContact.portrait) === option.resPath;
                                 return (
                                   <button
                                     key={option.resPath}
                                     type="button"
+                                    title={option.resPath}
                                     className={`rounded-xl border p-2 text-left transition ${
                                       isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
                                     }`}
                                     onClick={() => updateSelectedContact((current) => ({ ...current, portrait: option.resPath }))}
                                   >
-                                    <div className="flex items-center gap-3">
-                                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                          src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
-                                          alt={option.fileName}
-                                          className="h-full w-full object-cover"
-                                        />
+                                    <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={buildIconSrc(option.resPath, option.fileName, option.fileName, sharedDataVersion)}
+                                        alt={option.fileName}
+                                        className="h-full w-full object-contain"
+                                      />
+                                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 py-2">
+                                        <div className="truncate text-[11px] font-medium leading-tight text-white/85">{option.fileName}</div>
                                       </div>
-                                      <div className="min-w-0">
-                                        <div className="truncate text-sm font-medium text-white">{option.fileName}</div>
-                                        <div className="mt-1 truncate font-mono text-xs text-white/45">{option.relativePath}</div>
-                                        {isSelected ? <div className="mt-2 text-xs font-medium text-cyan-100">Selected</div> : null}
-                                      </div>
+                                    </div>
+                                    <div className="mt-2 flex min-h-5 items-center justify-end">
+                                      <span className={isSelected ? "text-xs font-medium text-cyan-100" : "sr-only"}>{isSelected ? "Selected" : option.relativePath}</span>
                                     </div>
                                   </button>
                                 );

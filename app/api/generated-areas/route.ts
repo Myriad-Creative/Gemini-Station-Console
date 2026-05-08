@@ -1,7 +1,7 @@
-import { execFile } from "child_process";
+import { randomBytes } from "crypto";
+import type { Dirent } from "fs";
 import fsp from "fs/promises";
 import path from "path";
-import { promisify } from "util";
 import { NextRequest, NextResponse } from "next/server";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import type { GeneratedAreaArtifacts, GeneratedAreaEntry, GeneratedAreaMissionArtifact, GeneratedAreasWorkspace, JsonObject } from "@lib/generated-areas/types";
@@ -9,21 +9,30 @@ import type { GeneratedAreaArtifacts, GeneratedAreaEntry, GeneratedAreaMissionAr
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const execFileAsync = promisify(execFile);
-
 const GENERATED_AREA_PATHS = {
-  requests: path.join("data", "generated", "areas", "GeneratedAreaRequests.json"),
-  stagedZones: path.join("data", "generated", "zones", "generated_areas.json"),
-  stagedComms: path.join("data", "generated", "comms", "generated_areas_comms.json"),
-  stagedMobs: path.join("data", "generated", "mobs", "generated_area_mobs.json"),
-  stagedMissions: path.join("scripts", "system", "missions", "missions", "generated", "generated_areas"),
-  coreZones: path.join("data", "database", "zones", "generated_areas.json"),
-  coreComms: path.join("data", "database", "comms", "generated_areas_comms.json"),
-  coreMobs: path.join("data", "database", "mobs", "generated_area_mobs.json"),
-  coreMissions: path.join("scripts", "system", "missions", "missions", "generated_areas"),
-  stages: path.join("data", "database", "stages", "Stages.json"),
+  zones: path.join("data", "database", "zones", "Zones.json"),
+  comms: path.join("data", "database", "comms", "Comms.json"),
   mobs: path.join("data", "database", "mobs", "mobs.json"),
-  generatorScript: path.join("scripts", "tools", "generated_areas", "generate_generated_areas.gd"),
+  stages: path.join("data", "database", "stages", "Stages.json"),
+  items: path.join("data", "database", "items", "items.json"),
+  missions: path.join("scripts", "system", "missions", "missions"),
+};
+
+type MissionFileArtifact = GeneratedAreaMissionArtifact & {
+  absolutePath: string;
+};
+
+type CoreGeneratedArtifacts = GeneratedAreaArtifacts & {
+  stageDefinitions: Record<string, JsonObject>;
+};
+
+type CoreFiles = {
+  zones: Record<string, JsonObject>;
+  stages: Record<string, JsonObject>;
+  comms: Record<string, JsonObject>;
+  mobs: JsonObject[];
+  missions: MissionFileArtifact[];
+  items: JsonObject[];
 };
 
 function asObject(value: unknown): JsonObject {
@@ -34,32 +43,38 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function cloneObject(value: JsonObject): JsonObject {
+  return JSON.parse(JSON.stringify(value)) as JsonObject;
+}
+
 function stringValue(value: unknown, fallback = "") {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return fallback;
 }
 
-function numberValue(value: unknown): number | null {
+function numberValue(value: unknown, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
-  return null;
+  return fallback;
+}
+
+function boolValue(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return fallback;
 }
 
 function gamePath(gameRoot: string, relativePath: string) {
   return path.join(gameRoot, relativePath);
-}
-
-async function pathExists(filePath: string) {
-  try {
-    await fsp.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function readJson(filePath: string, fallback: unknown = {}) {
@@ -76,198 +91,279 @@ async function writeJson(filePath: string, value: unknown) {
   await fsp.writeFile(filePath, `${JSON.stringify(value, null, "\t")}\n`, "utf-8");
 }
 
-async function readNamedDictionary(filePath: string, rootKey: string): Promise<Record<string, JsonObject>> {
-  const root = asObject(await readJson(filePath, {}));
-  const hasNamedRoot = Object.prototype.hasOwnProperty.call(root, rootKey) && !!root[rootKey] && typeof root[rootKey] === "object" && !Array.isArray(root[rootKey]);
-  const values = hasNamedRoot ? asObject(root[rootKey]) : root;
-  return Object.fromEntries(Object.entries(values).filter((entry): entry is [string, JsonObject] => !!entry[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])));
+function namedDictionary(value: unknown, rootKey?: string): Record<string, JsonObject> {
+  const root = asObject(value);
+  const source = rootKey && root[rootKey] && typeof root[rootKey] === "object" && !Array.isArray(root[rootKey]) ? asObject(root[rootKey]) : root;
+  return Object.fromEntries(Object.entries(source).filter((entry): entry is [string, JsonObject] => !!entry[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])));
 }
 
-async function writeNamedDictionary(filePath: string, rootKey: string, values: Record<string, JsonObject>) {
-  await writeJson(filePath, { [rootKey]: values });
+async function readDictionary(filePath: string, rootKey?: string): Promise<Record<string, JsonObject>> {
+  return namedDictionary(await readJson(filePath, {}), rootKey);
 }
 
-function extractMobArray(value: unknown): JsonObject[] {
+function mobArray(value: unknown): JsonObject[] {
   if (Array.isArray(value)) return value.map(asObject).filter((entry) => Object.keys(entry).length);
   return asArray(asObject(value).mobs).map(asObject).filter((entry) => Object.keys(entry).length);
 }
 
 async function readMobArray(filePath: string): Promise<JsonObject[]> {
-  return extractMobArray(await readJson(filePath, { mobs: [] }));
+  return mobArray(await readJson(filePath, { mobs: [] }));
 }
 
-async function writeMobArray(filePath: string, mobs: JsonObject[]) {
-  await writeJson(filePath, { mobs });
+function itemArray(value: unknown): JsonObject[] {
+  if (Array.isArray(value)) return value.map(asObject).filter((entry) => Object.keys(entry).length);
+  const root = asObject(value);
+  if (Array.isArray(root.items)) return root.items.map(asObject).filter((entry) => Object.keys(entry).length);
+  return Object.values(root).map(asObject).filter((entry) => Object.keys(entry).length);
 }
 
-function contentBelongsToArea(contentId: string, areaId: string) {
-  const content = contentId.trim();
-  const area = areaId.trim();
-  if (!content || !area) return false;
-  return content === area || content.startsWith(`${area}_`) || content.includes(area);
-}
+async function readMissionFiles(dirPath: string): Promise<MissionFileArtifact[]> {
+  const missions: MissionFileArtifact[] = [];
 
-async function readMissionFiles(dirPath: string): Promise<GeneratedAreaMissionArtifact[]> {
-  try {
-    const entries = await fsp.readdir(dirPath, { withFileTypes: true });
-    const missions: GeneratedAreaMissionArtifact[] = [];
+  async function visit(currentDir: string) {
+    let entries: Dirent[];
+    try {
+      entries = await fsp.readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(entryPath);
+        continue;
+      }
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const data = asObject(await readJson(path.join(dirPath, entry.name), {}));
+      const data = asObject(await readJson(entryPath, {}));
       if (!Object.keys(data).length) continue;
       const id = stringValue(data.id, entry.name.replace(/\.json$/, ""));
       missions.push({
         id,
         title: stringValue(data.title, id),
-        fileName: entry.name,
+        fileName: path.relative(dirPath, entryPath),
+        absolutePath: entryPath,
         data,
       });
     }
-    return missions.sort((left, right) => left.id.localeCompare(right.id));
-  } catch {
-    return [];
   }
+
+  await visit(dirPath);
+  return missions.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-async function deleteMatchingMissionFiles(dirPath: string, areaId: string) {
-  const missions = await readMissionFiles(dirPath);
-  for (const mission of missions) {
-    if (!contentBelongsToArea(mission.id, areaId)) continue;
-    await fsp.rm(path.join(dirPath, mission.fileName), { force: true });
+async function readCoreFiles(gameRoot: string): Promise<CoreFiles> {
+  const [zones, stages, comms, mobs, missions, items] = await Promise.all([
+    readDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.zones)),
+    readDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.stages)),
+    readDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.comms), "contacts"),
+    readMobArray(gamePath(gameRoot, GENERATED_AREA_PATHS.mobs)),
+    readMissionFiles(gamePath(gameRoot, GENERATED_AREA_PATHS.missions)),
+    readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.items), []),
+  ]);
+  return { zones, stages, comms, mobs, missions, items: itemArray(items) };
+}
+
+async function writeCoreFiles(gameRoot: string, files: Pick<CoreFiles, "zones" | "stages" | "comms" | "mobs">) {
+  await Promise.all([
+    writeJson(gamePath(gameRoot, GENERATED_AREA_PATHS.zones), files.zones),
+    writeJson(gamePath(gameRoot, GENERATED_AREA_PATHS.stages), files.stages),
+    writeJson(gamePath(gameRoot, GENERATED_AREA_PATHS.comms), files.comms),
+    writeJson(gamePath(gameRoot, GENERATED_AREA_PATHS.mobs), files.mobs),
+  ]);
+}
+
+function generatedIdFor(value: unknown) {
+  const object = asObject(value);
+  return stringValue(object.generated_id, stringValue(asObject(object.meta).generated_id)).trim();
+}
+
+function generatedMatches(value: unknown, areaId: string) {
+  return generatedIdFor(value) === areaId;
+}
+
+function contentBelongsToArea(contentId: string, areaId: string) {
+  const content = contentId.trim();
+  const area = areaId.trim();
+  return !!content && !!area && (content === area || content.startsWith(`${area}_`) || content.startsWith(`mission.generated.${area}.`));
+}
+
+function slugify(value: string, fallback = "generated_area") {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/['"]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || fallback
+  );
+}
+
+function randomSuffix() {
+  return randomBytes(4).toString("hex");
+}
+
+function uniqueId(base: string, existingIds: Set<string>) {
+  let id = base;
+  let suffix = 2;
+  while (existingIds.has(id)) {
+    id = `${base}_${suffix}`;
+    suffix += 1;
   }
+  existingIds.add(id);
+  return id;
 }
 
-function requestAreas(root: JsonObject): JsonObject[] {
-  return asArray(root.areas).map(asObject).filter((entry) => stringValue(entry.id).trim());
-}
-
-function upsertAreaRequest(root: JsonObject, request: JsonObject) {
-  const areaId = stringValue(request.id).trim();
-  if (!areaId) throw new Error("Generated area request ID is required.");
-  const areas = requestAreas(root);
-  const index = areas.findIndex((entry) => stringValue(entry.id).trim() === areaId);
-  if (index >= 0) {
-    areas[index] = { ...areas[index], ...request, id: areaId };
-  } else {
-    areas.push({ ...request, id: areaId });
+function generatedAreaIdFromRequest(request: JsonObject, existingIds: Set<string>) {
+  const requested = stringValue(request.id).trim();
+  if (requested && !existingIds.has(requested)) {
+    existingIds.add(requested);
+    return requested;
   }
-  root.areas = areas;
+  const levelMin = numberValue(request.level_min, 1);
+  const levelMax = numberValue(request.level_max, levelMin);
+  const baseName = slugify(stringValue(request.name, stringValue(request.archetype, "generated_area")));
+  return uniqueId(`gen_${baseName}_${levelMin}_${levelMax}_${randomSuffix()}`, existingIds);
 }
 
-function removeAreaRequest(root: JsonObject, areaId: string) {
-  root.areas = requestAreas(root).filter((entry) => stringValue(entry.id).trim() !== areaId);
+function allKnownIds(files: CoreFiles) {
+  const ids = new Set<string>();
+  for (const id of Object.keys(files.zones)) ids.add(id);
+  for (const id of Object.keys(files.stages)) ids.add(id);
+  for (const id of Object.keys(files.comms)) ids.add(id);
+  for (const mob of files.mobs) {
+    const mobId = stringValue(mob.id).trim();
+    if (mobId) ids.add(mobId);
+  }
+  for (const mission of files.missions) ids.add(mission.id);
+  return ids;
 }
 
-function setAreaRequestStatus(root: JsonObject, areaId: string, status: string, extra: JsonObject = {}) {
-  const areas = requestAreas(root);
-  const index = areas.findIndex((entry) => stringValue(entry.id).trim() === areaId);
-  if (index < 0) throw new Error(`Generated area request "${areaId}" was not found.`);
-  areas[index] = { ...areas[index], ...extra, status };
-  root.areas = areas;
+function generatedIds(files: CoreFiles) {
+  const ids = new Set<string>();
+  for (const [zoneId, zone] of Object.entries(files.zones)) {
+    const generatedId = generatedIdFor(zone);
+    if (generatedId) ids.add(generatedId);
+    if (generatedId && zoneId.startsWith("gen_")) ids.add(zoneId);
+  }
+  for (const stage of Object.values(files.stages)) {
+    const generatedId = generatedIdFor(stage);
+    if (generatedId) ids.add(generatedId);
+  }
+  for (const mob of files.mobs) {
+    const generatedId = generatedIdFor(mob);
+    if (generatedId) ids.add(generatedId);
+  }
+  for (const [contactId, contact] of Object.entries(files.comms)) {
+    const generatedId = generatedIdFor(contact);
+    if (generatedId) ids.add(generatedId);
+    if (!generatedId && contactId.startsWith("gen_")) ids.add(contactId.split("_").slice(0, -1).join("_"));
+  }
+  for (const mission of files.missions) {
+    const generatedId = generatedIdFor(mission.data);
+    if (generatedId) ids.add(generatedId);
+  }
+  return ids;
 }
 
-async function writeRequests(gameRoot: string, root: JsonObject) {
-  await writeJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { ...root, areas: requestAreas(root) });
+function zoneArray(zone: JsonObject | null, key: string) {
+  return asArray(asObject(zone ?? {})[key]).map(asObject).filter((entry) => Object.keys(entry).length);
 }
 
-function matchingDictionary(values: Record<string, JsonObject>, areaId: string) {
-  return Object.fromEntries(Object.entries(values).filter(([id]) => contentBelongsToArea(id, areaId)));
-}
-
-function withoutMatchingDictionary(values: Record<string, JsonObject>, areaId: string) {
-  return Object.fromEntries(Object.entries(values).filter(([id]) => !contentBelongsToArea(id, areaId)));
-}
-
-function matchingMobs(mobs: JsonObject[], areaId: string) {
-  return mobs.filter((mob) => contentBelongsToArea(stringValue(mob.id), areaId));
-}
-
-function withoutMatchingMobs(mobs: JsonObject[], areaId: string) {
-  return mobs.filter((mob) => !contentBelongsToArea(stringValue(mob.id), areaId));
-}
-
-function matchingMissions(missions: GeneratedAreaMissionArtifact[], areaId: string) {
-  return missions.filter((mission) => contentBelongsToArea(mission.id, areaId));
-}
-
-function artifactsForArea(zoneValues: Record<string, JsonObject>, contacts: Record<string, JsonObject>, mobs: JsonObject[], missions: GeneratedAreaMissionArtifact[], areaId: string): GeneratedAreaArtifacts {
-  return {
-    zone: zoneValues[areaId] ?? matchingDictionary(zoneValues, areaId)[areaId] ?? null,
-    contacts: matchingDictionary(contacts, areaId),
-    mobs: matchingMobs(mobs, areaId),
-    missions: matchingMissions(missions, areaId),
-  };
+function artifactsForGeneratedId(files: CoreFiles, areaId: string): CoreGeneratedArtifacts {
+  const zone = Object.entries(files.zones).find(([zoneId, value]) => zoneId === areaId || generatedMatches(value, areaId))?.[1] ?? null;
+  const stageDefinitions = Object.fromEntries(Object.entries(files.stages).filter(([stageId, stage]) => generatedMatches(stage, areaId) || contentBelongsToArea(stageId, areaId)));
+  const contacts = Object.fromEntries(Object.entries(files.comms).filter(([contactId, contact]) => generatedMatches(contact, areaId) || contentBelongsToArea(contactId, areaId)));
+  const mobs = files.mobs.filter((mob) => generatedMatches(mob, areaId) || contentBelongsToArea(stringValue(mob.id), areaId));
+  const missions = files.missions.filter((mission) => generatedMatches(mission.data, areaId) || contentBelongsToArea(mission.id, areaId) || contentBelongsToArea(mission.fileName, areaId));
+  return { zone, stageDefinitions, contacts, mobs, missions };
 }
 
 function hasArtifacts(artifacts: GeneratedAreaArtifacts) {
-  return !!artifacts.zone || Object.keys(artifacts.contacts).length > 0 || artifacts.mobs.length > 0 || artifacts.missions.length > 0;
+  return (
+    !!artifacts.zone ||
+    !!Object.keys(artifacts.stageDefinitions ?? {}).length ||
+    Object.keys(artifacts.contacts).length > 0 ||
+    artifacts.mobs.length > 0 ||
+    artifacts.missions.length > 0
+  );
+}
+
+function requestFromZone(areaId: string, zone: JsonObject | null): JsonObject {
+  const bounds = asObject(zone?.bounds);
+  return {
+    id: areaId,
+    name: stringValue(zone?.name, areaId),
+    archetype: stringValue(zone?.archetype),
+    status: "generated",
+    active: boolValue(zone?.active, true),
+    poi_map: boolValue(zone?.poi_map, true),
+    sector_id: asArray(zone?.sector_id).length ? zone?.sector_id : [0, 0],
+    x: asArray(zone?.pos)[0] ?? 0,
+    y: asArray(zone?.pos)[1] ?? 0,
+    level_min: numberValue(zone?.level_min, 1),
+    level_max: numberValue(zone?.level_max, numberValue(zone?.level_min, 1)),
+    width: numberValue(bounds.width, 36000),
+    height: numberValue(bounds.height, 30000),
+    bounds_shape: stringValue(bounds.shape, "ellipse"),
+    activation_radius: numberValue(zone?.activation_radius, 52000),
+    stages: zoneArray(zone, "stages").map((stage) => {
+      const { stage_id: _stageId, generated_id: _generatedId, source_stage_id: _sourceStageId, ...rest } = stage;
+      return {
+        ...rest,
+        stage_id: stringValue(stage.source_stage_id, stringValue(stage.stage_id)),
+        pos: asArray(stage.pos).length ? stage.pos : [0, 0],
+      };
+    }),
+  };
 }
 
 async function loadStageCatalog(gameRoot: string) {
-  const stages = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.stages), {}));
+  const stages = await readDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.stages));
   return Object.entries(stages)
-    .map(([id, raw]) => {
-      const stage = asObject(raw);
-      return {
-        id,
-        name: stringValue(stage.name, id),
-        shape: stringValue(stage.shape, ""),
-        width: numberValue(stage.width),
-        height: numberValue(stage.height),
-      };
-    })
+    .filter(([, stage]) => !boolValue(stage.generated))
+    .map(([id, raw]) => ({
+      id,
+      name: stringValue(raw.name, id),
+      shape: stringValue(raw.shape),
+      width: typeof raw.width === "number" ? raw.width : null,
+      height: typeof raw.height === "number" ? raw.height : null,
+    }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function loadMobCatalog(gameRoot: string) {
-  const root = await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.mobs), []);
-  const mobs = Array.isArray(root) ? root : asArray(asObject(root).mobs);
+  const mobs = await readMobArray(gamePath(gameRoot, GENERATED_AREA_PATHS.mobs));
   return mobs
-    .map(asObject)
+    .filter((mob) => !boolValue(mob.generated))
     .map((mob) => ({
       id: stringValue(mob.id),
       name: stringValue(mob.display_name, stringValue(mob.name, stringValue(mob.id))),
       faction: stringValue(mob.faction),
-      level: numberValue(mob.level),
+      level: typeof mob.level === "number" ? mob.level : null,
     }))
     .filter((mob) => mob.id)
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function loadWorkspace(gameRoot: string, warnings: string[] = []): Promise<GeneratedAreasWorkspace> {
-  const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
-  const stagedZones = await readNamedDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedZones), "zones");
-  const stagedComms = await readNamedDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedComms), "contacts");
-  const stagedMobs = await readMobArray(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMobs));
-  const stagedMissions = await readMissionFiles(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMissions));
-  const coreZones = await readNamedDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.coreZones), "zones");
-  const coreComms = await readNamedDictionary(gamePath(gameRoot, GENERATED_AREA_PATHS.coreComms), "contacts");
-  const coreMobs = await readMobArray(gamePath(gameRoot, GENERATED_AREA_PATHS.coreMobs));
-  const coreMissions = await readMissionFiles(gamePath(gameRoot, GENERATED_AREA_PATHS.coreMissions));
-  const areas = requestAreas(requestRoot);
-  const areaIds = new Set<string>(areas.map((entry) => stringValue(entry.id).trim()));
-  for (const zoneId of [...Object.keys(stagedZones), ...Object.keys(coreZones)]) areaIds.add(zoneId);
-
-  const entries: GeneratedAreaEntry[] = Array.from(areaIds)
-    .sort((left, right) => left.localeCompare(right))
-    .map((areaId) => {
-      const request = areas.find((entry) => stringValue(entry.id).trim() === areaId) ?? { id: areaId, status: "draft" };
-      const staged = artifactsForArea(stagedZones, stagedComms, stagedMobs, stagedMissions, areaId);
-      const core = artifactsForArea(coreZones, coreComms, coreMobs, coreMissions, areaId);
-      const zone = staged.zone ?? core.zone ?? {};
-      const name = stringValue(request.name, stringValue(zone.name, areaId));
-      return {
-        id: areaId,
-        name,
-        archetype: stringValue(request.archetype, stringValue(zone.archetype, "")),
-        status: stringValue(request.status, "draft").toLowerCase(),
-        request,
-        staged,
-        core,
-        hasStagedContent: hasArtifacts(staged),
-        hasCoreContent: hasArtifacts(core),
-      };
-    });
+  const files = await readCoreFiles(gameRoot);
+  const ids = Array.from(generatedIds(files)).sort((left, right) => left.localeCompare(right));
+  const emptyArtifacts: GeneratedAreaArtifacts = { zone: null, stageDefinitions: {}, contacts: {}, mobs: [], missions: [] };
+  const entries: GeneratedAreaEntry[] = ids.map((areaId) => {
+    const core = artifactsForGeneratedId(files, areaId);
+    const request = requestFromZone(areaId, core.zone);
+    return {
+      id: areaId,
+      name: stringValue(request.name, areaId),
+      archetype: stringValue(request.archetype),
+      status: "generated",
+      request,
+      staged: emptyArtifacts,
+      core,
+      hasStagedContent: false,
+      hasCoreContent: hasArtifacts(core),
+    };
+  });
 
   return {
     ok: true,
@@ -278,125 +374,532 @@ async function loadWorkspace(gameRoot: string, warnings: string[] = []): Promise
     stageCatalog: await loadStageCatalog(gameRoot),
     mobCatalog: await loadMobCatalog(gameRoot),
     summary: {
-      requestCount: areas.length,
-      draftCount: entries.filter((entry) => entry.status === "draft").length,
-      approvedCount: entries.filter((entry) => entry.status === "approved").length,
-      promotedCount: entries.filter((entry) => entry.status === "promoted").length,
-      stagedAreaCount: entries.filter((entry) => entry.hasStagedContent).length,
+      requestCount: entries.length,
+      draftCount: 0,
+      approvedCount: 0,
+      promotedCount: entries.length,
+      stagedAreaCount: 0,
       coreAreaCount: entries.filter((entry) => entry.hasCoreContent).length,
     },
     warnings,
   };
 }
 
+function itemStack(items: JsonObject[], itemId: number, count: number) {
+  const item = items.find((entry) => Number(entry.id) === itemId);
+  return {
+    ...(item ? cloneObject(item) : { id: itemId }),
+    count,
+  };
+}
+
+function defaultStagePlacements(request: JsonObject) {
+  const requestStages = asArray(request.stages).map(asObject).filter((stage) => stringValue(stage.stage_id).trim());
+  if (requestStages.length) return requestStages;
+  return [
+    { stage_id: "ast_btm", pos: [0, 0] },
+    { stage_id: "ast_top", pos: [0, 0] },
+  ];
+}
+
+function baseZone(areaId: string, request: JsonObject): JsonObject {
+  const levelMin = numberValue(request.level_min, 1);
+  const levelMax = numberValue(request.level_max, levelMin);
+  return {
+    activation_radius: numberValue(request.activation_radius, 52000),
+    activation_radius_border: false,
+    active: boolValue(request.active, true),
+    archetype: stringValue(request.archetype, "friendly_hub_under_siege"),
+    bounds: {
+      height: numberValue(request.height, 30000),
+      shape: stringValue(request.bounds_shape, "ellipse"),
+      width: numberValue(request.width, 36000),
+    },
+    environment_elements: [],
+    generated: true,
+    generated_id: areaId,
+    level_max: levelMax,
+    level_min: levelMin,
+    lockboxes: [],
+    mobs: [],
+    name: stringValue(request.name, areaId),
+    poi_map: boolValue(request.poi_map, true),
+    pos: [numberValue(request.x), numberValue(request.y)],
+    sector_id: asArray(request.sector_id).length ? request.sector_id : [0, 0],
+    show_hud_on_enter: true,
+    stages: defaultStagePlacements(request),
+  };
+}
+
+function generatedContact(areaId: string, idSuffix: string, name: string, greeting: string, portrait = "res://assets/comms/default_man.png"): [string, JsonObject] {
+  const id = `${areaId}_${idSuffix}`;
+  return [
+    id,
+    {
+      dialog: [greeting],
+      greeting,
+      meta: { generated: true, generated_id: areaId },
+      name,
+      portrait,
+      generated: true,
+      generated_id: areaId,
+    },
+  ];
+}
+
+function generatedSpawner(areaId: string, suffix: string, sourceMobId: string, displayName: string, levelMin: number, levelMax: number, patch: JsonObject = {}): JsonObject {
+  return {
+    angle_deg: 0,
+    count: 1,
+    level_max: levelMax,
+    level_min: levelMin,
+    mob_id: `${areaId}_${suffix}`,
+    pos: [0, 0],
+    radius: 0,
+    rank: "normal",
+    respawn_delay: 0,
+    ...patch,
+    generated_id: areaId,
+    source_mob_id: sourceMobId,
+    overrides: {
+      display_name: displayName,
+      ...asObject(patch.overrides),
+      id: `${areaId}_${suffix}`,
+    },
+  };
+}
+
+function generatedMission(areaId: string, suffix: string, title: string, level: number, mission: JsonObject): GeneratedAreaMissionArtifact {
+  const id = `mission.generated.${areaId}.${suffix}`;
+  return {
+    id,
+    title,
+    fileName: `${id}.json`,
+    data: {
+      ...mission,
+      id,
+      title,
+      level: String(level),
+      meta: {
+        author: "ConsoleGeneratedAreaGenerator",
+        generated: true,
+        generated_id: areaId,
+        ...asObject(mission.meta),
+      },
+      tags: ["generated", "area", ...asArray(mission.tags).map((tag) => stringValue(tag)).filter(Boolean)],
+      generated: true,
+      generated_id: areaId,
+    },
+  };
+}
+
+function buildGeneratedContent(areaId: string, request: JsonObject, items: JsonObject[]) {
+  const zone = baseZone(areaId, request);
+  const levelMin = numberValue(zone.level_min, 1);
+  const levelMax = numberValue(zone.level_max, levelMin);
+  const name = stringValue(zone.name, areaId);
+  const archetype = stringValue(zone.archetype, "friendly_hub_under_siege");
+  const contacts: Record<string, JsonObject> = {};
+  const missions: GeneratedAreaMissionArtifact[] = [];
+
+  if (archetype === "pirate_stronghold") {
+    zone.mobs = [
+      generatedSpawner(areaId, "stronghold_pirate", "PirateFighter", "Stronghold Raider", levelMin, levelMax, { count: 8, radius: 10000, respawn_delay: 90 }),
+      generatedSpawner(areaId, "stronghold_interceptor", "PirateInterceptor", "Stronghold Interceptor", levelMin, levelMax, { count: 4, pos: [-5200, 4800], radius: 7000, respawn_delay: 90 }),
+      generatedSpawner(areaId, "stronghold_boss", "PirateLeader", stringValue(request.elite_name, "Stronghold Captain"), levelMax, levelMax, { count: 1, pos: [1200, -700], rank: "elite" }),
+    ];
+    zone.lockboxes = [
+      {
+        allow_deposit: false,
+        consume_key: true,
+        id: `${areaId}_captains_chest`,
+        items: [itemStack(items, 92, 1), itemStack(items, 86, 2), itemStack(items, 91, 1)],
+        lock_key_mode: "item_id",
+        locked: true,
+        pos: [1900, -950],
+        required_key_item_id: 902,
+        slot_count: 8,
+        generated_id: areaId,
+      },
+    ];
+    missions.push(
+      generatedMission(areaId, "stronghold", "Crack the Stronghold", levelMin, {
+        arcs: ["generated_area"],
+        description: `${name} is being used as a pirate holdout. Destroy the raiders and take down the captain.`,
+        description_complete: "The stronghold is broken.",
+        faction: "Independent",
+        giver_id: `${areaId}_stronghold_boss`,
+        repeatable: false,
+        rewards: { credits: 750, items: [], mods: [], reputation: [], xp: 650 },
+        steps: [
+          {
+            description: `${name} is being used as a pirate holdout. Destroy the raiders and take down the captain.`,
+            mode: "sequential",
+            objectives: [
+              { count: 8, description: "Destroy the stronghold raiders.", objective: "Destroy the stronghold raiders.", progress_label: "Raiders destroyed", target_id: `${areaId}_stronghold_pirate`, type: "kill" },
+              { count: 1, description: "Destroy the stronghold captain.", objective: "Destroy the stronghold captain.", progress_label: "Captain destroyed", target_id: `${areaId}_stronghold_boss`, type: "kill" },
+            ],
+          },
+        ],
+      }),
+    );
+  } else if (archetype === "npc_scan_habitat") {
+    const contactName = stringValue(request.contact_name, "Habitat Medtech");
+    const [contactId, contact] = generatedContact(areaId, "medtech", contactName, "Keep the scans gentle. These people have had enough alarms for one week.");
+    contacts[contactId] = contact;
+    const npcCount = numberValue(request.npc_count, 5);
+    zone.stages = asArray(request.stages).map(asObject).filter((stage) => stringValue(stage.stage_id).trim());
+    zone.mobs = [
+      generatedSpawner(areaId, "habitat", "hab_default_hab", stringValue(request.hub_name, `${name} Habitat`), levelMin, levelMax, { pos: [-361, -815] }),
+      generatedSpawner(areaId, "civilian_subject", "gem_basic_scout", "Civilian Scan Subject", levelMin, levelMax, { count: npcCount, pos: [-874, -369], radius: 5200, respawn_delay: 120 }),
+    ];
+    missions.push(
+      generatedMission(areaId, "scan", "Quiet Screening", levelMin, {
+        arcs: ["generated_area"],
+        conversations: { briefing: { beats: [{ speaker: contactId, text: "We need clean scans before we can clear the residents." }] } },
+        description: "Scan the nearby civilian traffic and report back to the habitat medtech.",
+        description_complete: "Return to the medtech.",
+        faction: "Independent",
+        giver_id: `${areaId}_habitat`,
+        repeatable: false,
+        rewards: { credits: 450, items: [], mods: [], reputation: [], xp: 425 },
+        steps: [
+          {
+            description: "Scan the nearby civilian traffic and report back to the habitat medtech.",
+            mode: "sequential",
+            objectives: [
+              { contact_id: contactId, conversation_id: "briefing", description: "Speak with the habitat medtech.", objective: "Speak with the habitat medtech.", progress_label: "Medtech contacted", target_id: `${areaId}_habitat`, type: "talk" },
+              { count: npcCount, description: "Scan the civilian subjects.", objective: "Scan the civilian subjects.", progress_label: "Subjects scanned", target_id: `${areaId}_civilian_subject`, type: "scan" },
+            ],
+          },
+        ],
+        turn_in_to: `${areaId}_habitat`,
+      }),
+    );
+  } else if (archetype === "mining_colony") {
+    const contactName = stringValue(request.contact_name, "Claim Foreman");
+    const [contactId, contact] = generatedContact(areaId, "foreman", contactName, "Mind the field markers. The rocks are jumpy after the last survey blast.");
+    contacts[contactId] = contact;
+    const asteroidCount = numberValue(request.asteroid_count, 8);
+    const oreItemId = numberValue(request.ore_item_id, 85);
+    const oreCount = numberValue(request.ore_count, 3);
+    const scanCount = numberValue(request.scan_count, 4);
+    const mineCount = numberValue(request.mine_count, 4);
+    zone.mobs = [generatedSpawner(areaId, "mining_hab", "hab_independent_mining_coop_1", stringValue(request.hub_name, `${name} Mining Hab`), levelMin, levelMax)];
+    zone.environment_elements = [
+      {
+        active: true,
+        data: {
+          asteroid_fragment_drop_chance: 0.75,
+          asteroid_rarity: 2,
+          count: asteroidCount,
+          durability: 500 + levelMin * 8,
+          lootbox_count: 1,
+          mining_xp_level: levelMin,
+          ore_drop_count: 1,
+          ore_item_id: oreItemId,
+          position: [4500, 500],
+          radius: 180,
+          respawn_seconds: 600,
+          rock_dust_drop_chance: 0.65,
+          spawn_radius: 7800,
+        },
+        id: `${areaId}_asteroid_field`,
+        name: `${name} Field`,
+        tags: ["generated_area", areaId, `${areaId}_claim_asteroid`, "mineable_claim"],
+        type: "mineable_asteroid",
+        generated_id: areaId,
+      },
+    ];
+    missions.push(
+      generatedMission(areaId, "mining", "Claim Survey", levelMin, {
+        arcs: ["generated_area"],
+        conversations: { briefing: { beats: [{ speaker: contactId, text: "Survey the claim, crack a few samples, and bring the ore back here." }] } },
+        description: "Survey the mining claim, mine samples, and return the ore to the foreman.",
+        description_complete: "Return to the claim foreman.",
+        faction: "Independent",
+        giver_id: `${areaId}_mining_hab`,
+        repeatable: false,
+        rewards: { credits: 520, items: [], mods: [], reputation: [], xp: 500 },
+        steps: [
+          {
+            description: "Survey the mining claim, mine samples, and return the ore to the foreman.",
+            mode: "sequential",
+            objectives: [
+              { contact_id: contactId, conversation_id: "briefing", description: "Speak with the claim foreman.", objective: "Speak with the claim foreman.", progress_label: "Foreman contacted", target_id: `${areaId}_mining_hab`, type: "talk" },
+              { count: scanCount, description: "Scan the claim asteroids.", objective: "Scan the claim asteroids.", progress_label: "Asteroids scanned", target_tag: `${areaId}_claim_asteroid`, type: "scan" },
+              { count: mineCount, description: "Mine claim samples.", objective: "Mine claim samples.", progress_label: "Samples mined", target_tag: `${areaId}_claim_asteroid`, type: "mine" },
+              { count: oreCount, description: "Collect ore samples.", item_id: oreItemId, objective: "Collect ore samples.", progress_label: "Ore collected", type: "collect" },
+            ],
+          },
+        ],
+        turn_in_to: `${areaId}_mining_hab`,
+      }),
+    );
+  } else {
+    const contactName = stringValue(request.contact_name, "Relay Marshal");
+    const [contactId, contact] = generatedContact(areaId, "marshal", contactName, "Keep your transponder hot.");
+    contacts[contactId] = contact;
+    zone.mobs = [
+      generatedSpawner(areaId, "hub", "hab_farm", stringValue(request.hub_name, `${name} Hub`), levelMin, levelMax),
+      generatedSpawner(areaId, "raider", "PirateFighter", "Siege Raider", levelMin, levelMax, { count: 6, pos: [7200, -2600], radius: 8500, respawn_delay: 90 }),
+      generatedSpawner(areaId, "interceptor", "PirateInterceptor", "Siege Interceptor", levelMin, levelMax, { count: 3, pos: [-7800, 3600], radius: 6500, respawn_delay: 90 }),
+      generatedSpawner(areaId, "elite", "PirateLeader", stringValue(request.elite_name, "Cache Key Carrier"), levelMax, levelMax, { count: 1, pos: [11200, 2200], rank: "elite" }),
+    ];
+    zone.lockboxes = [
+      {
+        allow_deposit: false,
+        consume_key: true,
+        id: `${areaId}_relief_cache`,
+        items: [itemStack(items, 91, 2), itemStack(items, 85, 3)],
+        lock_key_mode: "item_id",
+        locked: true,
+        pos: [2700, 1600],
+        required_key_item_id: 902,
+        slot_count: 8,
+        generated_id: areaId,
+      },
+    ];
+    missions.push(
+      generatedMission(areaId, "relief", "Break the Siege", levelMin, {
+        arcs: ["generated_area"],
+        conversations: {
+          briefing: {
+            beats: [
+              { speaker: contactId, text: "We can hold the docking clamps, but not the outer perimeter." },
+              { speaker: contactId, text: "The leader is carrying a cache key. Crack that ship and the relief crate is yours." },
+            ],
+          },
+        },
+        description: "The local relay is boxed in by pirates. Coordinate with the marshal, clear the attackers, and take down their card carrier.",
+        description_complete: "Return to the relay marshal.",
+        faction: "Independent",
+        giver_id: `${areaId}_hub`,
+        repeatable: false,
+        rewards: { credits: 650, items: [], mods: [], reputation: [], xp: 550 },
+        steps: [
+          {
+            description: "The local relay is boxed in by pirates. Coordinate with the marshal, clear the attackers, and take down their card carrier.",
+            mode: "sequential",
+            objectives: [
+              { contact_id: contactId, conversation_id: "briefing", description: "Speak with the relay marshal.", objective: "Speak with the relay marshal.", progress_label: "Marshal contacted", target_id: `${areaId}_hub`, type: "talk" },
+              { count: 6, description: "Destroy the pirate raiders around the hub.", objective: "Destroy the pirate raiders around the hub.", progress_label: "Raiders destroyed", target_id: `${areaId}_raider`, type: "kill" },
+              { count: 1, description: "Destroy the elite pirate carrying the cache key.", objective: "Destroy the elite pirate carrying the cache key.", progress_label: "Elite destroyed", target_id: `${areaId}_elite`, type: "kill" },
+            ],
+          },
+        ],
+        turn_in_to: `${areaId}_hub`,
+      }),
+    );
+  }
+
+  return { zone, contacts, missions };
+}
+
+function resolveSourceStageId(stages: Record<string, JsonObject>, areaId: string, stage: JsonObject) {
+  const explicit = stringValue(stage.source_stage_id).trim();
+  if (explicit) return explicit;
+  const stageId = stringValue(stage.stage_id).trim();
+  const existing = stages[stageId];
+  if (existing && generatedMatches(existing, areaId)) return stringValue(existing.source_stage_id, stageId);
+  return stageId;
+}
+
+function normalizeStagePlacements(areaId: string, zone: JsonObject, stages: Record<string, JsonObject>) {
+  const usedStageIds = new Set<string>();
+  const normalized = zoneArray(zone, "stages").map((rawStage, index) => {
+    const stage = { ...rawStage };
+    const sourceStageId = resolveSourceStageId(stages, areaId, stage);
+    if (!sourceStageId) throw new Error(`Stage placement ${index + 1} needs a stage ID.`);
+    const generatedStageId = stringValue(stage.stage_id).startsWith(`${areaId}_`) ? stringValue(stage.stage_id) : `${areaId}_${sourceStageId}`;
+    const sourceStage = stages[sourceStageId];
+    const existingGeneratedStage = stages[generatedStageId];
+    if (!sourceStage && !existingGeneratedStage) throw new Error(`Stage "${sourceStageId}" was not found in Stages.json.`);
+    const { generated_id: _generatedId, generated: _generated, source_stage_id: _sourceStageId, ...stageExtra } = stage;
+    stages[generatedStageId] = {
+      ...(sourceStage ? cloneObject(sourceStage) : cloneObject(existingGeneratedStage)),
+      generated: true,
+      generated_id: areaId,
+      source_stage_id: sourceStageId,
+    };
+    usedStageIds.add(generatedStageId);
+    return {
+      ...stageExtra,
+      pos: asArray(stage.pos).length ? stage.pos : [0, 0],
+      stage_id: generatedStageId,
+      generated_id: areaId,
+      source_stage_id: sourceStageId,
+    };
+  });
+
+  for (const [stageId, stage] of Object.entries(stages)) {
+    if (generatedMatches(stage, areaId) && !usedStageIds.has(stageId)) delete stages[stageId];
+  }
+  zone.stages = normalized;
+}
+
+function resolveSourceMobId(mobById: Map<string, JsonObject>, areaId: string, spawner: JsonObject) {
+  const explicit = stringValue(spawner.source_mob_id).trim();
+  if (explicit) return explicit;
+  const mobId = stringValue(spawner.mob_id).trim();
+  const existing = mobById.get(mobId);
+  if (existing && generatedMatches(existing, areaId)) return stringValue(existing.source_mob_id, mobId);
+  return mobId;
+}
+
+function normalizeMobSpawners(areaId: string, zone: JsonObject, mobs: JsonObject[]) {
+  const mobById = new Map(mobs.map((mob) => [stringValue(mob.id), mob]));
+  const usedMobIds = new Set<string>();
+  const generatedMobRecords = new Map<string, JsonObject>();
+
+  const normalized = zoneArray(zone, "mobs").map((rawSpawner, index) => {
+    const spawner = { ...rawSpawner };
+    const overrides = asObject(spawner.overrides);
+    const sourceMobId = resolveSourceMobId(mobById, areaId, spawner);
+    if (!sourceMobId) throw new Error(`Mob spawner ${index + 1} needs a mob ID.`);
+    const currentMobId = stringValue(spawner.mob_id).trim();
+    const preferredId = stringValue(overrides.id).trim();
+    const generatedMobId = preferredId || (currentMobId.startsWith(`${areaId}_`) ? currentMobId : `${areaId}_${slugify(sourceMobId, "mob")}`);
+    const sourceMob = mobById.get(sourceMobId);
+    const existingGeneratedMob = mobById.get(generatedMobId);
+    if (!sourceMob && !existingGeneratedMob) throw new Error(`Mob "${sourceMobId}" was not found in mobs.json.`);
+    const overrideWithoutId = { ...overrides };
+    delete overrideWithoutId.id;
+    const canKeepExistingRecord =
+      !!existingGeneratedMob &&
+      generatedMatches(existingGeneratedMob, areaId) &&
+      stringValue(existingGeneratedMob.source_mob_id, sourceMobId) === sourceMobId &&
+      !Object.keys(overrideWithoutId).length;
+    const baseRecord = cloneObject(canKeepExistingRecord ? existingGeneratedMob : (sourceMob ?? existingGeneratedMob ?? {}));
+    const baseTags = asArray(baseRecord.tags).map((tag) => stringValue(tag)).filter(Boolean);
+    generatedMobRecords.set(generatedMobId, {
+      ...baseRecord,
+      ...overrideWithoutId,
+      id: generatedMobId,
+      tags: Array.from(new Set([...baseTags, "generated_area", areaId, stringValue(zone.archetype)].filter(Boolean))),
+      generated: true,
+      generated_id: areaId,
+      source_mob_id: sourceMobId,
+    });
+    usedMobIds.add(generatedMobId);
+    delete spawner.overrides;
+    return {
+      ...spawner,
+      mob_id: generatedMobId,
+      generated_id: areaId,
+      source_mob_id: sourceMobId,
+    };
+  });
+
+  zone.mobs = normalized;
+  const retained = mobs.filter((mob) => !generatedMatches(mob, areaId) || usedMobIds.has(stringValue(mob.id)));
+  const retainedById = new Map(retained.map((mob) => [stringValue(mob.id), mob]));
+  for (const [mobId, mob] of generatedMobRecords) retainedById.set(mobId, mob);
+  return Array.from(retainedById.values());
+}
+
+function normalizeNestedGeneratedIds(areaId: string, zone: JsonObject) {
+  for (const key of ["lockboxes", "environment_elements"]) {
+    if (!Array.isArray(zone[key])) continue;
+    zone[key] = asArray(zone[key]).map((entry) => {
+      const object = asObject(entry);
+      return Object.keys(object).length ? { ...object, generated_id: areaId } : object;
+    });
+  }
+}
+
+function normalizeGeneratedZone(areaId: string, zone: JsonObject, files: CoreFiles) {
+  zone.generated = true;
+  zone.generated_id = areaId;
+  normalizeStagePlacements(areaId, zone, files.stages);
+  files.mobs = normalizeMobSpawners(areaId, zone, files.mobs);
+  normalizeNestedGeneratedIds(areaId, zone);
+}
+
 async function applySubmittedEdits(gameRoot: string, body: JsonObject) {
   const areaId = stringValue(body.areaId).trim();
   if (!areaId) throw new Error("Generated area ID is required.");
-  const request = asObject(body.request);
   const zone = asObject(body.zone);
-  const zoneTarget = stringValue(body.zoneTarget, "staged") === "core" ? "core" : "staged";
+  if (!Object.keys(zone).length) return;
 
-  if (Object.keys(request).length) {
-    const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
-    upsertAreaRequest(requestRoot, { ...request, id: areaId });
-    await writeRequests(gameRoot, requestRoot);
+  const files = await readCoreFiles(gameRoot);
+  const currentZoneId = Object.entries(files.zones).find(([zoneId, value]) => zoneId === areaId || generatedMatches(value, areaId))?.[0];
+  if (!currentZoneId) throw new Error(`Generated area "${areaId}" was not found in Zones.json.`);
+  const nextZone = { ...asObject(files.zones[currentZoneId]), ...zone };
+  normalizeGeneratedZone(areaId, nextZone, files);
+  files.zones[currentZoneId] = nextZone;
+  await writeCoreFiles(gameRoot, files);
+}
+
+async function writeGeneratedMissions(gameRoot: string, areaId: string, missions: GeneratedAreaMissionArtifact[]) {
+  const missionDir = gamePath(gameRoot, GENERATED_AREA_PATHS.missions);
+  await fsp.mkdir(missionDir, { recursive: true });
+  const existing = await readMissionFiles(missionDir);
+  for (const mission of existing) {
+    if (generatedMatches(mission.data, areaId)) await fsp.rm(mission.absolutePath, { force: true });
   }
-
-  if (Object.keys(zone).length) {
-    const zonePath = gamePath(gameRoot, zoneTarget === "core" ? GENERATED_AREA_PATHS.coreZones : GENERATED_AREA_PATHS.stagedZones);
-    const zones = await readNamedDictionary(zonePath, "zones");
-    zones[areaId] = zone;
-    await writeNamedDictionary(zonePath, "zones", zones);
+  for (const mission of missions) {
+    await writeJson(path.join(missionDir, mission.fileName), mission.data);
   }
 }
 
-async function approveArea(gameRoot: string, areaId: string) {
-  const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
-  setAreaRequestStatus(requestRoot, areaId, "approved");
-  await writeRequests(gameRoot, requestRoot);
+async function generateArea(gameRoot: string, request: JsonObject) {
+  const files = await readCoreFiles(gameRoot);
+  const areaId = generatedAreaIdFromRequest(request, allKnownIds(files));
+  if (generatedIds(files).has(areaId) || files.zones[areaId]) throw new Error(`Generated area ID "${areaId}" already exists.`);
+  const nextRequest = { ...request, id: areaId };
+  const { zone, contacts, missions } = buildGeneratedContent(areaId, nextRequest, files.items);
+  normalizeGeneratedZone(areaId, zone, files);
+  files.zones[areaId] = zone;
+  for (const [contactId, contact] of Object.entries(contacts)) files.comms[contactId] = contact;
+  await writeCoreFiles(gameRoot, files);
+  await writeGeneratedMissions(gameRoot, areaId, missions);
+  return areaId;
 }
 
-async function promoteArea(gameRoot: string, areaId: string) {
-  const stagedZonesPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedZones);
-  const stagedCommsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedComms);
-  const stagedMobsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMobs);
-  const coreZonesPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreZones);
-  const coreCommsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreComms);
-  const coreMobsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreMobs);
-  const stagedMissionDir = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMissions);
-  const coreMissionDir = gamePath(gameRoot, GENERATED_AREA_PATHS.coreMissions);
-  const stagedZones = await readNamedDictionary(stagedZonesPath, "zones");
-  const stagedComms = await readNamedDictionary(stagedCommsPath, "contacts");
-  const stagedMobs = await readMobArray(stagedMobsPath);
-  const stagedMissions = await readMissionFiles(stagedMissionDir);
-  const promotedZones = matchingDictionary(stagedZones, areaId);
-  const promotedComms = matchingDictionary(stagedComms, areaId);
-  const promotedMobs = matchingMobs(stagedMobs, areaId);
-  const promotedMissions = matchingMissions(stagedMissions, areaId);
-  if (!Object.keys(promotedZones).length && !Object.keys(promotedComms).length && !promotedMobs.length && !promotedMissions.length) {
-    throw new Error(`No staged generated content was found for "${areaId}".`);
-  }
-
-  const coreZones = await readNamedDictionary(coreZonesPath, "zones");
-  const coreComms = await readNamedDictionary(coreCommsPath, "contacts");
-  const coreMobsById = new Map((await readMobArray(coreMobsPath)).map((mob) => [stringValue(mob.id), mob]));
-  for (const [id, zone] of Object.entries(promotedZones)) coreZones[id] = zone;
-  for (const [id, contact] of Object.entries(promotedComms)) coreComms[id] = contact;
-  for (const mob of promotedMobs) {
-    const mobId = stringValue(mob.id).trim();
-    if (mobId) coreMobsById.set(mobId, mob);
-  }
-  await writeNamedDictionary(coreZonesPath, "zones", coreZones);
-  await writeNamedDictionary(coreCommsPath, "contacts", coreComms);
-  await writeMobArray(coreMobsPath, Array.from(coreMobsById.values()));
-  await fsp.mkdir(coreMissionDir, { recursive: true });
-  for (const mission of promotedMissions) {
-    await writeJson(path.join(coreMissionDir, `${mission.id}.json`), mission.data);
-    await fsp.rm(path.join(stagedMissionDir, mission.fileName), { force: true });
-  }
-
-  await writeNamedDictionary(stagedZonesPath, "zones", withoutMatchingDictionary(stagedZones, areaId));
-  await writeNamedDictionary(stagedCommsPath, "contacts", withoutMatchingDictionary(stagedComms, areaId));
-  await writeMobArray(stagedMobsPath, withoutMatchingMobs(stagedMobs, areaId));
-  const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
-  setAreaRequestStatus(requestRoot, areaId, "promoted", { promoted_at: new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "") });
-  await writeRequests(gameRoot, requestRoot);
+async function previewArea(gameRoot: string, request: JsonObject) {
+  const files = await readCoreFiles(gameRoot);
+  const areaId = generatedAreaIdFromRequest(request, allKnownIds(files));
+  if (generatedIds(files).has(areaId) || files.zones[areaId]) throw new Error(`Generated area ID "${areaId}" already exists.`);
+  const { zone, contacts, missions } = buildGeneratedContent(areaId, { ...request, id: areaId }, files.items);
+  normalizeGeneratedZone(areaId, zone, files);
+  return {
+    areaId,
+    counts: {
+      zones: 1,
+      stageDefinitions: Object.values(files.stages).filter((stage) => generatedMatches(stage, areaId)).length,
+      contacts: Object.keys(contacts).length,
+      mobRecords: files.mobs.filter((mob) => generatedMatches(mob, areaId)).length,
+      mobSpawns: zoneArray(zone, "mobs").length,
+      missions: missions.length,
+      lockboxes: zoneArray(zone, "lockboxes").length,
+      environment: zoneArray(zone, "environment_elements").length,
+    },
+  };
 }
 
 async function rejectArea(gameRoot: string, areaId: string) {
-  const stagedZonesPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedZones);
-  const stagedCommsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedComms);
-  const stagedMobsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMobs);
-  const coreZonesPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreZones);
-  const coreCommsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreComms);
-  const coreMobsPath = gamePath(gameRoot, GENERATED_AREA_PATHS.coreMobs);
-  await writeNamedDictionary(stagedZonesPath, "zones", withoutMatchingDictionary(await readNamedDictionary(stagedZonesPath, "zones"), areaId));
-  await writeNamedDictionary(stagedCommsPath, "contacts", withoutMatchingDictionary(await readNamedDictionary(stagedCommsPath, "contacts"), areaId));
-  await writeMobArray(stagedMobsPath, withoutMatchingMobs(await readMobArray(stagedMobsPath), areaId));
-  await writeNamedDictionary(coreZonesPath, "zones", withoutMatchingDictionary(await readNamedDictionary(coreZonesPath, "zones"), areaId));
-  await writeNamedDictionary(coreCommsPath, "contacts", withoutMatchingDictionary(await readNamedDictionary(coreCommsPath, "contacts"), areaId));
-  await writeMobArray(coreMobsPath, withoutMatchingMobs(await readMobArray(coreMobsPath), areaId));
-  await deleteMatchingMissionFiles(gamePath(gameRoot, GENERATED_AREA_PATHS.stagedMissions), areaId);
-  await deleteMatchingMissionFiles(gamePath(gameRoot, GENERATED_AREA_PATHS.coreMissions), areaId);
-  const requestRoot = asObject(await readJson(gamePath(gameRoot, GENERATED_AREA_PATHS.requests), { areas: [] }));
-  removeAreaRequest(requestRoot, areaId);
-  await writeRequests(gameRoot, requestRoot);
-}
-
-async function runGenerator(gameRoot: string) {
-  const scriptPath = gamePath(gameRoot, GENERATED_AREA_PATHS.generatorScript);
-  if (!(await pathExists(scriptPath))) throw new Error("Generated areas generator script was not found in the configured game root.");
-  const candidates = [process.env.GODOT_BIN, "godot", "godot4"].filter((value): value is string => !!value);
-  let lastError = "";
-  for (const command of candidates) {
-    try {
-      const result = await execFileAsync(command, ["--headless", "--script", GENERATED_AREA_PATHS.generatorScript], { cwd: gameRoot, timeout: 120000 });
-      return `${result.stdout}${result.stderr}`.trim();
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+  const files = await readCoreFiles(gameRoot);
+  for (const [zoneId, zone] of Object.entries(files.zones)) {
+    if (zoneId === areaId || generatedMatches(zone, areaId) || contentBelongsToArea(zoneId, areaId)) {
+      delete files.zones[zoneId];
+      continue;
+    }
+    for (const key of ["stages", "mobs", "lockboxes", "environment_elements"]) {
+      if (Array.isArray(zone[key])) zone[key] = asArray(zone[key]).filter((entry) => !generatedMatches(entry, areaId));
     }
   }
-  throw new Error(`Could not run Godot generated area generator. ${lastError}`);
+  for (const [stageId, stage] of Object.entries(files.stages)) {
+    if (generatedMatches(stage, areaId) || contentBelongsToArea(stageId, areaId)) delete files.stages[stageId];
+  }
+  for (const [contactId, contact] of Object.entries(files.comms)) {
+    if (generatedMatches(contact, areaId) || contentBelongsToArea(contactId, areaId)) delete files.comms[contactId];
+  }
+  files.mobs = files.mobs.filter((mob) => !generatedMatches(mob, areaId) && !contentBelongsToArea(stringValue(mob.id), areaId));
+  for (const mission of files.missions) {
+    if (generatedMatches(mission.data, areaId) || contentBelongsToArea(mission.id, areaId) || contentBelongsToArea(mission.fileName, areaId)) await fsp.rm(mission.absolutePath, { force: true });
+  }
+  await writeCoreFiles(gameRoot, files);
 }
 
 function localUnavailableResponse() {
@@ -416,30 +919,30 @@ export async function POST(req: NextRequest) {
     const body = asObject(await req.json().catch(() => ({})));
     const action = stringValue(body.action).trim();
     const areaId = stringValue(body.areaId).trim();
-    if (action !== "generate") {
-      if (!areaId) return NextResponse.json({ ok: false, error: "Generated area ID is required." }, { status: 400 });
-      await applySubmittedEdits(local.gameRootPath, body);
-    }
 
     if (action === "save") {
-      return NextResponse.json({ ok: true, message: `Saved generated area "${areaId}".`, workspace: await loadWorkspace(local.gameRootPath) });
-    }
-    if (action === "approve") {
-      await approveArea(local.gameRootPath, areaId);
-      return NextResponse.json({ ok: true, message: `Approved "${areaId}" for promotion.`, workspace: await loadWorkspace(local.gameRootPath) });
-    }
-    if (action === "promote") {
-      await approveArea(local.gameRootPath, areaId);
-      await promoteArea(local.gameRootPath, areaId);
-      return NextResponse.json({ ok: true, message: `Promoted "${areaId}" into core generated area files.`, workspace: await loadWorkspace(local.gameRootPath) });
-    }
-    if (action === "reject") {
-      await rejectArea(local.gameRootPath, areaId);
-      return NextResponse.json({ ok: true, message: `Rejected and deleted generated area "${areaId}".`, workspace: await loadWorkspace(local.gameRootPath) });
+      await applySubmittedEdits(local.gameRootPath, body);
+      return NextResponse.json({ ok: true, message: `Saved generated area "${areaId}" into core game data.`, workspace: await loadWorkspace(local.gameRootPath) });
     }
     if (action === "generate") {
-      const output = await runGenerator(local.gameRootPath);
-      return NextResponse.json({ ok: true, message: output || "Generated area staging files refreshed.", workspace: await loadWorkspace(local.gameRootPath) });
+      const request = asObject(body.request);
+      if (!Object.keys(request).length) throw new Error("A generated area request is required.");
+      const generatedId = await generateArea(local.gameRootPath, request);
+      return NextResponse.json({ ok: true, areaId: generatedId, message: `Generated "${generatedId}" into core game data.`, workspace: await loadWorkspace(local.gameRootPath) });
+    }
+    if (action === "preview") {
+      const request = asObject(body.request);
+      if (!Object.keys(request).length) throw new Error("A generated area request is required.");
+      const preview = await previewArea(local.gameRootPath, request);
+      return NextResponse.json({ ok: true, ...preview });
+    }
+    if (action === "reject") {
+      if (!areaId) return NextResponse.json({ ok: false, error: "Generated area ID is required." }, { status: 400 });
+      await rejectArea(local.gameRootPath, areaId);
+      return NextResponse.json({ ok: true, message: `Deleted every generated artifact tagged "${areaId}".`, workspace: await loadWorkspace(local.gameRootPath) });
+    }
+    if (action === "approve" || action === "promote") {
+      return NextResponse.json({ ok: true, message: "Generated areas now write directly into core game data; no staging promotion is required.", workspace: await loadWorkspace(local.gameRootPath) });
     }
     return NextResponse.json({ ok: false, error: `Unsupported generated area action "${action}".` }, { status: 400 });
   } catch (error) {

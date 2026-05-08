@@ -41,6 +41,7 @@ type RequestForm = {
 type StageForm = {
   key: string;
   stageId: string;
+  generatedStageId: string;
   posX: string;
   posY: string;
   extraJson: string;
@@ -49,6 +50,7 @@ type StageForm = {
 type MobSpawnerForm = {
   key: string;
   mobId: string;
+  generatedMobId: string;
   count: string;
   rank: string;
   levelMin: string;
@@ -139,7 +141,7 @@ function formatJson(value: unknown) {
 }
 
 function stageExtraJson(stage: JsonObject) {
-  const { stage_id: _stageId, pos: _pos, ...extra } = stage;
+  const { stage_id: _stageId, pos: _pos, generated_id: _generatedId, source_stage_id: _sourceStageId, ...extra } = stage;
   return Object.keys(extra).length ? formatJson(extra) : "{}";
 }
 
@@ -159,7 +161,8 @@ function createStageForm(stage: unknown, index: number): StageForm {
   const entry = asObject(stage);
   return {
     key: `${stringValue(entry.stage_id, "stage")}-${index}-${Math.random().toString(36).slice(2)}`,
-    stageId: stringValue(entry.stage_id),
+    stageId: stringValue(entry.source_stage_id, stringValue(entry.stage_id)),
+    generatedStageId: stringValue(entry.stage_id),
     posX: vectorText(entry.pos, 0),
     posY: vectorText(entry.pos, 1),
     extraJson: stageExtraJson(entry),
@@ -170,6 +173,7 @@ function blankStageForm(): StageForm {
   return {
     key: `stage-${Math.random().toString(36).slice(2)}`,
     stageId: "",
+    generatedStageId: "",
     posX: "0",
     posY: "0",
     extraJson: "{}",
@@ -179,6 +183,8 @@ function blankStageForm(): StageForm {
 function mobSpawnerExtraJson(spawner: JsonObject) {
   const {
     mob_id: _mobId,
+    generated_id: _generatedId,
+    source_mob_id: _sourceMobId,
     count: _count,
     rank: _rank,
     level_min: _levelMin,
@@ -198,7 +204,8 @@ function createMobSpawnerForm(spawner: unknown, index: number): MobSpawnerForm {
   const overrides = asObject(entry.overrides);
   return {
     key: `${stringValue(entry.mob_id, "mob")}-${index}-${Math.random().toString(36).slice(2)}`,
-    mobId: stringValue(entry.mob_id),
+    mobId: stringValue(entry.source_mob_id, stringValue(entry.mob_id)),
+    generatedMobId: stringValue(entry.mob_id),
     count: numberText(entry.count, "1"),
     rank: stringValue(entry.rank, "normal"),
     levelMin: numberText(entry.level_min, "1"),
@@ -217,6 +224,7 @@ function blankMobSpawnerForm(levelMin = "1", levelMax = "1"): MobSpawnerForm {
   return {
     key: `mob-${Math.random().toString(36).slice(2)}`,
     mobId: "",
+    generatedMobId: "",
     count: "1",
     rank: "normal",
     levelMin,
@@ -336,11 +344,13 @@ function requestFromForm(form: RequestForm, original: JsonObject): JsonObject {
 function mobSpawnerFromForm(form: MobSpawnerForm, index: number): JsonObject {
   const mobId = form.mobId.trim();
   if (!mobId) throw new Error(`Mob spawner ${index + 1} needs a mob ID.`);
+  const generatedMobId = form.generatedMobId.trim();
   const overrides = parseJsonObject(form.overridesJson, `Overrides JSON for mob spawner ${index + 1}`);
   const extra = parseJsonObject(form.extraJson, `Extra JSON for mob spawner ${index + 1}`);
   return {
     ...extra,
-    mob_id: mobId,
+    mob_id: generatedMobId || mobId,
+    ...(generatedMobId ? { source_mob_id: mobId } : {}),
     count: parseNumber(form.count, 1),
     rank: form.rank.trim() || "normal",
     level_min: parseNumber(form.levelMin, 1),
@@ -385,7 +395,8 @@ function zoneFromForm(form: ZoneForm, original: JsonObject): JsonObject {
       height: parseNumber(form.boundsHeight, 30000),
     },
     stages: form.stages.map((stage, index) => ({
-      stage_id: stage.stageId.trim(),
+      stage_id: stage.generatedStageId.trim() || stage.stageId.trim(),
+      ...(stage.generatedStageId.trim() ? { source_stage_id: stage.stageId.trim() } : {}),
       pos: [parseNumber(stage.posX), parseNumber(stage.posY)],
       ...parseStageExtraJson(stage.extraJson, `Extra JSON for stage ${index + 1}`),
     })),
@@ -406,6 +417,7 @@ function artifactsCount(artifacts: GeneratedAreaArtifacts) {
     mobRecords: artifacts.mobs.length,
     missions: artifacts.missions.length,
     stages: zoneArray(zone, "stages").length,
+    stageDefinitions: Object.keys(artifacts.stageDefinitions ?? {}).length,
     environment: zoneArray(zone, "environment_elements").length,
     lockboxes: zoneArray(zone, "lockboxes").length,
   };
@@ -413,7 +425,7 @@ function artifactsCount(artifacts: GeneratedAreaArtifacts) {
 
 function StatusPill({ status }: { status: string }) {
   const tone =
-    status === "promoted"
+    status === "generated" || status === "promoted"
       ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
       : status === "approved"
         ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
@@ -441,11 +453,17 @@ function uniqueAreaId(base: string, entries: GeneratedAreaEntry[]) {
   return `${root}_${suffix}`;
 }
 
+function randomGeneratedAreaId(name: string, levelMin: string, levelMax: string, entries: GeneratedAreaEntry[]) {
+  const base = `gen_${slugifyAreaId(name)}_${parseNumber(levelMin, 1)}_${parseNumber(levelMax, parseNumber(levelMin, 1))}_${Math.random().toString(36).slice(2, 8)}`;
+  return uniqueAreaId(base, entries);
+}
+
 function ArtifactSummary({ label, artifacts }: { label: string; artifacts: GeneratedAreaArtifacts }) {
   const counts = artifactsCount(artifacts);
   const metrics = [
     ["Zone", counts.zones],
     ["Stages", counts.stages],
+    ["Stage Defs", counts.stageDefinitions],
     ["Mob Spawns", counts.mobSpawns],
     ["Lockboxes", counts.lockboxes],
     ["Env", counts.environment],
@@ -479,6 +497,7 @@ function ArtifactDetails({ artifacts }: { artifacts: GeneratedAreaArtifacts }) {
     <div className="space-y-3">
       {artifacts.zone ? <JsonTextArea label="Zone JSON Preview" value={formatJson(artifacts.zone)} rows={8} onChange={() => {}} /> : null}
       {stagePlacements.length ? <JsonTextArea label="Embedded Stage Placements" value={formatJson(stagePlacements)} rows={6} onChange={() => {}} /> : null}
+      {Object.keys(artifacts.stageDefinitions ?? {}).length ? <JsonTextArea label="Generated Stage Definitions" value={formatJson(artifacts.stageDefinitions)} rows={8} onChange={() => {}} /> : null}
       {mobSpawners.length ? <JsonTextArea label="Embedded Mob Spawners" value={formatJson(mobSpawners)} rows={8} onChange={() => {}} /> : null}
       {environmentalElements.length ? <JsonTextArea label="Embedded Environmental Elements" value={formatJson(environmentalElements)} rows={8} onChange={() => {}} /> : null}
       {lockboxes.length ? <JsonTextArea label="Embedded Lockboxes" value={formatJson(lockboxes)} rows={8} onChange={() => {}} /> : null}
@@ -507,7 +526,7 @@ export default function GeneratedAreasManager() {
   const [selectedId, setSelectedId] = useState("");
   const [requestForm, setRequestForm] = useState<RequestForm | null>(null);
   const [zoneForm, setZoneForm] = useState<ZoneForm | null>(null);
-  const [status, setStatus] = useState<Status>({ tone: "neutral", message: "Loading generated area staging files..." });
+  const [status, setStatus] = useState<Status>({ tone: "neutral", message: "Loading generated areas from core game data..." });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -524,7 +543,7 @@ export default function GeneratedAreasManager() {
       const nextWorkspace = payload as GeneratedAreasWorkspace;
       setWorkspace(nextWorkspace);
       setSelectedId((current) => (current && nextWorkspace.entries.some((entry) => entry.id === current) ? current : nextWorkspace.entries[0]?.id ?? ""));
-      setStatus({ tone: "success", message: `Loaded ${nextWorkspace.entries.length} generated area request${nextWorkspace.entries.length === 1 ? "" : "s"}.` });
+      setStatus({ tone: "success", message: `Loaded ${nextWorkspace.entries.length} generated area${nextWorkspace.entries.length === 1 ? "" : "s"} from core game data.` });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
       setWorkspace(null);
@@ -551,20 +570,20 @@ export default function GeneratedAreasManager() {
 
   const selectedZoneSource = zoneForm?.target === "core" ? selectedEntry?.core.zone : selectedEntry?.staged.zone;
 
-  async function runAction(action: "save" | "approve" | "promote" | "reject" | "generate") {
+  async function runAction(action: "save" | "reject" | "generate") {
     if (!selectedEntry && action !== "generate") return;
-    if (!requestForm && action !== "generate") return;
-    if (action === "promote" && selectedEntry && !selectedEntry.hasStagedContent) {
-      setStatus({ tone: "error", message: "This area has no staged generated content to promote." });
+    if (!requestForm) return;
+    if (action === "save" && selectedEntry && !selectedEntry.hasCoreContent) {
+      setStatus({ tone: "error", message: "Generate this area into core game data before saving edits." });
       return;
     }
-    if (action === "reject" && selectedEntry && !window.confirm(`Reject "${selectedEntry.name}" and delete every staged/core artifact matching "${selectedEntry.id}"?`)) return;
-    if (action === "promote" && selectedEntry && !window.confirm(`Promote staged content for "${selectedEntry.name}" into the core generated area files?`)) return;
+    if (action === "generate" && selectedEntry?.hasCoreContent && !window.confirm(`Regenerate "${selectedEntry.name}"? This will fail if "${selectedEntry.id}" already exists; use Reject And Delete first when replacing generated content.`)) return;
+    if (action === "reject" && selectedEntry && !window.confirm(`Delete every generated artifact tagged "${selectedEntry.id}" from the core game data?`)) return;
 
     setSaving(true);
     try {
-      const includeEdits = action === "save" || action === "approve" || action === "promote";
-      const request = includeEdits && requestForm && selectedEntry ? requestFromForm(requestForm, selectedEntry.request) : undefined;
+      const includeEdits = action === "save";
+      const request = action === "generate" ? requestFromForm(requestForm, selectedEntry?.request ?? {}) : includeEdits && selectedEntry ? requestFromForm(requestForm, selectedEntry.request) : undefined;
       const zone = includeEdits && zoneForm && selectedEntry ? zoneFromForm(zoneForm, asObject(selectedZoneSource)) : undefined;
       const response = await fetch("/api/generated-areas", {
         method: "POST",
@@ -574,7 +593,6 @@ export default function GeneratedAreasManager() {
           areaId: selectedEntry?.id,
           request,
           zone,
-          zoneTarget: zoneForm?.target ?? "staged",
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -584,6 +602,7 @@ export default function GeneratedAreasManager() {
       }
       setWorkspace(payload.workspace);
       if (action === "reject") setSelectedId(payload.workspace?.entries?.[0]?.id ?? "");
+      if (action === "generate") setSelectedId(payload.areaId || requestForm.id);
       setStatus({ tone: "success", message: payload.message || "Generated area files updated." });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
@@ -594,7 +613,7 @@ export default function GeneratedAreasManager() {
 
   async function createGeneratedAreaRequest() {
     if (!workspace || saving) return;
-    const areaId = uniqueAreaId("gen_new_area_10_14", workspace.entries);
+    const areaId = randomGeneratedAreaId("New Generated Area", "10", "14", workspace.entries);
     const request = {
       id: areaId,
       name: "New Generated Area",
@@ -613,26 +632,20 @@ export default function GeneratedAreasManager() {
       activation_radius: 52000,
       stages: DEFAULT_REQUEST_STAGE_PLACEMENTS,
     };
-    setSaving(true);
-    try {
-      const response = await fetch("/api/generated-areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", areaId, request }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) {
-        setStatus({ tone: "error", message: payload.error || "Could not create generated area request." });
-        return;
-      }
-      setWorkspace(payload.workspace);
-      setSelectedId(areaId);
-      setStatus({ tone: "success", message: `Created generated area request "${areaId}". Edit it, save, then run the generator.` });
-    } catch (error) {
-      setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setSaving(false);
-    }
+    const draftEntry: GeneratedAreaEntry = {
+      id: areaId,
+      name: stringValue(request.name),
+      archetype: stringValue(request.archetype),
+      status: "draft",
+      request,
+      staged: { zone: null, stageDefinitions: {}, contacts: {}, mobs: [], missions: [] },
+      core: { zone: null, stageDefinitions: {}, contacts: {}, mobs: [], missions: [] },
+      hasStagedContent: false,
+      hasCoreContent: false,
+    };
+    setWorkspace({ ...workspace, entries: [draftEntry, ...workspace.entries], summary: { ...workspace.summary, requestCount: workspace.summary.requestCount + 1, draftCount: workspace.summary.draftCount + 1 } });
+    setSelectedId(areaId);
+    setStatus({ tone: "success", message: `Created a local generated area draft "${areaId}". Edit it, then generate it into core game data.` });
   }
 
   function updateStage(index: number, patch: Partial<StageForm>) {
@@ -683,7 +696,7 @@ export default function GeneratedAreasManager() {
         <div>
           <h1 className="page-title mb-1">Generated Areas</h1>
           <p className="max-w-5xl text-sm leading-6 text-white/70">
-            Review procedural area requests, staged generated zones, generated comms, generated mobs, and generated mission files before moving them into the core game data.
+            Review generated zones, cloned stage definitions, generated comms, generated mobs, and generated mission files tagged by generated ID in the core game data.
           </p>
           {workspace?.sourceRoot ? <div className="mt-2 break-all font-mono text-xs text-white/45">{workspace.sourceRoot}</div> : null}
         </div>
@@ -691,8 +704,8 @@ export default function GeneratedAreasManager() {
           <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5 disabled:cursor-default disabled:opacity-40" disabled={loading || saving} onClick={() => void load()}>
             Refresh
           </button>
-          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={loading || saving} onClick={() => void runAction("generate")}>
-            Run Generator
+          <button className="btn disabled:cursor-default disabled:opacity-40" disabled={loading || saving || !requestForm || !!selectedEntry?.hasCoreContent} onClick={() => void runAction("generate")}>
+            Generate Selected
           </button>
         </div>
       </div>
@@ -701,17 +714,17 @@ export default function GeneratedAreasManager() {
 
       {workspace ? (
         <div className="grid gap-4 md:grid-cols-5">
-          <SummaryCard label="Requests" value={workspace.summary.requestCount} />
+          <SummaryCard label="Generated IDs" value={workspace.summary.requestCount} />
           <SummaryCard label="Draft" value={workspace.summary.draftCount} />
-          <SummaryCard label="Approved" value={workspace.summary.approvedCount} />
-          <SummaryCard label="Promoted" value={workspace.summary.promotedCount} />
-          <SummaryCard label="Staged Areas" value={workspace.summary.stagedAreaCount} />
+          <SummaryCard label="Core Areas" value={workspace.summary.coreAreaCount} />
+          <SummaryCard label="Comms" value={workspace.entries.reduce((total, entry) => total + Object.keys(entry.core.contacts).length, 0)} />
+          <SummaryCard label="Missions" value={workspace.entries.reduce((total, entry) => total + entry.core.missions.length, 0)} />
         </div>
       ) : null}
 
       {workspace ? (
         <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-          <Section title="Area Queue" description="Select a generated area request or promoted generated area artifact.">
+          <Section title="Generated Areas" description="Select a generated ID to review or create a local draft to generate into core data.">
             <button className="btn w-full disabled:cursor-default disabled:opacity-40" disabled={saving} onClick={() => void createGeneratedAreaRequest()}>
               New Generated Area
             </button>
@@ -734,7 +747,7 @@ export default function GeneratedAreasManager() {
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/55">
                       <span className="rounded-full bg-white/5 px-2 py-1">{entry.archetype || "no archetype"}</span>
-                      {entry.hasStagedContent ? <span className="rounded-full bg-cyan-300/10 px-2 py-1 text-cyan-100">staged</span> : null}
+                      {entry.hasStagedContent ? <span className="rounded-full bg-cyan-300/10 px-2 py-1 text-cyan-100">draft</span> : null}
                       {entry.hasCoreContent ? <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-emerald-100">core</span> : null}
                     </div>
                   </button>
@@ -748,20 +761,17 @@ export default function GeneratedAreasManager() {
           <div className="space-y-6">
             {selectedEntry && requestForm ? (
               <>
-                <Section title="Review And Migration" description="Save edits, approve the request, promote staged generated files, or reject and delete generated artifacts.">
+                <Section title="Review And Deletion" description="Save edits to core generated data, generate local drafts into the core files, or delete everything tagged with this generated ID.">
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <ArtifactSummary label="Staged Content" artifacts={selectedEntry.staged} />
+                    <ArtifactSummary label="Draft Content" artifacts={selectedEntry.staged} />
                     <ArtifactSummary label="Core Content" artifacts={selectedEntry.core} />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button className="btn disabled:cursor-default disabled:opacity-40" disabled={saving} onClick={() => void runAction("save")}>
+                    <button className="btn disabled:cursor-default disabled:opacity-40" disabled={saving || !selectedEntry.hasCoreContent} onClick={() => void runAction("save")}>
                       Save Edits
                     </button>
-                    <button className="rounded border border-cyan-300/25 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-300/10 disabled:cursor-default disabled:opacity-40" disabled={saving || selectedEntry.status === "promoted"} onClick={() => void runAction("approve")}>
-                      Approve For Migration
-                    </button>
-                    <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={saving || !selectedEntry.hasStagedContent} onClick={() => void runAction("promote")}>
-                      Promote To Core Data
+                    <button className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={saving || selectedEntry.hasCoreContent} onClick={() => void runAction("generate")}>
+                      Generate Into Core Data
                     </button>
                     <button className="rounded border border-red-400/25 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10 disabled:cursor-default disabled:opacity-40" disabled={saving} onClick={() => void runAction("reject")}>
                       Reject And Delete
@@ -769,7 +779,7 @@ export default function GeneratedAreasManager() {
                   </div>
                 </Section>
 
-                <Section title="Area Request" description="These fields drive the procedural generator. Saving edits writes GeneratedAreaRequests.json.">
+                <Section title="Generator Inputs" description="These fields drive the Console generator. New drafts stay local until generated into the core files.">
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="text-sm text-white/65">
                       Area ID
@@ -779,8 +789,7 @@ export default function GeneratedAreasManager() {
                       Status
                       <select className="select mt-1 w-full" value={requestForm.status} onChange={(event) => setRequestForm({ ...requestForm, status: event.target.value })}>
                         <option value="draft">draft</option>
-                        <option value="approved">approved</option>
-                        <option value="promoted">promoted</option>
+                        <option value="generated">generated</option>
                       </select>
                     </label>
                     <label className="text-sm text-white/65">
@@ -898,7 +907,7 @@ export default function GeneratedAreasManager() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-semibold text-white">Generator Stage Placements</div>
-                        <div className="mt-1 text-xs text-white/45">These are written into the request and used by the Godot generator when it creates the zone.</div>
+                        <div className="mt-1 text-xs text-white/45">These source stages are cloned into Stages.json with this generated ID when the Console generator creates the zone.</div>
                       </div>
                       <button className="rounded border border-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/5" onClick={() => setRequestForm({ ...requestForm, stages: [...requestForm.stages, blankStageForm()] })}>
                         Add Stage
@@ -942,7 +951,7 @@ export default function GeneratedAreasManager() {
                 </Section>
 
                 {zoneForm ? (
-                  <Section title="Generated Zone" description="Edit the generated zone placement and stage placements before promotion, or adjust promoted core generated areas.">
+                  <Section title="Generated Zone" description="Edit the generated zone placement, source stage placements, and mob spawners stored in core game data.">
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className="text-sm text-white/65">
                         Editing File
@@ -956,8 +965,8 @@ export default function GeneratedAreasManager() {
                           }}
                           disabled={!selectedEntry.staged.zone || !selectedEntry.core.zone}
                         >
-                          {selectedEntry.staged.zone ? <option value="staged">staged generated_areas.json</option> : null}
-                          {selectedEntry.core.zone ? <option value="core">core generated_areas.json</option> : null}
+                          {selectedEntry.staged.zone ? <option value="staged">local draft</option> : null}
+                          {selectedEntry.core.zone ? <option value="core">core Zones.json</option> : null}
                         </select>
                       </label>
                       <label className="text-sm text-white/65">
@@ -1162,15 +1171,15 @@ export default function GeneratedAreasManager() {
                     </div>
                   </Section>
                 ) : (
-                  <Section title="Generated Zone" description="No staged or core generated zone exists for this request yet. Run the generator after editing the request.">
+                  <Section title="Generated Zone" description="No core generated zone exists for this draft yet. Generate it after editing the inputs.">
                     <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-white/45">No generated zone artifact is available for this area.</div>
                   </Section>
                 )}
 
-                <Section title="Artifact Review" description="Read-only review of staged and promoted generated artifacts associated with this area ID.">
+                <Section title="Artifact Review" description="Read-only review of generated artifacts associated with this generated ID.">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="space-y-3">
-                      <div className="text-base font-semibold text-white">Staged</div>
+                      <div className="text-base font-semibold text-white">Draft</div>
                       <ArtifactDetails artifacts={selectedEntry.staged} />
                     </div>
                     <div className="space-y-3">

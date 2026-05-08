@@ -24,6 +24,7 @@ export type GeneratedAreaMissionArtifact = {
 
 export type GeneratedAreaArtifacts = {
   zone: JsonObject | null;
+  stageDefinitions?: Record<string, JsonObject>;
   contacts: Record<string, JsonObject>;
   mobs: JsonObject[];
   missions: GeneratedAreaMissionArtifact[];

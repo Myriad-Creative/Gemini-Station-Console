@@ -113,6 +113,7 @@ export default function MissionWorkshop({
   const [collapsedObjectiveKeys, setCollapsedObjectiveKeys] = useState<Set<string>>(() => new Set());
   const [conversationsCollapsed, setConversationsCollapsed] = useState(false);
   const [collapsedConversationBeatKeys, setCollapsedConversationBeatKeys] = useState<Set<string>>(() => new Set());
+  const [savingToGameFolder, setSavingToGameFolder] = useState(false);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
   const beatTextAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const responseInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -482,6 +483,7 @@ export default function MissionWorkshop({
   async function saveSelectedJson() {
     if (!selectedMission) return;
     clearStatus();
+    setSavingToGameFolder(true);
     try {
       const response = await fetch("/api/missions/save", {
         method: "POST",
@@ -508,6 +510,8 @@ export default function MissionWorkshop({
         message: error instanceof Error ? error.message : "Could not save the selected mission into the game mission folder.",
         dismissAfterMs: null,
       });
+    } finally {
+      setSavingToGameFolder(false);
     }
   }
 
@@ -521,8 +525,36 @@ export default function MissionWorkshop({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[340px,minmax(0,1fr)]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-3xl text-sm text-white/55">
+          {selectedMission ? (
+            <span>
+              Editing <span className="font-medium text-white">{selectedMission.title || selectedMission.id || "Untitled mission"}</span>
+            </span>
+          ) : (
+            <span>Select or create a mission draft before saving to the game folder.</span>
+          )}
+        </div>
+        <button
+          className="btn-save-build shrink-0 disabled:cursor-default disabled:opacity-40"
+          disabled={!selectedMission || savingToGameFolder}
+          onClick={() => void saveSelectedJson()}
+        >
+          {savingToGameFolder ? "Saving..." : "Save to game folder"}
+        </button>
+      </div>
+
+      {status.message ? (
+        status.tone === "neutral" ? (
+          <StatusBanner tone={status.tone} message={status.message} />
+        ) : (
+          <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
+        )
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[340px,minmax(0,1fr)]">
+        <div className="space-y-6">
         <div className="card h-fit space-y-4">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Mission Library</h2>
@@ -595,14 +627,6 @@ export default function MissionWorkshop({
             </div>
           ) : null}
 
-          {status.message ? (
-            status.tone === "neutral" ? (
-              <StatusBanner tone={status.tone} message={status.message} />
-            ) : (
-              <DismissibleStatusBanner tone={status.tone} message={status.message} onDismiss={clearStatus} countdownSeconds={statusCountdown} />
-            )
-          ) : null}
-
           <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
             {filteredMissions.length ? (
               filteredMissions.map(({ mission, index }) => {
@@ -642,11 +666,11 @@ export default function MissionWorkshop({
           </div>
         </div>
 
-        <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mission." />
-      </div>
+          <ValidationPanel messages={selectedValidation} noIssuesText="No validation issues for the selected mission." />
+        </div>
 
-      {!selectedMission ? null : (
-        <div className="space-y-6">
+        {!selectedMission ? null : (
+          <div className="space-y-6">
           <div className="card space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -661,9 +685,6 @@ export default function MissionWorkshop({
                 </button>
                 <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={copySelectedJson}>
                   Copy JSON
-                </button>
-                <button className="btn" onClick={saveSelectedJson}>
-                  Save To Game Folder
                 </button>
                 <button className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30" onClick={removeSelectedMission}>
                   Delete
@@ -1242,6 +1263,7 @@ export default function MissionWorkshop({
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

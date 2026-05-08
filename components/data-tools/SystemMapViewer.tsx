@@ -691,16 +691,16 @@ function zoneIdentity(zone: SystemMapZone) {
   return zone.originalId ?? zone.id;
 }
 
-function isGeneratedAreaZone(zone: SystemMapZone | null | undefined) {
-  return zone?.source === "generated-core";
+function isGeneratedAreaZone(_zone: SystemMapZone | null | undefined) {
+  return false;
 }
 
 function generatedAreaEditMessage(zone: SystemMapZone) {
-  return `"${zone.name || zone.id}" is stored in generated area core data. Move stages, mobs, and the zone directly on the map; use Data > Generated Areas to reject it.`;
+  return `"${zone.name || zone.id}" is stored in Zones.json. Move stages, mobs, and the zone directly on the map; use Data > Generated Areas to delete generated content by generated ID.`;
 }
 
-function zoneSaveTargetName(zone: SystemMapZone) {
-  return isGeneratedAreaZone(zone) ? "generated_areas.json" : "Zones.json";
+function zoneSaveTargetName(_zone: SystemMapZone) {
+  return "Zones.json";
 }
 
 function stageIdentity(stage: SystemMapStagePlacement) {
@@ -5947,10 +5947,8 @@ export default function SystemMapViewer() {
     if (!suppressStatus) setStatus(null);
     try {
       const editedZones = mapZones.filter((zone) => !zone.draft && editedZoneIds.includes(zone.originalId ?? zone.id));
-      const editedGeneratedZones = editedZones.filter(isGeneratedAreaZone);
-      const editedStandardZones = editedZones.filter((zone) => !isGeneratedAreaZone(zone));
+      const editedStandardZones = editedZones;
       let standardSavedCount = 0;
-      let generatedSavedCount = 0;
       let savedZones: SystemMapZone[] = [];
 
       const markZoneSaved = (zone: SystemMapZone): SystemMapZone => ({
@@ -6011,22 +6009,6 @@ export default function SystemMapViewer() {
         );
       }
 
-      if (editedGeneratedZones.length) {
-        const saveGeneratedResponse = await fetch("/api/system-map/generated-zones/save", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ zones: editedGeneratedZones }),
-        });
-        const saveGeneratedPayload = await saveGeneratedResponse.json().catch(() => ({}));
-        if (!saveGeneratedResponse.ok || !saveGeneratedPayload?.ok) {
-          if (!suppressStatus) setStatus({ tone: "error", message: saveGeneratedPayload?.error || "Could not save generated area zones into generated_areas.json." });
-          return false;
-        }
-        generatedSavedCount = Number(saveGeneratedPayload.savedCount) || editedGeneratedZones.length;
-      }
-
       setPayload((current) =>
         current
           ? {
@@ -6039,8 +6021,8 @@ export default function SystemMapViewer() {
       setDraftZones([]);
       setEditedZoneIds([]);
       setDeletedZoneIds([]);
-      const savedCount = standardSavedCount + generatedSavedCount;
-      const targets = [standardSavedCount ? "Zones.json" : "", generatedSavedCount ? "generated_areas.json" : ""].filter(Boolean).join(" and ");
+      const savedCount = standardSavedCount;
+      const targets = standardSavedCount ? "Zones.json" : "";
       if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into ${targets || "zone data"}.` });
       return true;
     } catch (saveError) {
