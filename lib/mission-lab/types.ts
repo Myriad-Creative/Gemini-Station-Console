@@ -39,6 +39,7 @@ export interface MissionRewardEntrySummary {
   kind: "mod" | "item" | "unknown";
   name: string | null;
   icon: string | null;
+  count?: number | null;
 }
 
 export interface MissionRewardSummary {
@@ -236,6 +237,7 @@ export interface MissionRewardLookupResult {
   kind: "mod" | "item" | "unknown";
   name: string | null;
   icon: string | null;
+  count?: number | null;
 }
 
 export interface MissionUploadFile {

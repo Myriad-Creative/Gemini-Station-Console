@@ -32,9 +32,15 @@ export interface MissionMetaDraft {
 export interface MissionRewardDraft {
   credits: string;
   xp: string;
-  itemIds: string[];
+  itemRewards: MissionRewardItemDraft[];
   modIds: string[];
   reputationEntries: string[];
+}
+
+export interface MissionRewardItemDraft {
+  key: string;
+  itemId: string;
+  count: string;
 }
 
 export interface MissionPrerequisiteDraft {
@@ -157,6 +163,12 @@ function parseScalar(value: string) {
   if (!trimmed) return undefined;
   if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
   return trimmed;
+}
+
+function parsePositiveInteger(input: string, fallback = 1) {
+  const parsed = parseNumber(input);
+  if (parsed === undefined) return fallback;
+  return Math.max(1, Math.round(parsed));
 }
 
 function incrementTrailingNumber(value: string) {
@@ -345,7 +357,7 @@ export function createMissionDraft(): MissionDraft {
     rewards: {
       credits: "0",
       xp: "0",
-      itemIds: [],
+      itemRewards: [],
       modIds: [],
       reputationEntries: [],
     },
@@ -421,7 +433,11 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
     rewards: {
       credits: draft.rewards.credits,
       xp: draft.rewards.xp,
-      itemIds: [...draft.rewards.itemIds],
+      itemRewards: draft.rewards.itemRewards.map((reward) => ({
+        key: uid("reward_item"),
+        itemId: reward.itemId,
+        count: reward.count,
+      })),
       modIds: [...draft.rewards.modIds],
       reputationEntries: [...draft.rewards.reputationEntries],
     },
@@ -534,12 +550,38 @@ function normalizeImportedPrerequisites(raw: unknown): MissionPrerequisiteDraft[
     .filter((entry) => entry.id);
 }
 
+function normalizeImportedRewardItem(raw: unknown): MissionRewardItemDraft | null {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const source = asObject(raw);
+    const itemId = numberString(source.item_id ?? source.itemId ?? source.id);
+    if (!itemId.trim()) return null;
+    return {
+      key: uid("reward_item"),
+      itemId,
+      count: numberString(source.count ?? source.qty ?? source.quantity ?? source.amount ?? 1) || "1",
+    };
+  }
+
+  const itemId = String(raw ?? "").trim();
+  if (!itemId) return null;
+  return {
+    key: uid("reward_item"),
+    itemId,
+    count: "1",
+  };
+}
+
+function normalizeImportedRewardItems(source: JsonObject) {
+  const rawItems = Array.isArray(source.items) ? source.items : Array.isArray(source.itemIds) ? source.itemIds : Array.isArray(source.itemRewards) ? source.itemRewards : [];
+  return rawItems.map((entry) => normalizeImportedRewardItem(entry)).filter((entry): entry is MissionRewardItemDraft => !!entry);
+}
+
 function normalizeImportedRewards(raw: unknown): MissionRewardDraft {
   const source = asObject(raw);
   return {
     credits: numberString(source.credits ?? 0),
     xp: numberString(source.xp ?? 0),
-    itemIds: normalizeTargetIds(source.items),
+    itemRewards: normalizeImportedRewardItems(source),
     modIds: normalizeTargetIds(source.mods),
     reputationEntries: Array.isArray(source.reputation)
       ? (source.reputation as unknown[]).map((entry) => (typeof entry === "object" ? JSON.stringify(entry) : String(entry))).filter(Boolean)
@@ -785,7 +827,12 @@ export function exportMissionDraft(draft: MissionDraft) {
       : {}),
     rewards: {
       credits: parseNumber(draft.rewards.credits) ?? 0,
-      items: draft.rewards.itemIds.map((entry) => parseScalar(entry) ?? entry).filter((entry) => entry !== undefined),
+      items: draft.rewards.itemRewards
+        .map((entry) => ({
+          id: parseScalar(entry.itemId) ?? entry.itemId,
+          count: parsePositiveInteger(entry.count),
+        }))
+        .filter((entry) => entry.id !== undefined && String(entry.id).trim()),
       reputation: serializeReputationEntries(draft.rewards.reputationEntries),
       mods: draft.rewards.modIds.map((entry) => parseScalar(entry) ?? entry).filter((entry) => entry !== undefined),
       xp: parseNumber(draft.rewards.xp) ?? 0,

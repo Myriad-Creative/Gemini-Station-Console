@@ -37,7 +37,7 @@ function RewardPill({ label, value }: { label: string; value: number }) {
 function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
   return (
-    <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
+    <div className="relative flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
       <img
         src={buildIconSrc(reward.icon || "icon_lootbox.png", reward.id, reward.name ?? reward.id, sharedDataVersion)}
         alt={reward.name ?? reward.id}
@@ -45,6 +45,9 @@ function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
         height={72}
         className="h-[72px] w-[72px] rounded-md object-cover"
       />
+      {reward.kind === "item" && reward.count && reward.count > 1 ? (
+        <div className="absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">x{reward.count}</div>
+      ) : null}
     </div>
   );
 }

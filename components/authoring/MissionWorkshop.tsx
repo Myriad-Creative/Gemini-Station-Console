@@ -24,6 +24,7 @@ import {
   MissionDraft,
   MissionObjectiveDraft,
   MissionPrerequisiteDraft,
+  MissionRewardItemDraft,
   MissionStepDraft,
   createMissionConversationBeatDraft,
   createMissionConversationDraft,
@@ -825,7 +826,7 @@ export default function MissionWorkshop({
               <div>
                 <h3 className="text-lg font-semibold">Rewards</h3>
                 <div className="text-sm text-white/60">
-                  Search items and mods by name or id, then attach their ids to the mission rewards.
+                  Search items and mods by name or id, then attach them to the mission rewards. Item rewards can include a quantity.
                 </div>
               </div>
 
@@ -854,16 +855,16 @@ export default function MissionWorkshop({
                 />
               </div>
 
-              <LookupIdListEditor
+              <RewardItemListEditor
                 label="Reward Items"
-                values={selectedMission.rewards.itemIds}
+                values={selectedMission.rewards.itemRewards}
                 options={itemOptions}
                 placeholder="Search item name or id"
                 emptyText="No reward items attached."
                 onChange={(next) =>
                   updateSelected((draft) => ({
                     ...draft,
-                    rewards: { ...draft.rewards, itemIds: next },
+                    rewards: { ...draft.rewards, itemRewards: next },
                   }))
                 }
               />
@@ -1866,6 +1867,116 @@ function LookupIdListEditor({
   );
 }
 
+function RewardItemListEditor({
+  label,
+  values,
+  options,
+  placeholder,
+  emptyText,
+  onChange,
+}: {
+  label: string;
+  values: MissionRewardItemDraft[];
+  options: LookupOption[];
+  placeholder: string;
+  emptyText: string;
+  onChange: (next: MissionRewardItemDraft[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [countDraft, setCountDraft] = useState("1");
+  const listId = useId();
+
+  function commit(raw: string) {
+    const nextItemId = resolveLookupValue(raw, options);
+    const normalizedCount = countDraft.trim() || "1";
+    if (!nextItemId || values.some((value) => value.itemId === nextItemId)) {
+      setDraft("");
+      setCountDraft("1");
+      return;
+    }
+    onChange([...values, createRewardItemDraft(nextItemId, normalizedCount)]);
+    setDraft("");
+    setCountDraft("1");
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commit(draft);
+  }
+
+  return (
+    <div className="space-y-3 rounded border border-white/10 bg-black/20 p-3">
+      <div className="label">{label}</div>
+
+      {values.length ? (
+        <div className="space-y-2">
+          {values.map((value) => {
+            const option = options.find((entry) => entry.id === value.itemId);
+            return (
+              <div key={value.key} className="grid gap-3 rounded border border-white/10 bg-white/5 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_96px_auto] sm:items-center">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{option?.label ?? value.itemId}</div>
+                  <div className="truncate text-xs text-white/50">
+                    {value.itemId}
+                    {option?.meta ? ` · ${option.meta}` : ""}
+                  </div>
+                </div>
+                <label className="space-y-1">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Count</div>
+                  <input
+                    className="input h-9"
+                    inputMode="numeric"
+                    value={value.count}
+                    onChange={(event) => onChange(values.map((entry) => (entry.key === value.key ? { ...entry, count: event.target.value } : entry)))}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
+                <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={() => onChange(values.filter((entry) => entry.key !== value.key))}>
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-sm text-white/50">{emptyText}</div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_96px_auto]">
+        <input
+          className="input"
+          list={listId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+        />
+        <input
+          className="input"
+          inputMode="numeric"
+          value={countDraft}
+          onChange={(event) => setCountDraft(event.target.value)}
+          onKeyDown={onKeyDown}
+          onFocus={(event) => event.currentTarget.select()}
+          placeholder="Count"
+        />
+        <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => commit(draft)}>
+          Add
+        </button>
+      </div>
+
+      <div className="text-xs text-white/50">Exports to rewards.items as objects with id and count.</div>
+
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option.id} value={option.id} label={option.meta ? `${option.label} · ${option.meta}` : option.label} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 function LookupIdField({
   label,
   value,
@@ -2215,6 +2326,14 @@ function resolveLookupValue(value: string, options: LookupOption[]) {
   const exactLabel = options.find((option) => option.label.toLowerCase() === trimmed.toLowerCase());
   if (exactLabel) return exactLabel.id;
   return trimmed;
+}
+
+function createRewardItemDraft(itemId: string, count = "1"): MissionRewardItemDraft {
+  return {
+    key: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? `reward_item_${crypto.randomUUID().slice(0, 8)}` : `reward_item_${Math.random().toString(36).slice(2, 10)}`,
+    itemId,
+    count,
+  };
 }
 
 function itemToLookupOption(item: Item): LookupOption {

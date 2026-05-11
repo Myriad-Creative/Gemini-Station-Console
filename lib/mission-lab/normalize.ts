@@ -24,6 +24,11 @@ export interface MissionRewardResolver {
   resolve(id: string): MissionRewardLookupResult | null;
 }
 
+type RewardRef = {
+  id: string;
+  count: number | null;
+};
+
 export interface MissionNormalizationInput {
   key: string;
   fileName: string;
@@ -133,20 +138,20 @@ function extractConversationList(source: Record<string, unknown>) {
 }
 
 function resolveRewardEntries(
-  ids: string[],
+  refs: RewardRef[],
   kind: "mod" | "item" | "unknown",
   resolver?: MissionRewardResolver,
 ): MissionRewardLookupResult[] {
-  return ids.map((id) => {
-    const resolved = resolver?.resolve(id);
-    if (resolved) return resolved;
-    return { id, kind, name: null, icon: null };
+  return refs.map((ref) => {
+    const resolved = resolver?.resolve(ref.id);
+    if (resolved) return { ...resolved, count: ref.count };
+    return { id: ref.id, kind, name: null, icon: null, count: ref.count };
   });
 }
 
-function extractRewardIds(value: unknown, preferredKeys: string[]) {
+function extractRewardRefs(value: unknown, preferredKeys: string[]) {
   const source = asRecord(value);
-  const ids: string[] = [];
+  const refs: RewardRef[] = [];
 
   for (const key of preferredKeys) {
     const entry = source[key];
@@ -155,7 +160,7 @@ function extractRewardIds(value: unknown, preferredKeys: string[]) {
     if (Array.isArray(entry)) {
       for (const candidate of entry) {
         if (typeof candidate === "string" || typeof candidate === "number") {
-          ids.push(String(candidate));
+          refs.push({ id: String(candidate), count: 1 });
           continue;
         }
 
@@ -163,16 +168,21 @@ function extractRewardIds(value: unknown, preferredKeys: string[]) {
         const nestedId = stringOrNull(
           nested.id ?? nested.mod_id ?? nested.item_id ?? nested.reward_id ?? nested.key ?? nested.resource_id,
         );
-        if (nestedId) ids.push(nestedId);
+        if (nestedId) refs.push({ id: nestedId, count: parseNumberValue(nested.count ?? nested.qty ?? nested.quantity ?? nested.amount) ?? 1 });
       }
       continue;
     }
 
     const single = stringOrNull(entry);
-    if (single) ids.push(single);
+    if (single) refs.push({ id: single, count: 1 });
   }
 
-  return dedupeStrings(ids);
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    if (seen.has(ref.id)) return false;
+    seen.add(ref.id);
+    return true;
+  });
 }
 
 function normalizeRewards(rawRewards: unknown, rewardResolver?: MissionRewardResolver): MissionRewardSummary {
@@ -186,11 +196,13 @@ function normalizeRewards(rawRewards: unknown, rewardResolver?: MissionRewardRes
     parseNumberValue(rewards.xp) ??
     parseNumberValue(rewards.exp) ??
     parseNumberValue(rewards.experience);
-  const modIds = extractRewardIds(rewards, ["mod_ids", "mods", "reward_mod_ids"]);
-  const itemIds = extractRewardIds(rewards, ["item_ids", "items", "reward_item_ids"]);
+  const modRefs = extractRewardRefs(rewards, ["mod_ids", "mods", "reward_mod_ids"]);
+  const itemRefs = extractRewardRefs(rewards, ["item_ids", "items", "reward_item_ids"]);
+  const modIds = dedupeStrings(modRefs.map((ref) => ref.id));
+  const itemIds = dedupeStrings(itemRefs.map((ref) => ref.id));
   const resolvedRewards = [
-    ...resolveRewardEntries(modIds, "mod", rewardResolver),
-    ...resolveRewardEntries(itemIds, "item", rewardResolver),
+    ...resolveRewardEntries(modRefs, "mod", rewardResolver),
+    ...resolveRewardEntries(itemRefs, "item", rewardResolver),
   ];
 
   return {
