@@ -137,6 +137,10 @@ export function summarizeObjectiveSource(raw: Record<string, unknown>, type: str
       return fallbackSubject
         ? `Collect ${count ?? 1} ${fallbackSubject}.`
         : `Collect ${count ?? 1} item${count === 1 ? "" : "s"}.`;
+    case "acquire":
+      return fallbackSubject
+        ? `Acquire ${count ?? 1} ${fallbackSubject}.`
+        : `Acquire ${count ?? 1} item${count === 1 ? "" : "s"}.`;
     case "buy":
       return fallbackSubject
         ? `Buy ${count ?? 1} ${fallbackSubject}.`

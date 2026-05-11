@@ -8,6 +8,7 @@ export const MISSION_OBJECTIVE_TYPES = [
   "talk",
   "scan",
   "collect",
+  "acquire",
   "kill",
   "mine",
   "sell",
@@ -296,7 +297,7 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     type,
     targetIds: [],
     itemId: "",
-    count: type === "collect" || type === "kill" || type === "mine" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
+    count: type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
     dropChance: type === "collect" ? "1.0" : "",
     seconds: type === "travel" ? "1" : "",
     sectorId: "",
@@ -651,6 +652,15 @@ function serializeObjective(draft: MissionObjectiveDraft) {
         objective: draft.objective,
         progress_label: draft.progressLabel,
       };
+    case "acquire":
+      return {
+        type,
+        item_id: parseScalar(draft.itemId) ?? draft.itemId,
+        count: parseNumber(draft.count) ?? 1,
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+      };
     case "kill":
       return {
         type,
@@ -823,7 +833,7 @@ function conversationIdsFromDraft(draft: MissionDraft) {
 }
 
 function objectiveTargetRequirement(type: string) {
-  return type === "collect" || type === "kill" || type === "mine" ? "many" : type === "explore" ? "none" : "one";
+  return type === "collect" || type === "kill" || type === "mine" ? "many" : type === "explore" || type === "acquire" ? "none" : "one";
 }
 
 export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds: string[] = []): ValidationMessage[] {
@@ -1009,7 +1019,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           });
         }
 
-        if ((type === "scan" || type === "collect" || type === "kill" || type === "mine" || type === "buy" || type === "sell") && parseNumber(objective.count) === undefined) {
+        if ((type === "scan" || type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "buy" || type === "sell") && parseNumber(objective.count) === undefined) {
           messages.push({
             level: "error",
             scope: "missions",
@@ -1019,7 +1029,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           });
         }
 
-        if (type === "collect" && !objective.itemId.trim()) {
+        if ((type === "collect" || type === "acquire") && !objective.itemId.trim()) {
           messages.push({
             level: "error",
             scope: "missions",
