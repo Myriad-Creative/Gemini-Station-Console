@@ -9,6 +9,7 @@ import type {
   SystemMapEnvironmentalElement,
   SystemMapEnvironmentProfile,
   SystemMapMineableOreItem,
+  SystemMapMiningLootIconOption,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -44,8 +45,9 @@ const DEFAULT_ASTEROID_BELT_GATE_WIDTH = 2000;
 const DEFAULT_HAZARD_BARRIER_PROFILE_ID = "wreck_plasma_orange";
 const DEFAULT_HAZARD_BARRIER_BAND_WIDTH = 480;
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = "res://assets/environment/asteroids/ast_1.png";
-const DEFAULT_MINING_LOOT_ICON = "res://assets/items/item_crate_iron_ore.png";
+const DEFAULT_MINING_LOOT_ICON = "res://assets/items/icon_lootbox_mining.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
+const ITEM_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 
 const MINEABLE_ORE_NAMES = [
   "Compacted Gold Ore",
@@ -208,6 +210,11 @@ function itemIconResPath(value: unknown) {
   if (icon.startsWith("assets/")) return `res://${icon}`;
   if (icon.startsWith("/")) return icon;
   return `res://assets/items/${icon}`;
+}
+
+function isLootBoxText(value: string) {
+  const normalized = normalizedSearchText(value);
+  return normalized.includes("lootbox") || normalized.includes("loot box");
 }
 
 function vecValue(value: unknown, fallback: SystemMapVec = { x: 0, y: 0 }): SystemMapVec {
@@ -553,6 +560,46 @@ function buildMineableOreItems(itemsJson: unknown): SystemMapMineableOreItem[] {
     });
   }
   return oreItems;
+}
+
+function buildMiningLootIconOptions(assetsRootPath: string | null, itemsJson: unknown): SystemMapMiningLootIconOption[] {
+  const options = new Map<string, SystemMapMiningLootIconOption>();
+  const addOption = (resPath: string, label: string) => {
+    const normalizedResPath = itemIconResPath(resPath);
+    if (!normalizedResPath || options.has(normalizedResPath)) return;
+    options.set(normalizedResPath, {
+      resPath: normalizedResPath,
+      label: label.trim() || path.basename(normalizedResPath),
+    });
+  };
+
+  addOption(DEFAULT_MINING_LOOT_ICON, "Mining Loot Box");
+
+  const itemValues = Array.isArray(itemsJson) ? itemsJson : Object.values(asRecord(itemsJson));
+  for (const value of itemValues) {
+    const item = asRecord(value);
+    const name = stringValue(item.name ?? item.display_name, "").trim();
+    const icon = stringValue(item.icon ?? item.icon_path ?? item.sprite ?? item.texture, "").trim();
+    if (!isLootBoxText(`${name} ${icon}`)) continue;
+    addOption(icon, name || icon);
+  }
+
+  if (assetsRootPath) {
+    const itemsAssetRoot = path.join(assetsRootPath, "items");
+    const entries = fs.existsSync(itemsAssetRoot) ? fs.readdirSync(itemsAssetRoot, { withFileTypes: true }) : [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!ITEM_IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+      if (!isLootBoxText(entry.name)) continue;
+      addOption(`res://assets/items/${entry.name}`, entry.name);
+    }
+  }
+
+  return Array.from(options.values()).sort((left, right) => {
+    if (left.resPath === DEFAULT_MINING_LOOT_ICON) return -1;
+    if (right.resPath === DEFAULT_MINING_LOOT_ICON) return 1;
+    return left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" });
+  });
 }
 
 function buildPlayerSpawn(playerSpawnJson: unknown): SystemMapPlayerSpawn | null {
@@ -1255,6 +1302,7 @@ export async function GET() {
     environmentProfiles: buildEnvironmentProfiles(hazardBarrierProfilesResult.value, stagesResult.value),
     environmentalElements: buildEnvironmentalElements(environmentalElementsResult.value, hazardBarrierProfilesResult.value, stagesResult.value),
     mineableOreItems: buildMineableOreItems(itemsResult.value),
+    miningLootIconOptions: buildMiningLootIconOptions(local.assetsRootPath, itemsResult.value),
     playerSpawn: buildPlayerSpawn(playerSpawnResult.value),
     warnings,
   };

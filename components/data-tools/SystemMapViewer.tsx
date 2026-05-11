@@ -13,6 +13,7 @@ import type {
   SystemMapEnvironmentProfile,
   SystemMapMineableAsteroid,
   SystemMapMineableOreItem,
+  SystemMapMiningLootIconOption,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -496,13 +497,8 @@ const ASTEROID_SPRITES = [
   "res://assets/environment/asteroids/ast_6.png",
 ];
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = ASTEROID_SPRITES[0];
-const DEFAULT_MINING_LOOT_ICON = "res://assets/items/item_crate_iron_ore.png";
+const DEFAULT_MINING_LOOT_ICON = "res://assets/items/icon_lootbox_mining.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
-const MINING_LOOT_ICON_OPTIONS = [
-  DEFAULT_MINING_LOOT_ICON,
-  "res://assets/items/item_iron_ore_crate.png",
-  "res://assets/items/item_iron_ore.png",
-];
 const BARRIER_DEBRIS_SPRITES = [
   "res://assets/environment/debris/debris_1.png",
   "res://assets/environment/tut_debris/deb_1.png",
@@ -750,6 +746,13 @@ function findMineableOreItem(oreItems: SystemMapMineableOreItem[], oreItemId: st
   const normalizedId = String(oreItemId ?? "").trim();
   if (!normalizedId) return null;
   return oreItems.find((ore) => ore.id === normalizedId) ?? null;
+}
+
+function miningLootIconOptionsWithCurrent(options: SystemMapMiningLootIconOption[], currentValue: string): SystemMapMiningLootIconOption[] {
+  const current = currentValue.trim();
+  const resolvedOptions = options.length ? options : [{ resPath: DEFAULT_MINING_LOOT_ICON, label: "Mining Loot Box" }];
+  if (!current || resolvedOptions.some((option) => option.resPath === current)) return resolvedOptions;
+  return [{ resPath: current, label: current }, ...resolvedOptions];
 }
 
 function inferMineableOreItem(asteroid: SystemMapMineableAsteroid, oreItems: SystemMapMineableOreItem[]) {
@@ -5472,7 +5475,6 @@ export default function SystemMapViewer() {
         oreItemId: ore.id,
         oreItemName: ore.name,
         oreItemIcon: ore.icon,
-        miningLootIcon: ore.icon || current.miningLootIcon,
         name: mineableAsteroidNameForOre(ore),
         id: mineableAsteroidIdForOre(ore, reservedIds),
       };
@@ -8292,9 +8294,7 @@ export default function SystemMapViewer() {
             const ownerZone = activeAsteroid ? (mapZones.find((zone) => zoneOwnsMineableAsteroid(zone, activeAsteroid)) ?? null) : null;
             const previewIcon = safeIconSrc(environmentalAsteroidForm.texture, environmentalAsteroidForm.id, environmentalAsteroidForm.name);
             const currentTextureOptions = ASTEROID_SPRITES.includes(environmentalAsteroidForm.texture) ? ASTEROID_SPRITES : [environmentalAsteroidForm.texture, ...ASTEROID_SPRITES].filter(Boolean);
-            const currentMiningIconOptions = MINING_LOOT_ICON_OPTIONS.includes(environmentalAsteroidForm.miningLootIcon)
-              ? MINING_LOOT_ICON_OPTIONS
-              : [environmentalAsteroidForm.miningLootIcon, ...MINING_LOOT_ICON_OPTIONS].filter(Boolean);
+            const currentMiningIconOptions = miningLootIconOptionsWithCurrent(payload?.miningLootIconOptions ?? [], environmentalAsteroidForm.miningLootIcon);
             const oreOptions = payload?.mineableOreItems ?? [];
             return (
               <div
@@ -8439,8 +8439,8 @@ export default function SystemMapViewer() {
                     Mining Loot Icon
                     <select className="input mt-1" value={environmentalAsteroidForm.miningLootIcon} onChange={(event) => setEnvironmentalAsteroidForm((current) => (current ? { ...current, miningLootIcon: event.target.value } : current))}>
                       {currentMiningIconOptions.map((icon) => (
-                        <option key={icon} value={icon}>
-                          {icon}
+                        <option key={icon.resPath} value={icon.resPath}>
+                          {icon.label} ({icon.resPath})
                         </option>
                       ))}
                     </select>

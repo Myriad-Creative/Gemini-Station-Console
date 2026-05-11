@@ -312,6 +312,11 @@ export type SystemMapMineableOreItem = {
   icon: string;
 };
 
+export type SystemMapMiningLootIconOption = {
+  resPath: string;
+  label: string;
+};
+
 export type SystemMapPlayerSpawnEntry = {
   id: string;
   name: string;
@@ -342,6 +347,7 @@ export type SystemMapPayload = {
   environmentProfiles: SystemMapEnvironmentProfile[];
   environmentalElements: SystemMapEnvironmentalElement[];
   mineableOreItems: SystemMapMineableOreItem[];
+  miningLootIconOptions: SystemMapMiningLootIconOption[];
   playerSpawn: SystemMapPlayerSpawn | null;
   warnings: string[];
 };
