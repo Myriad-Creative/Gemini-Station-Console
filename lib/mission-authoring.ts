@@ -27,6 +27,9 @@ export type MissionPrerequisiteState = (typeof MISSION_PREREQUISITE_STATES)[numb
 export interface MissionMetaDraft {
   notes: string;
   author: string;
+  dateCreated: string;
+  lastEditDate: string;
+  extraJson: string;
 }
 
 export interface MissionRewardDraft {
@@ -71,6 +74,8 @@ export interface MissionObjectiveDraft {
   key: string;
   type: string;
   targetIds: string[];
+  targetTags: string[];
+  targetType: string;
   itemId: string;
   count: string;
   dropChance: string;
@@ -83,6 +88,7 @@ export interface MissionObjectiveDraft {
   description: string;
   objective: string;
   progressLabel: string;
+  extraJson: string;
 }
 
 export interface MissionStepDraft {
@@ -106,6 +112,7 @@ export interface MissionDraft {
   progressLabel: string;
   repeatable: boolean;
   meta: MissionMetaDraft;
+  extraJson: string;
   arcs: string[];
   tags: string[];
   dialogParticipants: string[];
@@ -258,6 +265,110 @@ function looksLikeMission(value: JsonObject) {
   );
 }
 
+const MISSION_KNOWN_TOP_LEVEL_KEYS = [
+  "id",
+  "title",
+  "level",
+  "image",
+  "giver_id",
+  "turn_in_to",
+  "turnin_to",
+  "recipient_id",
+  "class",
+  "faction",
+  "description",
+  "description_complete",
+  "complete_description",
+  "progress_label",
+  "repeatable",
+  "meta",
+  "arcs",
+  "tags",
+  "dialogParticipants",
+  "dialog_participants",
+  "prerequisites",
+  "rewards",
+  "steps",
+  "conversations",
+] as const;
+
+const MISSION_META_KNOWN_KEYS = [
+  "notes",
+  "author",
+  "date_created",
+  "created_at",
+  "created",
+  "last_edit_date",
+  "last_edited",
+  "updated_at",
+  "modified_at",
+] as const;
+
+const MISSION_OBJECTIVE_KNOWN_KEYS = [
+  "type",
+  "target_id",
+  "target_ids",
+  "target_tag",
+  "target_tags",
+  "target_type",
+  "target_types",
+  "item_id",
+  "item_ids",
+  "count",
+  "required",
+  "required_count",
+  "qty",
+  "quantity",
+  "amount",
+  "drop_chance",
+  "seconds",
+  "sector_id",
+  "region",
+  "contact_id",
+  "conversation_id",
+  "full",
+  "description",
+  "objective",
+  "progress_label",
+] as const;
+
+function stripKnownKeys(source: JsonObject, knownKeys: readonly string[]) {
+  const known = new Set<string>(knownKeys);
+  const next: JsonObject = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!known.has(key)) next[key] = value;
+  }
+  return next;
+}
+
+function formatJsonBlock(source: JsonObject) {
+  return Object.keys(source).length ? JSON.stringify(source, null, 2) : "";
+}
+
+function parseExtraJson(value: string, label: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  const parsed = parseLooseJson(trimmed);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return parsed as JsonObject;
+}
+
+function mergeExtraJson(known: JsonObject, extraJson: string, label: string, reservedKeys: readonly string[]) {
+  const next = { ...known };
+  const reserved = new Set<string>(reservedKeys);
+  const extra = parseExtraJson(extraJson, label);
+  for (const [key, value] of Object.entries(extra)) {
+    if (!reserved.has(key)) next[key] = value;
+  }
+  return next;
+}
+
+function currentMissionTimestamp() {
+  return new Date().toISOString();
+}
+
 function normalizeMissionCollectionEntries(raw: unknown, keyName: string): unknown[] | null {
   const source = asObject(raw);
   const nested = source[keyName];
@@ -308,6 +419,8 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     key: uid("objective"),
     type,
     targetIds: [],
+    targetTags: [],
+    targetType: "",
     itemId: "",
     count: type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
     dropChance: type === "collect" ? "1.0" : "",
@@ -320,6 +433,7 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     description: "",
     objective: "",
     progressLabel: "",
+    extraJson: "",
   };
 }
 
@@ -333,6 +447,7 @@ export function createMissionStepDraft(mode: MissionMode = "single"): MissionSte
 }
 
 export function createMissionDraft(): MissionDraft {
+  const now = currentMissionTimestamp();
   return {
     id: "mission.",
     title: "",
@@ -349,7 +464,11 @@ export function createMissionDraft(): MissionDraft {
     meta: {
       notes: "",
       author: "",
+      dateCreated: now,
+      lastEditDate: now,
+      extraJson: "",
     },
+    extraJson: "",
     arcs: [],
     tags: [],
     dialogParticipants: [],
@@ -401,6 +520,7 @@ export function duplicateMissionObjectiveDraft(objective: MissionObjectiveDraft)
     ...objective,
     key: uid("objective"),
     targetIds: [...objective.targetIds],
+    targetTags: [...objective.targetTags],
   };
 }
 
@@ -414,6 +534,7 @@ export function duplicateMissionStepDraft(step: MissionStepDraft): MissionStepDr
 }
 
 export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
+  const now = currentMissionTimestamp();
   return {
     ...draft,
     id: draft.id.trim() ? `${draft.id.trim()}_copy` : "mission.",
@@ -421,7 +542,11 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
     meta: {
       notes: draft.meta.notes,
       author: draft.meta.author,
+      dateCreated: now,
+      lastEditDate: now,
+      extraJson: draft.meta.extraJson,
     },
+    extraJson: draft.extraJson,
     arcs: [...draft.arcs],
     tags: [...draft.tags],
     dialogParticipants: [...draft.dialogParticipants],
@@ -500,9 +625,11 @@ function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
   return {
     key: uid("objective"),
     type: normalizeObjectiveType(source.type),
-    targetIds: normalizeTargetIds(source.target_id),
-    itemId: numberString(source.item_id),
-    count: numberString(source.count),
+    targetIds: normalizeTargetIds(source.target_id ?? source.target_ids),
+    targetTags: stringList(source.target_tags ?? source.target_tag),
+    targetType: String(source.target_type ?? (Array.isArray(source.target_types) ? source.target_types[0] : source.target_types) ?? ""),
+    itemId: numberString(source.item_id ?? source.item_ids),
+    count: numberString(source.count ?? source.required ?? source.required_count ?? source.qty ?? source.quantity ?? source.amount),
     dropChance: numberString(source.drop_chance),
     seconds: numberString(source.seconds),
     sectorId: String(source.sector_id ?? ""),
@@ -513,6 +640,7 @@ function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
     description: String(source.description ?? ""),
     objective: String(source.objective ?? ""),
     progressLabel: String(source.progress_label ?? ""),
+    extraJson: formatJsonBlock(stripKnownKeys(source, MISSION_OBJECTIVE_KNOWN_KEYS)),
   };
 }
 
@@ -591,6 +719,7 @@ function normalizeImportedRewards(raw: unknown): MissionRewardDraft {
 
 export function normalizeImportedMission(raw: unknown): MissionDraft {
   const source = asObject(raw);
+  const metaSource = asObject(source.meta);
   const steps = Array.isArray(source.steps)
     ? (source.steps as unknown[]).map((entry) => normalizeImportedStep(entry))
     : [createMissionStepDraft("single")];
@@ -612,9 +741,13 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     progressLabel: String(source.progress_label ?? ""),
     repeatable: parseBooleanFlag(source.repeatable),
     meta: {
-      notes: String(asObject(source.meta).notes ?? ""),
-      author: String(asObject(source.meta).author ?? ""),
+      notes: String(metaSource.notes ?? ""),
+      author: String(metaSource.author ?? ""),
+      dateCreated: String(metaSource.date_created ?? metaSource.created_at ?? metaSource.created ?? ""),
+      lastEditDate: String(metaSource.last_edit_date ?? metaSource.last_edited ?? metaSource.updated_at ?? metaSource.modified_at ?? ""),
+      extraJson: formatJsonBlock(stripKnownKeys(metaSource, MISSION_META_KNOWN_KEYS)),
     },
+    extraJson: formatJsonBlock(stripKnownKeys(source, MISSION_KNOWN_TOP_LEVEL_KEYS)),
     arcs: stringList(source.arcs),
     tags: stringList(source.tags),
     dialogParticipants: inferDialogParticipants(conversations, steps, explicitParticipants),
@@ -622,6 +755,18 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
     rewards: normalizeImportedRewards(source.rewards),
     steps: steps.length ? steps : [createMissionStepDraft("single")],
     conversations,
+  };
+}
+
+export function withMissionEditTimestamp(draft: MissionDraft, date = new Date()): MissionDraft {
+  const timestamp = date.toISOString();
+  return {
+    ...draft,
+    meta: {
+      ...draft.meta,
+      dateCreated: String(draft.meta.dateCreated ?? "").trim() || timestamp,
+      lastEditDate: timestamp,
+    },
   };
 }
 
@@ -658,116 +803,132 @@ function serializeConversationBeat(beat: MissionConversationBeatDraft) {
   };
 }
 
+function serializeObjectiveTargetFilters(draft: MissionObjectiveDraft, targetIds: string[], mode: "single" | "array" = "single") {
+  const targetTags = draft.targetTags.map((entry) => entry.trim()).filter(Boolean);
+  const fields: JsonObject = {};
+  if (mode === "array") {
+    if (targetIds.length) fields.target_id = targetIds;
+  } else if (targetIds[0]) {
+    fields.target_id = targetIds[0];
+  }
+  if (targetTags.length) fields.target_tags = targetTags;
+  if (draft.targetType.trim()) fields.target_type = draft.targetType.trim();
+  return fields;
+}
+
+function serializeObjectiveWithExtra(draft: MissionObjectiveDraft, known: JsonObject) {
+  return mergeExtraJson(known, draft.extraJson, "Objective Extra JSON", MISSION_OBJECTIVE_KNOWN_KEYS);
+}
+
 function serializeObjective(draft: MissionObjectiveDraft) {
   const targetIds = draft.targetIds.map((entry) => entry.trim()).filter(Boolean);
-  const singleTarget = targetIds[0] ?? "";
   const type = normalizeObjectiveType(draft.type);
 
   switch (type) {
     case "talk":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
         contact_id: draft.contactId,
         conversation_id: draft.conversationId,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "scan":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
         count: parseNumber(draft.count) ?? 1,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "collect":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: targetIds,
+        ...serializeObjectiveTargetFilters(draft, targetIds, "array"),
         item_id: parseScalar(draft.itemId) ?? draft.itemId,
         count: parseNumber(draft.count) ?? 1,
         drop_chance: parseNumber(draft.dropChance) ?? 1,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "acquire":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
         item_id: parseScalar(draft.itemId) ?? draft.itemId,
         count: parseNumber(draft.count) ?? 1,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "kill":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
         count: parseNumber(draft.count) ?? 1,
-        target_id: targetIds,
+        ...serializeObjectiveTargetFilters(draft, targetIds, "array"),
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "mine":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
         count: parseNumber(draft.count) ?? 1,
-        target_id: targetIds,
+        ...serializeObjectiveTargetFilters(draft, targetIds, "array"),
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "sell":
     case "buy":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
         item_id: parseScalar(draft.itemId) ?? draft.itemId,
         count: parseNumber(draft.count) ?? 1,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "travel":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds, targetIds.length > 1 ? "array" : "single"),
         seconds: parseNumber(draft.seconds) ?? 1,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "explore":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
         sector_id: draft.sectorId,
         region: draft.region,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "repair":
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
         full: draft.fullRepair,
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
     case "hail":
     default:
-      return {
+      return serializeObjectiveWithExtra(draft, {
         type,
-        target_id: singleTarget,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
-      };
+      });
   }
 }
 
@@ -796,7 +957,19 @@ export function exportMissionDraft(draft: MissionDraft) {
       .filter(([id]) => Boolean(id)),
   );
 
-  return {
+  const meta = mergeExtraJson(
+    {
+      notes: draft.meta.notes,
+      author: draft.meta.author,
+      date_created: draft.meta.dateCreated ?? "",
+      last_edit_date: draft.meta.lastEditDate ?? "",
+    },
+    draft.meta.extraJson,
+    "Mission Meta Extra JSON",
+    MISSION_META_KNOWN_KEYS,
+  );
+
+  const known = {
     id: draft.id.trim(),
     title: draft.title,
     level: draft.level.trim(),
@@ -804,10 +977,7 @@ export function exportMissionDraft(draft: MissionDraft) {
     giver_id: draft.giver_id,
     turn_in_to: draft.turn_in_to,
     ...(draft.missionClass.trim() ? { class: draft.missionClass.trim() } : {}),
-    meta: {
-      notes: draft.meta.notes,
-      author: draft.meta.author,
-    },
+    meta,
     description: draft.description,
     description_complete: draft.descriptionComplete,
     ...(draft.progressLabel.trim() ? { progress_label: draft.progressLabel } : {}),
@@ -839,7 +1009,9 @@ export function exportMissionDraft(draft: MissionDraft) {
     },
     steps: draft.steps.map((step) => serializeStep(step)),
     ...(Object.keys(conversations).length ? { conversations } : {}),
-  };
+  } satisfies JsonObject;
+
+  return mergeExtraJson(known, draft.extraJson, "Mission Extra JSON", MISSION_KNOWN_TOP_LEVEL_KEYS);
 }
 
 export function missionFilename(mission: MissionDraft, index: number) {
@@ -879,10 +1051,6 @@ function conversationIdsFromDraft(draft: MissionDraft) {
   return new Set(draft.conversations.map((conversation) => conversation.id.trim()).filter(Boolean));
 }
 
-function objectiveTargetRequirement(type: string) {
-  return type === "collect" || type === "kill" || type === "mine" ? "many" : type === "explore" || type === "acquire" ? "none" : "one";
-}
-
 export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds: string[] = []): ValidationMessage[] {
   const messages: ValidationMessage[] = [];
   const knownIds = new Set(knownMissionIds.map((entry) => entry.trim()).filter(Boolean));
@@ -914,6 +1082,24 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
       messages.push({ level: "error", scope: "missions", draftIndex, itemId: id || undefined, message: "Mission level is required." });
     } else if (parseNumber(mission.level) === undefined) {
       messages.push({ level: "error", scope: "missions", draftIndex, itemId: id || undefined, message: "Mission level must be a valid number." });
+    }
+
+    for (const [label, value] of [
+      ["Mission Extra JSON", mission.extraJson],
+      ["Mission Meta Extra JSON", mission.meta.extraJson],
+    ] as const) {
+      if (!value.trim()) continue;
+      try {
+        parseExtraJson(value, label);
+      } catch (error) {
+        messages.push({
+          level: "error",
+          scope: "missions",
+          draftIndex,
+          itemId: id || undefined,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (!mission.giver_id.trim()) {
@@ -1045,9 +1231,26 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           continue;
         }
 
-        const targetRequirement = objectiveTargetRequirement(type);
         const targetIds = objective.targetIds.map((entry) => entry.trim()).filter(Boolean);
-        if (targetRequirement === "one" && targetIds.length !== 1) {
+        const targetTags = objective.targetTags.map((entry) => entry.trim()).filter(Boolean);
+        const hasContextTarget = targetIds.length > 0 || targetTags.length > 0 || Boolean(objective.targetType.trim());
+        let objectiveExtra: JsonObject = {};
+        if (objective.extraJson.trim()) {
+          try {
+            objectiveExtra = parseExtraJson(objective.extraJson, `${prefix} Extra JSON`);
+          } catch (error) {
+            messages.push({
+              level: "error",
+              scope: "missions",
+              draftIndex,
+              itemId: id || undefined,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        const hasFactionTarget = Boolean(objectiveExtra.target_faction || objectiveExtra.target_factions);
+        const needsSingleTarget = type === "talk" || type === "hail" || type === "buy" || type === "sell" || type === "repair";
+        if (needsSingleTarget && targetIds.length !== 1) {
           messages.push({
             level: "error",
             scope: "missions",
@@ -1056,7 +1259,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
             message: `${prefix} requires exactly one target_id.`,
           });
         }
-        if (targetRequirement === "many" && !targetIds.length) {
+        if (type === "travel" && !targetIds.length) {
           messages.push({
             level: "error",
             scope: "missions",
@@ -1065,8 +1268,30 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
             message: `${prefix} requires at least one target_id.`,
           });
         }
+        if ((type === "scan" || type === "mine") && !hasContextTarget) {
+          messages.push({
+            level: "error",
+            scope: "missions",
+            draftIndex,
+            itemId: id || undefined,
+            message: `${prefix} requires a target_id, target_tags, or target_type.`,
+          });
+        }
+        if (type === "kill" && !targetIds.length && !hasFactionTarget) {
+          messages.push({
+            level: "error",
+            scope: "missions",
+            draftIndex,
+            itemId: id || undefined,
+            message: `${prefix} requires at least one target_id or a target_faction in Extra JSON.`,
+          });
+        }
 
-        if ((type === "scan" || type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "buy" || type === "sell") && parseNumber(objective.count) === undefined) {
+        if (
+          (type === "scan" || type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "buy" || type === "sell") &&
+          objective.count.trim() &&
+          parseNumber(objective.count) === undefined
+        ) {
           messages.push({
             level: "error",
             scope: "missions",

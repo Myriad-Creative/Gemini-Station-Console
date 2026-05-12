@@ -287,6 +287,8 @@ export default function MissionWorkshop({
           mission.missionClass,
           mission.meta.author,
           mission.meta.notes,
+          mission.meta.dateCreated,
+          mission.meta.lastEditDate,
           mission.description,
           mission.descriptionComplete,
           mission.giver_id,
@@ -492,7 +494,7 @@ export default function MissionWorkshop({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mission: selectedMission, index: clampedSelectedIndex, knownMissionIds }),
       });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; savedPath?: string };
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; savedPath?: string; mission?: MissionDraft };
       if (!response.ok || !payload.ok) {
         setStatus({
           tone: "error",
@@ -500,6 +502,9 @@ export default function MissionWorkshop({
           dismissAfterMs: null,
         });
         return;
+      }
+      if (payload.mission) {
+        setMissionAt(clampedSelectedIndex, payload.mission);
       }
       setStatus({
         tone: "success",
@@ -817,6 +822,28 @@ export default function MissionWorkshop({
                   }))
                 }
                 placeholder="Author name"
+              />
+              <Field
+                label="Date Created"
+                value={selectedMission.meta.dateCreated ?? ""}
+                onChange={(value) =>
+                  updateSelected((draft) => ({
+                    ...draft,
+                    meta: { ...draft.meta, dateCreated: value },
+                  }))
+                }
+                placeholder="2026-05-12T00:00:00.000Z"
+              />
+              <Field
+                label="Last Edit Date"
+                value={selectedMission.meta.lastEditDate ?? ""}
+                onChange={(value) =>
+                  updateSelected((draft) => ({
+                    ...draft,
+                    meta: { ...draft.meta, lastEditDate: value },
+                  }))
+                }
+                placeholder="Updated automatically when saved"
               />
             </div>
           </div>
@@ -1502,6 +1529,28 @@ function MissionObjectiveEditor({
             onChange={(value) => onChange({ ...objective, targetIds: value.trim() ? [value] : [] })}
             options={targetOptions}
             placeholder={targetPlaceholder}
+          />
+        ) : null}
+
+        {(type === "scan" || type === "mine") ? (
+          <div className="md:col-span-2">
+            <TokenEditor
+              label="Target Tags"
+              values={objective.targetTags}
+              suggestions={[]}
+              placeholder="ore_item_89"
+              emptyText="No tag filters attached."
+              onChange={(next) => onChange({ ...objective, targetTags: next })}
+            />
+          </div>
+        ) : null}
+
+        {(type === "scan" || type === "mine") ? (
+          <Field
+            label="Target Type"
+            value={objective.targetType}
+            onChange={(value) => onChange({ ...objective, targetType: value })}
+            placeholder="mineable_asteroid"
           />
         ) : null}
 

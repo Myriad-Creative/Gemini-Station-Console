@@ -3,7 +3,7 @@ import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { loadAll } from "@lib/datastore";
-import { exportMissionDraft, missionFilename, validateMissionDrafts, type MissionDraft } from "@lib/mission-authoring";
+import { exportMissionDraft, missionFilename, validateMissionDrafts, withMissionEditTimestamp, type MissionDraft } from "@lib/mission-authoring";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,16 +32,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: errors.map((issue) => issue.message).join(" ") }, { status: 400 });
     }
 
-    const filename = missionFilename(mission, index);
+    const stampedMission = withMissionEditTimestamp(mission);
+    const filename = missionFilename(stampedMission, index);
     const targetPath = path.join(localGameSource.missionsRootPath, filename);
     await fsp.mkdir(path.dirname(targetPath), { recursive: true });
-    await fsp.writeFile(targetPath, stringifyMissionJson(mission), "utf-8");
+    await fsp.writeFile(targetPath, stringifyMissionJson(stampedMission), "utf-8");
     await loadAll();
 
     return NextResponse.json({
       ok: true,
       savedPath: targetPath,
       filename,
+      mission: stampedMission,
     });
   } catch (error) {
     return NextResponse.json(
