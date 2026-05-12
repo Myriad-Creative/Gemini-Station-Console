@@ -528,6 +528,11 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
+function formatScale(value: SystemMapVec | null | undefined) {
+  if (!value) return "";
+  return `${value.x.toLocaleString("en-US", { maximumFractionDigits: 2 })} x ${value.y.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 function formatVec(value: SystemMapVec) {
   return `${formatNumber(value.x)}, ${formatNumber(value.y)}`;
 }
@@ -2675,6 +2680,7 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     rank: form.rank.trim() || "normal",
     faction: entry?.faction || "",
     sprite: entry?.sprite || "",
+    spriteScale: entry?.spriteScale ?? null,
     scene: entry?.scene || "",
     missing: !entry,
     sceneSpawns: [],
@@ -4709,6 +4715,7 @@ export default function SystemMapViewer() {
                 mob.spawnArea.shape.toLowerCase() === "polygon" ? `Spawn area: polygon (${mob.spawnArea.points.length} points)` : `Radius: ${formatNumber(mob.radius)}`,
                 `Level: ${mob.levelMin ?? "?"}-${mob.levelMax ?? "?"} (${mob.rank})`,
                 `Faction: ${mob.faction || "not set"}`,
+                ...(mob.spriteScale ? [`Sprite scale: ${formatScale(mob.spriteScale)}`] : []),
                 `World: ${formatVec(mob.world)}`,
               ],
             };
@@ -4727,6 +4734,7 @@ export default function SystemMapViewer() {
                   `Mob ID: ${sceneMob.mobId}`,
                   `Node: ${sceneMob.nodeName || "unnamed marker"}`,
                   `Faction: ${sceneMob.faction || "not set"}`,
+                  ...(sceneMob.spriteScale ? [`Sprite scale: ${formatScale(sceneMob.spriteScale)}`] : []),
                   `Route: ${sceneMob.routeId || "none"}`,
                   `Scene: ${sceneMob.sourceScene}`,
                   `World: ${formatVec(sceneMob.world)}`,
@@ -8683,6 +8691,7 @@ export default function SystemMapViewer() {
                         <span className="block truncate font-semibold text-white">{mob.displayName || mob.id}</span>
                         <span className="block truncate text-xs text-white/50">{mob.id}</span>
                         <span className="block truncate text-xs text-white/40">{mob.faction || "No faction"} {mob.scene ? `· ${mob.scene}` : ""}</span>
+                        {mob.spriteScale ? <span className="block truncate text-xs text-cyan-100/70">Sprite scale {formatScale(mob.spriteScale)}</span> : null}
                       </span>
                       {selected ? <span className="rounded bg-cyan-300/15 px-2 py-1 text-xs text-cyan-100">Selected</span> : null}
                     </button>

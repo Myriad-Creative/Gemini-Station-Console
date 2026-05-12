@@ -74,6 +74,7 @@ export type SystemMapSceneMobSpawn = {
   routeId: string;
   faction: string;
   sprite: string;
+  spriteScale: SystemMapVec | null;
   missing: boolean;
   sourceScene: string;
 };
@@ -211,6 +212,7 @@ export type SystemMapMobSpawn = {
   rank: string;
   faction: string;
   sprite: string;
+  spriteScale: SystemMapVec | null;
   scene: string;
   missing: boolean;
   sceneSpawns: SystemMapSceneMobSpawn[];
@@ -223,6 +225,7 @@ export type SystemMapMobCatalogEntry = {
   level: number | null;
   faction: string;
   sprite: string;
+  spriteScale: SystemMapVec | null;
   scene: string;
 };
 

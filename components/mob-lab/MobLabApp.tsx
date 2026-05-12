@@ -72,6 +72,13 @@ function labelize(value: string) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
+function spriteScaleLabel(mob: Pick<MobDraft, "sprite_scale_x" | "sprite_scale_y">) {
+  const x = mob.sprite_scale_x.trim();
+  const y = mob.sprite_scale_y.trim();
+  if (!x && !y) return "";
+  return `${x || y} x ${y || x}`;
+}
+
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
   return (
     <div className="card">
@@ -635,6 +642,7 @@ export default function MobLabApp() {
   const spritePreviewSrc = selectedMob
     ? buildIconSrc(selectedMob.sprite || undefined, selectedMob.id || "mob", selectedMob.display_name || "Mob", sharedDataVersion)
     : null;
+  const selectedSpriteScaleLabel = selectedMob ? spriteScaleLabel(selectedMob) : "";
   const hailPortraitPreviewSrc = selectedMob
     ? buildIconSrc(
         selectedMob.hail_portrait || undefined,
@@ -1208,6 +1216,7 @@ export default function MobLabApp() {
                   const hasWarnings = Boolean(issueFlags?.warning);
                   const isDuplicate = duplicateIds.has(mob.id.trim());
                   const selected = selectedMob?.key === mob.key;
+                  const scaleLabel = spriteScaleLabel(mob);
                   const spriteSrc = mob.sprite.trim()
                     ? buildIconSrc(mob.sprite || undefined, mob.id || "mob", mob.display_name || mob.id || "Mob", sharedDataVersion)
                     : "";
@@ -1243,6 +1252,7 @@ export default function MobLabApp() {
                           <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             {mob.faction ? <span className="badge">{mob.faction}</span> : null}
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
+                            {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
                             {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}
                             {!hasErrors && hasWarnings ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Warnings</span> : null}
@@ -1411,6 +1421,30 @@ export default function MobLabApp() {
                       />
                     </div>
                     <div>
+                      <div className="label">Sprite Scale X</div>
+                      <input
+                        className="input mt-1"
+                        type="number"
+                        step="0.01"
+                        value={selectedMob.sprite_scale_x}
+                        placeholder="scene default"
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, sprite_scale_x: event.target.value }))}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                    </div>
+                    <div>
+                      <div className="label">Sprite Scale Y</div>
+                      <input
+                        className="input mt-1"
+                        type="number"
+                        step="0.01"
+                        value={selectedMob.sprite_scale_y}
+                        placeholder="scene default"
+                        onChange={(event) => updateSelectedMob((current) => ({ ...current, sprite_scale_y: event.target.value }))}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                    </div>
+                    <div>
                       <div className="label">Mob End</div>
                       <input
                         className="input mt-1"
@@ -1422,8 +1456,11 @@ export default function MobLabApp() {
                     {spritePreviewSrc ? (
                       <div className="xl:col-span-2">
                         <div className="label">Sprite Preview</div>
-                        <div className="mt-1 flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
+                        <div className="mt-1 flex h-36 w-36 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#06101b]">
                           <img src={spritePreviewSrc} alt={selectedMob.display_name || selectedMob.id || "Mob sprite"} className="h-full w-full object-contain" />
+                        </div>
+                        <div className="mt-2 text-xs text-white/45">
+                          {selectedSpriteScaleLabel ? `Runtime sprite_scale: ${selectedSpriteScaleLabel}` : "Runtime sprite_scale: scene default"}
                         </div>
                       </div>
                     ) : null}

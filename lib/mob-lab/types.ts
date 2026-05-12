@@ -18,6 +18,8 @@ export interface MobDraft {
   meta_description: string;
   scene: string;
   sprite: string;
+  sprite_scale_x: string;
+  sprite_scale_y: string;
   faction: string;
   level: string;
   stat_rank: string;

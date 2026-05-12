@@ -23,6 +23,8 @@ export const BUILT_IN_MOB_STAT_KEYS = [
 
 export const MOB_NUMERIC_FIELDS = [
   "level",
+  "sprite_scale_x",
+  "sprite_scale_y",
   "item_drop_chance",
   "mod_drop_chance",
   "min_mod_rarity",
@@ -46,6 +48,7 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "display_name",
   "scene",
   "sprite",
+  "sprite_scale",
   "faction",
   "level",
   "abilities",
@@ -76,6 +79,7 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "scene",
   "services",
   "sprite",
+  "sprite_scale",
   "stats",
 ] as const;
 

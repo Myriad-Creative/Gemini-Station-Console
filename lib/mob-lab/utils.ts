@@ -43,6 +43,41 @@ function formatDraftNumber(value: unknown) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
 }
 
+function normalizeVector2Draft(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return {
+      x: formatDraftNumber(value),
+      y: formatDraftNumber(value),
+    };
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return {
+        x: formatDraftNumber(parsed),
+        y: formatDraftNumber(parsed),
+      };
+    }
+  }
+
+  if (Array.isArray(value) && value.length >= 2) {
+    return {
+      x: formatDraftNumber(value[0]),
+      y: formatDraftNumber(value[1]),
+    };
+  }
+
+  const record = asObject(value);
+  if ("x" in record || "y" in record) {
+    return {
+      x: formatDraftNumber(record.x),
+      y: formatDraftNumber(record.y),
+    };
+  }
+
+  return { x: "", y: "" };
+}
+
 function stringListFromUnknown(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter(Boolean);
@@ -89,6 +124,21 @@ function parseScalar(value: string) {
   if (!trimmed) return undefined;
   if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
   return trimmed;
+}
+
+function parseVector2Draft(xValue: string, yValue: string, label: string) {
+  const xTrimmed = xValue.trim();
+  const yTrimmed = yValue.trim();
+  if (!xTrimmed && !yTrimmed) return undefined;
+
+  const xSource = xTrimmed || yTrimmed;
+  const ySource = yTrimmed || xTrimmed;
+  const x = Number(xSource);
+  const y = Number(ySource);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error(`${label} must use numeric X and Y values.`);
+  }
+  return [x, y];
 }
 
 function parseObjectTextarea(value: string, label: string) {
@@ -203,6 +253,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
   const statsSource = asObject(source.stats);
   const stats: Record<string, string> = {};
   const scanDraft = normalizeScanDraft(source.scan);
+  const spriteScale = normalizeVector2Draft(source.sprite_scale);
 
   for (const key of Object.keys(statsSource)) {
     stats[key] = formatDraftNumber(statsSource[key]);
@@ -216,6 +267,8 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     meta_description: "",
     scene: stringOrEmpty(source.scene).trim(),
     sprite: stringOrEmpty(source.sprite).trim(),
+    sprite_scale_x: spriteScale.x,
+    sprite_scale_y: spriteScale.y,
     faction: stringOrEmpty(source.faction).trim(),
     level: formatDraftNumber(source.level),
     stat_rank: normalizeMobStatRank(stringOrEmpty(source.rank).trim()),
@@ -298,6 +351,8 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     meta_description: "",
     scene: "",
     sprite: "",
+    sprite_scale_x: "",
+    sprite_scale_y: "",
     faction: "Mob",
     level: "1",
     stat_rank: "normal",
@@ -363,6 +418,8 @@ export function cloneMobDraft(source: MobDraft, existingIds: string[]) {
     id: nextGeneratedMobId(existingIds, source.id || "mob_000"),
     display_name: source.display_name ? `${source.display_name} Copy` : "",
     meta_description: source.meta_description,
+    sprite_scale_x: source.sprite_scale_x,
+    sprite_scale_y: source.sprite_scale_y,
     abilities: [...source.abilities],
     stats: { ...source.stats },
     comms_directory: [...source.comms_directory],
@@ -575,12 +632,14 @@ export function serializeMobDraft(mob: MobDraft) {
   const abilities = mob.abilities.map((entry) => entry.trim()).filter(Boolean).map((entry) => parseScalar(entry));
   const services = mob.services.map((entry) => entry.trim()).filter(Boolean);
   const commsDirectory = mob.comms_directory.map((entry) => entry.trim()).filter(Boolean);
+  const spriteScale = parseVector2Draft(mob.sprite_scale_x, mob.sprite_scale_y, "sprite_scale");
 
   const known = cleanObject({
     id: mob.id.trim(),
     display_name: mob.display_name.trim(),
     scene: mob.scene.trim(),
     sprite: mob.sprite.trim(),
+    sprite_scale: spriteScale,
     faction: mob.faction.trim(),
     level: parseScalar(mob.level),
     abilities: abilities.filter((entry) => entry !== undefined),

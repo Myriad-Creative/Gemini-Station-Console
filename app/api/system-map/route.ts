@@ -233,6 +233,29 @@ function vecValue(value: unknown, fallback: SystemMapVec = { x: 0, y: 0 }): Syst
   return fallback;
 }
 
+function nullableVecValue(value: unknown): SystemMapVec | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { x: value, y: value };
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return { x: parsed, y: parsed };
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    return {
+      x: numberValue(value[0]),
+      y: numberValue(value[1]),
+    };
+  }
+  if (isRecord(value) && ("x" in value || "y" in value)) {
+    return {
+      x: numberValue(value.x),
+      y: numberValue(value.y),
+    };
+  }
+  return null;
+}
+
 function vecArrayValue(value: unknown): SystemMapVec[] {
   return asArray(value)
     .map((entry) => vecValue(entry, { x: Number.NaN, y: Number.NaN }))
@@ -406,6 +429,7 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
         level: nullableNumberValue(mob.level),
         faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
         sprite: stringValue(mob.sprite, ""),
+        spriteScale: nullableVecValue(mob.sprite_scale),
         scene: stringValue(mob.scene, ""),
       };
     })
@@ -807,6 +831,7 @@ function parseSceneContents(
       routeId,
       faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
       sprite: stringValue(mob.sprite, ""),
+      spriteScale: nullableVecValue(mob.sprite_scale),
       missing: !mobCatalog.has(mobId),
       sourceScene: scenePath,
     });
@@ -1000,6 +1025,7 @@ function buildMobSpawn(
     rank: stringValue(spawn.rank, "normal"),
     faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
     sprite: stringValue(mob.sprite, ""),
+    spriteScale: nullableVecValue(mob.sprite_scale),
     scene,
     missing: !mobCatalog.has(mobId),
     sceneSpawns: sceneContents.mobSpawns,
