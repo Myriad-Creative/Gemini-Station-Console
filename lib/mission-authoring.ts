@@ -1217,13 +1217,13 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           message: `Step ${stepIndex + 1} uses single mode, so it must contain exactly one objective.`,
         });
       }
-      if (mode === "all" && !mission.description.trim()) {
+      if (mode === "all" && !step.description.trim() && !mission.description.trim()) {
         messages.push({
           level: "warning",
           scope: "missions",
           draftIndex,
           itemId: id || undefined,
-          message: "Mission description should be filled in for all-mode missions because the popup uses the top-level description.",
+          message: `Step ${stepIndex + 1} uses all mode, so it should have a step description or mission-level fallback description.`,
         });
       }
 

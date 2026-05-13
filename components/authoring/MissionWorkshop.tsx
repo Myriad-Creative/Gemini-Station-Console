@@ -329,6 +329,7 @@ export default function MissionWorkshop({
     () => (selectedMission ? JSON.stringify(exportMissionDraft(selectedMission), null, 2) : ""),
     [selectedMission],
   );
+  const selectedMissionUsesAllMode = selectedMission?.steps.some((step) => step.mode.trim().toLowerCase() === "all") ?? false;
 
   function setMissionAt(index: number, next: MissionDraft) {
     onChange(missions.map((mission, missionIndex) => (missionIndex === index ? next : mission)));
@@ -770,12 +771,15 @@ export default function MissionWorkshop({
               onChange={(checked) => updateSelected((draft) => ({ ...draft, repeatable: checked }))}
             />
 
-            <TextAreaField
-              label="Mission Description"
-              value={selectedMission.description}
-              onChange={(value) => updateSelected((draft) => ({ ...draft, description: value }))}
-              placeholder="Top-level description. Keep this filled for ALL-mode missions and as a general fallback."
-            />
+            {selectedMissionUsesAllMode ? (
+              <TextAreaField
+                label="Mission Description"
+                value={selectedMission.description}
+                onChange={(value) => updateSelected((draft) => ({ ...draft, description: value }))}
+                helperText="Fallback summary for ALL-mode steps when the step description is blank."
+                placeholder="Top-level fallback description for ALL-mode missions."
+              />
+            ) : null}
             <TextAreaField
               label="Description Complete"
               value={selectedMission.descriptionComplete}
@@ -1387,13 +1391,15 @@ function MissionStepEditor({
         <SelectField label="Mode" value={normalizedMode} options={Array.from(MISSION_MODES)} onChange={(value) => onChange({ ...step, mode: value })} />
       </div>
 
-      <TextAreaField
-        label="Step Description"
-        value={step.description}
-        onChange={(value) => onChange({ ...step, description: value })}
-        helperText={modeHelpText}
-        placeholder="Shared step description. For ALL-mode steps this is the main summary text used in the popup."
-      />
+      {normalizedMode === "all" ? (
+        <TextAreaField
+          label="Step Description"
+          value={step.description}
+          onChange={(value) => onChange({ ...step, description: value })}
+          helperText={modeHelpText}
+          placeholder="Main summary text used in the mission popup while this ALL-mode step is active."
+        />
+      ) : null}
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <div className="label">Objectives</div>
@@ -1645,17 +1651,15 @@ function MissionObjectiveEditor({
       ) : null}
 
       <div className="mt-4 space-y-4">
-        <TextAreaField
-          label="Description"
-          value={objective.description}
-          onChange={(value) => onChange({ ...objective, description: value })}
-          helperText={
-            mode === "all"
-              ? "This still exports, but ALL-mode missions should rely on the step description summary instead of individual objective descriptions."
-              : "This description is used in the mission popup while this objective is active."
-          }
-          placeholder="What the player sees in the mission popup."
-        />
+        {mode === "all" ? null : (
+          <TextAreaField
+            label="Description"
+            value={objective.description}
+            onChange={(value) => onChange({ ...objective, description: value })}
+            helperText="This description is used in the mission popup while this objective is active."
+            placeholder="What the player sees in the mission popup."
+          />
+        )}
         <Field
           label="Objective"
           value={objective.objective}
