@@ -113,7 +113,7 @@ export default function MissionCreatorPage() {
     }
     if (lastAutoSeedRef.current === fingerprint) return;
 
-    const seeded = referenceMissions.map((mission) => normalizeImportedMission(mission.raw));
+    const seeded = referenceMissions.map((mission) => normalizeImportedMission(mission.raw, { sourceRelativePath: mission.relativePath }));
     startTransition(() => {
       setMissions(seeded.length ? seeded : [createMissionDraft()]);
     });

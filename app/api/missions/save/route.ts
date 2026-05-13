@@ -4,12 +4,65 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import { loadAll } from "@lib/datastore";
 import { exportMissionDraft, missionFilename, validateMissionDrafts, withMissionEditTimestamp, type MissionDraft } from "@lib/mission-authoring";
+import { parseMissionJsonText } from "@lib/mission-lab/parse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function stringifyMissionJson(mission: MissionDraft) {
   return `${JSON.stringify(exportMissionDraft(mission), null, 2)}\n`;
+}
+
+function toPortableRelativePath(rootPath: string, targetPath: string) {
+  return path.relative(rootPath, targetPath).split(path.sep).join("/");
+}
+
+function resolveMissionRelativePath(rootPath: string, relativePath: unknown) {
+  if (typeof relativePath !== "string" || !relativePath.trim()) return null;
+  if (path.isAbsolute(relativePath)) return null;
+  const resolved = path.resolve(rootPath, relativePath);
+  const root = path.resolve(rootPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
+  return resolved;
+}
+
+async function listMissionJsonFiles(rootPath: string) {
+  const files: string[] = [];
+
+  async function walk(currentPath: string) {
+    const entries = await fsp.readdir(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath);
+        continue;
+      }
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".json")) {
+        files.push(absolutePath);
+      }
+    }
+  }
+
+  await walk(rootPath);
+  return files;
+}
+
+async function findMissionFilesById(rootPath: string, missionId: string) {
+  if (!missionId.trim()) return [];
+  const matches: string[] = [];
+  const files = await listMissionJsonFiles(rootPath);
+  for (const file of files) {
+    try {
+      const parsed = parseMissionJsonText(await fsp.readFile(file, "utf-8"));
+      if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) continue;
+      if (String((parsed.value as Record<string, unknown>).id ?? "").trim() === missionId) {
+        matches.push(file);
+      }
+    } catch {
+      // Ignore unreadable files here; mission diagnostics report parse problems separately.
+    }
+  }
+  return matches;
 }
 
 export async function POST(req: NextRequest) {
@@ -33,17 +86,49 @@ export async function POST(req: NextRequest) {
     }
 
     const stampedMission = withMissionEditTimestamp(mission);
-    const filename = missionFilename(stampedMission, index);
-    const targetPath = path.join(localGameSource.missionsRootPath, filename);
+    const sourcePath = resolveMissionRelativePath(localGameSource.missionsRootPath, stampedMission.sourceRelativePath);
+    const existingPaths = await findMissionFilesById(localGameSource.missionsRootPath, stampedMission.id.trim());
+    let targetPath = sourcePath;
+
+    if (!targetPath && existingPaths.length === 1) {
+      targetPath = existingPaths[0];
+    }
+
+    if (!targetPath && existingPaths.length > 1) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Mission id "${stampedMission.id.trim()}" already exists in multiple files: ${existingPaths.map((file) => toPortableRelativePath(localGameSource.missionsRootPath!, file)).join(", ")}. Clean up the duplicate mission files before saving this draft.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!targetPath) {
+      targetPath = path.join(localGameSource.missionsRootPath, missionFilename(stampedMission, index));
+    }
+
+    const filename = path.basename(targetPath);
+    const savedRelativePath = toPortableRelativePath(localGameSource.missionsRootPath, targetPath);
+    const savedMission: MissionDraft = {
+      ...stampedMission,
+      sourceRelativePath: savedRelativePath,
+    };
+
     await fsp.mkdir(path.dirname(targetPath), { recursive: true });
-    await fsp.writeFile(targetPath, stringifyMissionJson(stampedMission), "utf-8");
+    await fsp.writeFile(targetPath, stringifyMissionJson(savedMission), "utf-8");
     await loadAll();
 
     return NextResponse.json({
       ok: true,
       savedPath: targetPath,
+      sourceRelativePath: savedRelativePath,
       filename,
-      mission: stampedMission,
+      mission: savedMission,
+      duplicateMissionPaths:
+        existingPaths.length > 1
+          ? existingPaths.map((file) => toPortableRelativePath(localGameSource.missionsRootPath!, file))
+          : [],
     });
   } catch (error) {
     return NextResponse.json(

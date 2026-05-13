@@ -349,6 +349,8 @@ const ASTEROID_LOW_DETAIL_ZOOM = 0.0007;
 const ASTEROID_MEDIUM_DETAIL_ZOOM = 0.0015;
 const ASTEROID_SPRITE_DETAIL_ZOOM = 0.004;
 const BARRIER_SPRITE_DETAIL_ZOOM = 0.006;
+const MOB_SPRITE_MARKER_PX = 34;
+const SCENE_MOB_SPRITE_MARKER_PX = 26;
 
 function createDifficultySummary(): DifficultySummary {
   return {
@@ -1182,6 +1184,52 @@ function cameraForBounds(bounds: SystemMapRect, viewport: Viewport): Camera {
 
 function safeIconSrc(icon: string, id: string, name: string) {
   return icon ? buildIconSrc(icon, id, name) : undefined;
+}
+
+function spriteMarkerWorldSize(camera: Camera, spriteScale: SystemMapVec | null | undefined, basePx: number) {
+  const scaleX = clamp(Math.abs(spriteScale?.x ?? 1), 0.45, 4);
+  const scaleY = clamp(Math.abs(spriteScale?.y ?? 1), 0.45, 4);
+  return {
+    width: (basePx * scaleX) / camera.zoom,
+    height: (basePx * scaleY) / camera.zoom,
+  };
+}
+
+function MobSpriteMarker({
+  mob,
+  camera,
+  color,
+  basePx,
+  active,
+}: {
+  mob: SystemMapMobSpawn | SystemMapSceneMobSpawn;
+  camera: Camera;
+  color: string;
+  basePx: number;
+  active?: boolean;
+}) {
+  const icon = safeIconSrc(mob.sprite, mob.mobId, mob.displayName);
+  const radius = (active ? 9 : 6) / camera.zoom;
+  if (!icon) {
+    return <circle cx={mob.world.x} cy={mob.world.y} r={radius} fill={color} stroke="rgba(255,255,255,0.75)" strokeWidth={(active ? 2 : 1) / camera.zoom} />;
+  }
+
+  const size = spriteMarkerWorldSize(camera, mob.spriteScale, basePx);
+  const angle = typeof mob.angleDeg === "number" && Number.isFinite(mob.angleDeg) ? mob.angleDeg : 0;
+  return (
+    <g transform={angle ? `rotate(${angle} ${mob.world.x} ${mob.world.y})` : undefined}>
+      <image
+        href={icon}
+        x={mob.world.x - size.width / 2}
+        y={mob.world.y - size.height / 2}
+        width={size.width}
+        height={size.height}
+        opacity={mob.missing ? 0.58 : 0.96}
+        preserveAspectRatio="xMidYMid meet"
+      />
+      <circle cx={mob.world.x} cy={mob.world.y} r={radius} fill="none" stroke={color} strokeWidth={(active ? 2 : 1.25) / camera.zoom} />
+    </g>
+  );
 }
 
 function gateToForm(gate: SystemMapAsteroidBeltGate): GateDraftForm {
@@ -3123,6 +3171,7 @@ export default function SystemMapViewer() {
   const [viewport, setViewport] = useState<Viewport>({ width: 1200, height: 800 });
   const [camera, setCamera] = useState<Camera>({ center: { x: 0, y: 0 }, zoom: MIN_ZOOM });
   const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>(DEFAULT_TOGGLES);
+  const [useMobSpriteMarkers, setUseMobSpriteMarkers] = useState(false);
   const [query, setQuery] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [draftZones, setDraftZones] = useState<SystemMapZone[]>([]);
@@ -7190,20 +7239,34 @@ export default function SystemMapViewer() {
                               );
                             })
                           : null}
-                        <circle cx={mob.world.x} cy={mob.world.y} r={(draggingMobKey === mobKey ? 9 : 6) / camera.zoom} fill={mobColor} stroke="rgba(255,255,255,0.75)" strokeWidth={(draggingMobKey === mobKey ? 2 : 1) / camera.zoom} />
+                        {useMobSpriteMarkers ? (
+                          <MobSpriteMarker mob={mob} camera={camera} color={mobColor} basePx={MOB_SPRITE_MARKER_PX} active={draggingMobKey === mobKey} />
+                        ) : (
+                          <circle cx={mob.world.x} cy={mob.world.y} r={(draggingMobKey === mobKey ? 9 : 6) / camera.zoom} fill={mobColor} stroke="rgba(255,255,255,0.75)" strokeWidth={(draggingMobKey === mobKey ? 2 : 1) / camera.zoom} />
+                        )}
                       </g>,
                     ];
                     for (const sceneMob of mob.sceneSpawns.filter((entry) => mobMatches(entry, normalizedQuery))) {
                       items.push(
-                        <circle
-                          key={`${zone.id}:${mob.mobId}:${sceneMob.nodeName}:${sceneMob.mobId}:${sceneMob.local.x}:${sceneMob.local.y}`}
-                          cx={sceneMob.world.x}
-                          cy={sceneMob.world.y}
-                          r={4 / camera.zoom}
-                          fill={sceneMob.missing ? "#ef4444" : "#f59e0b"}
-                          stroke="rgba(255,255,255,0.68)"
-                          strokeWidth={1 / camera.zoom}
-                        />,
+                        useMobSpriteMarkers ? (
+                          <MobSpriteMarker
+                            key={`${zone.id}:${mob.mobId}:${sceneMob.nodeName}:${sceneMob.mobId}:${sceneMob.local.x}:${sceneMob.local.y}`}
+                            mob={sceneMob}
+                            camera={camera}
+                            color={sceneMob.missing ? "#ef4444" : "#f59e0b"}
+                            basePx={SCENE_MOB_SPRITE_MARKER_PX}
+                          />
+                        ) : (
+                          <circle
+                            key={`${zone.id}:${mob.mobId}:${sceneMob.nodeName}:${sceneMob.mobId}:${sceneMob.local.x}:${sceneMob.local.y}`}
+                            cx={sceneMob.world.x}
+                            cy={sceneMob.world.y}
+                            r={4 / camera.zoom}
+                            fill={sceneMob.missing ? "#ef4444" : "#f59e0b"}
+                            stroke="rgba(255,255,255,0.68)"
+                            strokeWidth={1 / camera.zoom}
+                          />
+                        ),
                       );
                     }
                     return items;
@@ -7456,6 +7519,22 @@ export default function SystemMapViewer() {
               {key}
             </button>
           ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded border border-white/10 bg-black/20 px-3 py-2">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Mob / NPC markers</div>
+            <div className="text-sm text-white/80">{useMobSpriteMarkers ? "Sprites" : "Dots"}</div>
+          </div>
+          <button
+            type="button"
+            className={`rounded border px-3 py-1.5 text-sm ${
+              useMobSpriteMarkers ? "border-cyan-300/45 bg-cyan-300/15 text-cyan-100" : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+            }`}
+            onClick={() => setUseMobSpriteMarkers((current) => !current)}
+          >
+            {useMobSpriteMarkers ? "Show dots" : "Show sprites"}
+          </button>
         </div>
 
         {toggles.difficulty ? (

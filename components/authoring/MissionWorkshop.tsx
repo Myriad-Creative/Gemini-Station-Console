@@ -494,7 +494,13 @@ export default function MissionWorkshop({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mission: selectedMission, index: clampedSelectedIndex, knownMissionIds }),
       });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; savedPath?: string; mission?: MissionDraft };
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        savedPath?: string;
+        mission?: MissionDraft;
+        duplicateMissionPaths?: string[];
+      };
       if (!response.ok || !payload.ok) {
         setStatus({
           tone: "error",
@@ -507,9 +513,11 @@ export default function MissionWorkshop({
         setMissionAt(clampedSelectedIndex, payload.mission);
       }
       setStatus({
-        tone: "success",
-        message: `Saved the selected mission into the game mission folder${payload.savedPath ? `: ${payload.savedPath}` : "."}`,
-        dismissAfterMs: 7000,
+        tone: payload.duplicateMissionPaths?.length ? "error" : "success",
+        message: `Saved the selected mission into the game mission folder${payload.savedPath ? `: ${payload.savedPath}` : "."}${
+          payload.duplicateMissionPaths?.length ? ` Duplicate files still exist for this mission id: ${payload.duplicateMissionPaths.join(", ")}` : ""
+        }`,
+        dismissAfterMs: payload.duplicateMissionPaths?.length ? null : 7000,
       });
     } catch (error) {
       setStatus({

@@ -99,6 +99,7 @@ export interface MissionStepDraft {
 }
 
 export interface MissionDraft {
+  sourceRelativePath: string;
   id: string;
   title: string;
   level: string;
@@ -290,6 +291,7 @@ const MISSION_KNOWN_TOP_LEVEL_KEYS = [
   "rewards",
   "steps",
   "conversations",
+  "sourceRelativePath",
 ] as const;
 
 const MISSION_META_KNOWN_KEYS = [
@@ -449,6 +451,7 @@ export function createMissionStepDraft(mode: MissionMode = "single"): MissionSte
 export function createMissionDraft(): MissionDraft {
   const now = currentMissionTimestamp();
   return {
+    sourceRelativePath: "",
     id: "mission.",
     title: "",
     level: "1",
@@ -537,6 +540,7 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
   const now = currentMissionTimestamp();
   return {
     ...draft,
+    sourceRelativePath: "",
     id: draft.id.trim() ? `${draft.id.trim()}_copy` : "mission.",
     title: draft.title.trim() ? `${draft.title.trim()} Copy` : "",
     meta: {
@@ -717,7 +721,7 @@ function normalizeImportedRewards(raw: unknown): MissionRewardDraft {
   };
 }
 
-export function normalizeImportedMission(raw: unknown): MissionDraft {
+export function normalizeImportedMission(raw: unknown, options: { sourceRelativePath?: string } = {}): MissionDraft {
   const source = asObject(raw);
   const metaSource = asObject(source.meta);
   const steps = Array.isArray(source.steps)
@@ -728,6 +732,7 @@ export function normalizeImportedMission(raw: unknown): MissionDraft {
   const explicitParticipants = stringList(source.dialogParticipants ?? source.dialog_participants);
 
   return {
+    sourceRelativePath: String(options.sourceRelativePath ?? source.sourceRelativePath ?? ""),
     id: String(source.id ?? ""),
     title: String(source.title ?? ""),
     level: numberString(source.level),
