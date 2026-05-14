@@ -5997,7 +5997,12 @@ export default function SystemMapViewer() {
     });
     setMobSpawnForm(null);
     setActiveMobSpawnAreaPointAddKey(null);
-    setStatus({ tone: "success", message: `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.` });
+    setStatus({
+      tone: zone.active ? "success" : "neutral",
+      message: zone.active
+        ? `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.`
+        : `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}", but "${zone.name || zone.id}" is inactive. The game will skip this spawn until the zone is marked Active.`,
+    });
   }
 
   async function handleSaveZoneChangesToBuild(suppressStatus = false) {
@@ -6082,7 +6087,12 @@ export default function SystemMapViewer() {
       setDeletedZoneIds([]);
       const savedCount = standardSavedCount;
       const targets = standardSavedCount ? "Zones.json" : "";
-      if (!suppressStatus) setStatus({ tone: "success", message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into ${targets || "zone data"}.` });
+      if (!suppressStatus) {
+        setStatus({
+          tone: "success",
+          message: `Saved ${savedCount} zone change${savedCount === 1 ? "" : "s"} into ${targets || "zone data"}. Restart or reload the running game to refresh cached zone spawns.`,
+        });
+      }
       return true;
     } catch (saveError) {
       if (!suppressStatus) setStatus({ tone: "error", message: saveError instanceof Error ? saveError.message : String(saveError) });
@@ -6547,7 +6557,7 @@ export default function SystemMapViewer() {
     ].filter(Boolean);
     setStatus({
       tone: "success",
-      message: `Saved all pending system-map changes to build (${changedSystems.join(", ")}).`,
+      message: `Saved all pending system-map changes to build (${changedSystems.join(", ")}). Restart or reload the running game to refresh cached zone and mob data.`,
     });
   }
 
@@ -6631,8 +6641,19 @@ export default function SystemMapViewer() {
     const normalized = mobSpawnSearch.trim().toLowerCase();
     const catalog = payload?.mobCatalog ?? [];
     if (!normalized) return catalog.slice(0, 40);
-    return catalog.filter((mob) => [mob.id, mob.displayName, mob.level, mob.faction, mob.scene].join(" ").toLowerCase().includes(normalized)).slice(0, 40);
+    return catalog
+      .filter((mob) =>
+        [mob.id, mob.displayName, mob.level, mob.faction, mob.scene, mob.cargoTransport ? "cargo transport bank" : ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized),
+      )
+      .slice(0, 40);
   }, [mobSpawnSearch, payload?.mobCatalog]);
+  const activeMobSpawnZone = useMemo(
+    () => (mobSpawnForm ? mapZones.find((zone) => zoneIdentity(zone) === mobSpawnForm.zoneId) ?? null : null),
+    [mapZones, mobSpawnForm],
+  );
 
   return (
     <div
@@ -8746,6 +8767,11 @@ export default function SystemMapViewer() {
             </div>
 
             <div className="mt-5">
+              {activeMobSpawnZone && !activeMobSpawnZone.active ? (
+                <div className="mb-3 rounded-xl border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+                  This zone is inactive. The game skips inactive zones, so saved mob spawns here will not appear until the zone is marked Active.
+                </div>
+              ) : null}
               <label className="text-sm text-white/65">
                 Mob
                 <input className="input mt-1" value={mobSpawnSearch} placeholder="Search mobs by name, ID, faction, or scene..." onChange={(event) => setMobSpawnSearch(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
@@ -8770,6 +8796,7 @@ export default function SystemMapViewer() {
                         <span className="block truncate font-semibold text-white">{mob.displayName || mob.id}</span>
                         <span className="block truncate text-xs text-white/50">{mob.id}</span>
                         <span className="block truncate text-xs text-white/40">{mob.faction || "No faction"} {mob.scene ? `· ${mob.scene}` : ""}</span>
+                        {mob.cargoTransport ? <span className="mt-1 inline-flex rounded bg-emerald-300/10 px-2 py-0.5 text-xs text-emerald-100">Cargo Transport</span> : null}
                         {mob.spriteScale ? <span className="block truncate text-xs text-cyan-100/70">Sprite scale {formatScale(mob.spriteScale)}</span> : null}
                       </span>
                       {selected ? <span className="rounded bg-cyan-300/15 px-2 py-1 text-xs text-cyan-100">Selected</span> : null}

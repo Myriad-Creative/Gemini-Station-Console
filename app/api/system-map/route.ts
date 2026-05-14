@@ -408,9 +408,16 @@ function buildRegions(regionsJson: unknown): SystemMapRegion[] {
   });
 }
 
+function mobJsonEntries(mobsJson: unknown) {
+  if (Array.isArray(mobsJson)) return mobsJson;
+  const root = asRecord(mobsJson);
+  if (Array.isArray(root.mobs)) return root.mobs;
+  return Object.values(root);
+}
+
 function buildMobCatalog(mobsJson: unknown) {
   const catalog = new Map<string, JsonRecord>();
-  for (const entry of asArray(mobsJson)) {
+  for (const entry of mobJsonEntries(mobsJson)) {
     const mob = asRecord(entry);
     const id = stringValue(mob.id).trim();
     if (id) catalog.set(id, mob);
@@ -418,8 +425,13 @@ function buildMobCatalog(mobsJson: unknown) {
   return catalog;
 }
 
+function mobHasCargoTransport(mob: JsonRecord) {
+  const services = asArray(mob.services).map((entry) => stringValue(entry).trim().toLowerCase());
+  return boolValue(mob.bank_enabled ?? mob.bank) || services.includes("bank");
+}
+
 function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
-  return asArray(mobsJson)
+  return mobJsonEntries(mobsJson)
     .map((entry) => {
       const mob = asRecord(entry);
       const id = stringValue(mob.id).trim();
@@ -428,6 +440,7 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
         displayName: stringValue(mob.display_name ?? mob.name, id),
         level: nullableNumberValue(mob.level),
         faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
+        cargoTransport: mobHasCargoTransport(mob),
         sprite: stringValue(mob.sprite, ""),
         spriteScale: nullableVecValue(mob.sprite_scale),
         scene: stringValue(mob.scene, ""),

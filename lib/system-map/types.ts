@@ -224,6 +224,7 @@ export type SystemMapMobCatalogEntry = {
   displayName: string;
   level: number | null;
   faction: string;
+  cargoTransport: boolean;
   sprite: string;
   spriteScale: SystemMapVec | null;
   scene: string;

@@ -35,6 +35,7 @@ export const MOB_NUMERIC_FIELDS = [
 
 export const MOB_BOOLEAN_FIELDS = [
   "can_attack",
+  "bank_enabled",
   "hail_can_hail_target",
   "is_vendor",
   "item_no_duplicates",
@@ -53,6 +54,8 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "level",
   "abilities",
   "ai_type",
+  "bank",
+  "bank_enabled",
   "can_attack",
   "comms_directory",
   "hail_can_hail_target",

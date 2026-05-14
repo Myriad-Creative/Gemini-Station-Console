@@ -808,7 +808,18 @@ export default function MobLabApp() {
     const filtered = (workspace?.mobs ?? [])
       .filter((mob) => {
         if (!query) return true;
-        const haystack = [mob.id, mob.display_name, mob.meta_description, mob.faction, mob.ai_type, mob.scene, mob.sprite].join(" ").toLowerCase();
+        const haystack = [
+          mob.id,
+          mob.display_name,
+          mob.meta_description,
+          mob.faction,
+          mob.ai_type,
+          mob.scene,
+          mob.sprite,
+          mob.bank_enabled ? "cargo transport bank" : "",
+        ]
+          .join(" ")
+          .toLowerCase();
         return haystack.includes(query);
       })
       .filter((mob) => (factionFilter ? mob.faction.trim() === factionFilter : true))
@@ -1658,6 +1669,7 @@ export default function MobLabApp() {
                           <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             {mob.faction ? <span className="badge">{mob.faction}</span> : null}
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
+                            {mob.bank_enabled ? <span className="badge border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">Cargo Transport</span> : null}
                             {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
                             {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}
@@ -1883,10 +1895,15 @@ export default function MobLabApp() {
                   </div>
                 </Section>
 
-                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, POIs, and repairs.">
+                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, POIs, and repairs.">
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <ToggleField label="Can Attack" checked={selectedMob.can_attack} onChange={(next) => updateSelectedMob((current) => ({ ...current, can_attack: next }))} />
                     <ToggleField label="Vendor" checked={selectedMob.is_vendor} onChange={(next) => updateSelectedMob((current) => ({ ...current, is_vendor: next }))} />
+                    <ToggleField
+                      label="Cargo Transport"
+                      checked={selectedMob.bank_enabled}
+                      onChange={(next) => updateSelectedMob((current) => ({ ...current, bank_enabled: next }))}
+                    />
                     <ToggleField
                       label="POI Visible"
                       checked={selectedMob.poi_show}

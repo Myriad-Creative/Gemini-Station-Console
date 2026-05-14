@@ -26,6 +26,7 @@ export interface MobDraft {
   ai_type: string;
   abilities: string[];
   stats: Record<string, string>;
+  bank_enabled: boolean;
   can_attack: boolean;
   comms_directory: string[];
   hail_can_hail_target: boolean;
