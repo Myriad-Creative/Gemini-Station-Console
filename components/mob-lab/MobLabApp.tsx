@@ -30,21 +30,76 @@ type FactionOption = {
   forcedPoints: number | null;
 };
 
-type LootTableOption = {
+type LootRecordStats = Record<string, number | string | boolean | null>;
+
+type LootTableAbility = {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  cooldown: number;
+  chargeTime: number;
+  energyCost: number;
+  attackRange: number;
+  radiusLabel?: string;
+  radiusMeters?: number;
+  damageType?: string;
+  facingRequirement?: string;
+  primaryModSlot?: string;
+  secondaryModSlot?: string;
+  isGcdLocked?: boolean;
+  effectNames: string[];
+  notes?: string;
+  missing?: boolean;
+};
+
+type LootTableModRecord = {
+  id: string;
+  name: string;
+  slot: string;
+  classRestriction?: string[];
+  levelRequirement: number;
+  itemLevel?: number;
+  rarity: number;
+  durability?: number;
+  sellPrice?: number;
+  stats: LootRecordStats;
+  icon?: string;
+  description?: string;
+  abilities: LootTableAbility[];
+};
+
+type LootTableItemRecord = {
+  id: string;
+  name: string;
+  levelRequirement: number;
+  rarity: number;
+  icon?: string;
+  type: string;
+  description?: string;
+  stats: LootRecordStats;
+};
+
+type LootTableEntry<TRecord> = {
+  id: string;
+  weight: number;
+  probability: number;
+  name: string | null;
+  missing?: boolean;
+  record?: TRecord | null;
+};
+
+type LootTableOption<TRecord> = {
   id: string;
   rolls: number;
   entryCount: number;
   totalWeight: number;
-  entries: {
-    id: string;
-    weight: number;
-    name: string | null;
-  }[];
+  entries: LootTableEntry<TRecord>[];
 };
 
 type LootTableCatalog = {
-  items: LootTableOption[];
-  mods: LootTableOption[];
+  items: LootTableOption<LootTableItemRecord>[];
+  mods: LootTableOption<LootTableModRecord>[];
 };
 import {
   cloneMobDraft,
@@ -186,7 +241,7 @@ function ArrayEditor({
   );
 }
 
-function LootTablePicker({
+function LootTablePicker<TRecord>({
   label,
   value,
   placeholder,
@@ -200,8 +255,8 @@ function LootTablePicker({
   label: string;
   value: string;
   placeholder: string;
-  allOptions: LootTableOption[];
-  options: LootTableOption[];
+  allOptions: LootTableOption<TRecord>[];
+  options: LootTableOption<TRecord>[];
   search: string;
   status: string;
   onSearchChange: (next: string) => void;
@@ -284,6 +339,349 @@ function LootTablePicker({
         )}
       </div>
     </div>
+  );
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0%";
+  const rounded = Math.round(value * 1000) / 10;
+  return `${rounded}%`;
+}
+
+function formatConfiguredDropChance(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "Not set";
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) return trimmed;
+  return `${formatPercent(numeric)} (${trimmed})`;
+}
+
+function formatLootNumber(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+}
+
+function findLootTable<TRecord>(tables: LootTableOption<TRecord>[], id: string) {
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+  return tables.find((table) => table.id === normalizedId) ?? null;
+}
+
+function getPreviewStats(stats: LootRecordStats | null | undefined) {
+  return Object.entries(stats ?? {})
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+    .slice(0, 4);
+}
+
+function LootPreviewIcon({
+  icon,
+  id,
+  label,
+  version,
+  missing,
+}: {
+  icon?: string;
+  id: string;
+  label: string;
+  version: string;
+  missing?: boolean;
+}) {
+  return (
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
+      {missing ? (
+        <span className="text-lg font-semibold text-yellow-100">?</span>
+      ) : (
+        <img src={buildIconSrc(icon || undefined, id, label, version)} alt={label} className="h-full w-full object-contain" />
+      )}
+    </div>
+  );
+}
+
+function LootPreviewHeader({
+  title,
+  configuredId,
+  table,
+  dropChance,
+  noDuplicates,
+  missingLabel,
+}: {
+  title: string;
+  configuredId: string;
+  table: LootTableOption<unknown> | null;
+  dropChance: string;
+  noDuplicates: boolean;
+  missingLabel: string;
+}) {
+  const selectedId = configuredId.trim();
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-3 py-3">
+      <div>
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="mt-1 font-mono text-xs text-white/50">{selectedId || missingLabel}</div>
+      </div>
+      <div className="flex flex-wrap justify-end gap-2 text-xs">
+        <span className="badge">Drop {formatConfiguredDropChance(dropChance)}</span>
+        {table ? (
+          <>
+            <span className="badge">{table.rolls} roll{table.rolls === 1 ? "" : "s"}</span>
+            <span className="badge">{table.entryCount} entries</span>
+            <span className="badge">Weight {formatLootNumber(table.totalWeight)}</span>
+          </>
+        ) : null}
+        {noDuplicates ? <span className="badge">No duplicates</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function ModLootRows({
+  table,
+  configuredId,
+  version,
+}: {
+  table: LootTableOption<LootTableModRecord> | null;
+  configuredId: string;
+  version: string;
+}) {
+  if (!configuredId.trim()) {
+    return <div className="px-3 py-5 text-sm text-white/45">No mod loot table is selected for this mob.</div>;
+  }
+  if (!table) {
+    return <div className="px-3 py-5 text-sm text-yellow-100">Configured mod loot table "{configuredId}" was not found in the loaded catalog.</div>;
+  }
+  if (!table.entries.length) {
+    return <div className="px-3 py-5 text-sm text-white/45">This mod loot table has no entries.</div>;
+  }
+
+  return (
+    <div className="divide-y divide-white/10">
+      {table.entries.map((entry) => {
+        const record = entry.record ?? null;
+        const label = record?.name || entry.name || entry.id;
+        const stats = getPreviewStats(record?.stats);
+        return (
+          <div key={`${table.id}-${entry.id}`} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="flex min-w-0 gap-3">
+              <LootPreviewIcon icon={record?.icon} id={entry.id} label={label} version={version} missing={entry.missing} />
+              <div className="min-w-0 space-y-2">
+                <div>
+                  <div className="truncate text-sm font-semibold text-white">{label}</div>
+                  <div className="truncate font-mono text-xs text-white/45">{entry.id}</div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="badge">Weight {formatLootNumber(entry.weight)}</span>
+                  <span className="badge">{formatPercent(entry.probability)} table chance</span>
+                  {record ? (
+                    <>
+                      <span className="badge">{record.slot || "Unknown slot"}</span>
+                      <span className="badge">Level {formatLootNumber(record.levelRequirement)}</span>
+                      <span className="badge">Rarity {formatLootNumber(record.rarity)}</span>
+                    </>
+                  ) : (
+                    <span className="badge text-yellow-100">Missing mod record</span>
+                  )}
+                </div>
+                {stats.length ? (
+                  <div className="flex flex-wrap gap-2 text-xs text-white/60">
+                    {stats.map(([stat, value]) => (
+                      <span key={`${entry.id}-${stat}`} className="rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                        {labelize(stat)} {String(value)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-white/35">Abilities</div>
+              {record?.abilities?.length ? (
+                <div className="space-y-2">
+                  {record.abilities.map((ability) => (
+                    <div key={`${entry.id}-${ability.id}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                      <LootPreviewIcon icon={ability.icon} id={ability.id} label={ability.name || ability.id} version={version} missing={ability.missing} />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-white/85">{ability.name || ability.id}</div>
+                        <div className="truncate font-mono text-xs text-white/40">{ability.id}</div>
+                        <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-white/45">
+                          <span>{formatLootNumber(ability.cooldown)}s cd</span>
+                          {ability.attackRange ? <span>{formatLootNumber(ability.attackRange)} range</span> : null}
+                          {ability.energyCost ? <span>{formatLootNumber(ability.energyCost)} energy</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/40">No abilities listed for this mod.</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ItemLootRows({
+  table,
+  configuredId,
+  version,
+}: {
+  table: LootTableOption<LootTableItemRecord> | null;
+  configuredId: string;
+  version: string;
+}) {
+  if (!configuredId.trim()) {
+    return <div className="px-3 py-5 text-sm text-white/45">No item loot table is selected for this mob.</div>;
+  }
+  if (!table) {
+    return <div className="px-3 py-5 text-sm text-yellow-100">Configured item loot table "{configuredId}" was not found in the loaded catalog.</div>;
+  }
+  if (!table.entries.length) {
+    return <div className="px-3 py-5 text-sm text-white/45">This item loot table has no entries.</div>;
+  }
+
+  return (
+    <div className="divide-y divide-white/10">
+      {table.entries.map((entry) => {
+        const record = entry.record ?? null;
+        const label = record?.name || entry.name || entry.id;
+        const stats = getPreviewStats(record?.stats);
+        return (
+          <div key={`${table.id}-${entry.id}`} className="flex min-w-0 gap-3 px-3 py-3">
+            <LootPreviewIcon icon={record?.icon} id={entry.id} label={label} version={version} missing={entry.missing} />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div>
+                <div className="truncate text-sm font-semibold text-white">{label}</div>
+                <div className="truncate font-mono text-xs text-white/45">{entry.id}</div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="badge">Weight {formatLootNumber(entry.weight)}</span>
+                <span className="badge">{formatPercent(entry.probability)} table chance</span>
+                {record ? (
+                  <>
+                    <span className="badge">{record.type || "Unknown type"}</span>
+                    <span className="badge">Level {formatLootNumber(record.levelRequirement)}</span>
+                    <span className="badge">Rarity {formatLootNumber(record.rarity)}</span>
+                  </>
+                ) : (
+                  <span className="badge text-yellow-100">Missing item record</span>
+                )}
+              </div>
+              {stats.length ? (
+                <div className="flex flex-wrap gap-2 text-xs text-white/60">
+                  {stats.map(([stat, value]) => (
+                    <span key={`${entry.id}-${stat}`} className="rounded border border-white/10 bg-white/[0.03] px-2 py-1">
+                      {labelize(stat)} {String(value)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MobLootPreview({
+  mob,
+  itemTable,
+  modTable,
+  catalogStatus,
+  version,
+}: {
+  mob: MobDraft;
+  itemTable: LootTableOption<LootTableItemRecord> | null;
+  modTable: LootTableOption<LootTableModRecord> | null;
+  catalogStatus: string;
+  version: string;
+}) {
+  const abilityRows = useMemo(() => {
+    const rows = new Map<string, { ability: LootTableAbility; mods: string[] }>();
+    for (const entry of modTable?.entries ?? []) {
+      const modName = entry.record?.name || entry.name || entry.id;
+      for (const ability of entry.record?.abilities ?? []) {
+        const current = rows.get(ability.id);
+        if (current) {
+          if (!current.mods.includes(modName)) current.mods.push(modName);
+        } else {
+          rows.set(ability.id, { ability, mods: [modName] });
+        }
+      }
+    }
+    return [...rows.values()].sort((left, right) => {
+      const byName = (left.ability.name || left.ability.id).localeCompare(right.ability.name || right.ability.id);
+      if (byName !== 0) return byName;
+      return left.ability.id.localeCompare(right.ability.id);
+    });
+  }, [modTable]);
+
+  return (
+    <Section
+      title="Loot Preview"
+      description="Read-only view of the resolved loot tables for the selected mob, including dropped mods, mod abilities, and dropped items."
+    >
+      {catalogStatus ? <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/60">{catalogStatus}</div> : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/10">
+          <LootPreviewHeader
+            title="Mods This Mob Can Drop"
+            configuredId={mob.mod_loot_table}
+            table={modTable as LootTableOption<unknown> | null}
+            dropChance={mob.mod_drop_chance}
+            noDuplicates={mob.mod_no_duplicates}
+            missingLabel="No mod loot table"
+          />
+          <ModLootRows table={modTable} configuredId={mob.mod_loot_table} version={version} />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/10">
+          <LootPreviewHeader
+            title="Items This Mob Can Drop"
+            configuredId={mob.item_loot_table}
+            table={itemTable as LootTableOption<unknown> | null}
+            dropChance={mob.item_drop_chance}
+            noDuplicates={mob.item_no_duplicates}
+            missingLabel="No item loot table"
+          />
+          <ItemLootRows table={itemTable} configuredId={mob.item_loot_table} version={version} />
+        </div>
+      </div>
+
+      <div className="space-y-3 border-t border-white/10 pt-4">
+        <div>
+          <div className="text-sm font-medium text-white">Abilities From Dropped Mods</div>
+          <div className="mt-1 text-xs text-white/50">Unique abilities found across the selected mod loot table.</div>
+        </div>
+        {abilityRows.length ? (
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {abilityRows.map(({ ability, mods }) => (
+              <div key={ability.id} className="flex min-w-0 gap-3 rounded-xl border border-white/10 bg-black/10 p-3">
+                <LootPreviewIcon icon={ability.icon} id={ability.id} label={ability.name || ability.id} version={version} missing={ability.missing} />
+                <div className="min-w-0 space-y-2">
+                  <div>
+                    <div className="truncate text-sm font-semibold text-white">{ability.name || ability.id}</div>
+                    <div className="truncate font-mono text-xs text-white/45">{ability.id}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="badge">{formatLootNumber(ability.cooldown)}s cd</span>
+                    {ability.attackRange ? <span className="badge">{formatLootNumber(ability.attackRange)} range</span> : null}
+                    {ability.damageType ? <span className="badge">{ability.damageType}</span> : null}
+                  </div>
+                  <div className="text-xs text-white/50">From {mods.join(", ")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+            No mod abilities are resolved for the selected mob loot table.
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -738,6 +1136,14 @@ export default function MobLabApp() {
       [option.id, ...option.entries.map((entry) => `${entry.id} ${entry.name ?? ""}`)].join(" ").toLowerCase().includes(query),
     );
   }, [lootTables.mods, modLootTableSearch]);
+  const selectedItemLootTable = useMemo(
+    () => (selectedMob ? findLootTable(lootTables.items, selectedMob.item_loot_table) : null),
+    [lootTables.items, selectedMob?.item_loot_table],
+  );
+  const selectedModLootTable = useMemo(
+    () => (selectedMob ? findLootTable(lootTables.mods, selectedMob.mod_loot_table) : null),
+    [lootTables.mods, selectedMob?.mod_loot_table],
+  );
 
   function updateSelectedMob(updater: (current: MobDraft) => MobDraft) {
     if (!workspace || !selectedMob) return;
@@ -2170,6 +2576,14 @@ export default function MobLabApp() {
                     />
                   </div>
                 </Section>
+
+                <MobLootPreview
+                  mob={selectedMob}
+                  itemTable={selectedItemLootTable}
+                  modTable={selectedModLootTable}
+                  catalogStatus={lootTableCatalogStatus}
+                  version={sharedDataVersion}
+                />
 
                 <Section title="Extra JSON" description="Unknown runtime fields stay here and are merged back into the mob at export time.">
                   <textarea
