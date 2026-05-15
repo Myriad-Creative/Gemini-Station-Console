@@ -39,6 +39,7 @@ export interface MobDraft {
   item_drop_chance: string;
   item_loot_table: string;
   item_no_duplicates: boolean;
+  location_container: boolean;
   max_mod_rarity: string;
   merchant_profile: string;
   min_mod_rarity: string;

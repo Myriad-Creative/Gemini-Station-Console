@@ -94,11 +94,6 @@ function booleanFromUnknown(value: unknown) {
   return false;
 }
 
-function booleanFromUnknownDefault(value: unknown, defaultValue: boolean) {
-  if (value === null || value === undefined) return defaultValue;
-  return booleanFromUnknown(value);
-}
-
 function stripKeys(source: JsonObject, keys: readonly string[]) {
   const excluded = new Set(keys);
   const next: JsonObject = {};
@@ -284,7 +279,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     can_attack: booleanFromUnknown(source.can_attack),
     comms_directory: stringListFromUnknown(source.comms_directory),
     hail_can_hail_target: booleanFromUnknown(source.hail_can_hail_target),
-    home_port_enabled: booleanFromUnknownDefault(source.home_port_enabled, true),
+    home_port_enabled: booleanFromUnknown(source.home_port_enabled),
     hail_greeting: stringOrEmpty(source.hail_greeting).trim(),
     hail_image: stringOrEmpty(source.hail_image).trim(),
     hail_name: stringOrEmpty(source.hail_name).trim(),
@@ -293,6 +288,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     item_drop_chance: formatDraftNumber(source.item_drop_chance),
     item_loot_table: stringOrEmpty(source.item_loot_table).trim(),
     item_no_duplicates: booleanFromUnknown(source.item_no_duplicates),
+    location_container: booleanFromUnknown(source.location_container),
     max_mod_rarity: formatDraftNumber(source.max_mod_rarity),
     merchant_profile: stringOrEmpty(source.merchant_profile).trim(),
     min_mod_rarity: formatDraftNumber(source.min_mod_rarity),
@@ -370,7 +366,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     can_attack: true,
     comms_directory: [],
     hail_can_hail_target: false,
-    home_port_enabled: true,
+    home_port_enabled: false,
     hail_greeting: "",
     hail_image: "",
     hail_name: "",
@@ -379,6 +375,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     item_drop_chance: "",
     item_loot_table: "",
     item_no_duplicates: false,
+    location_container: false,
     max_mod_rarity: "",
     merchant_profile: "",
     min_mod_rarity: "",
@@ -673,6 +670,7 @@ export function serializeMobDraft(mob: MobDraft) {
     item_loot_table: mob.item_loot_table.trim(),
     item_drop_chance: parseScalar(mob.item_drop_chance),
     item_no_duplicates: mob.item_no_duplicates,
+    location_container: mob.location_container,
     mod_loot_table: mob.mod_loot_table.trim(),
     mod_drop_chance: parseScalar(mob.mod_drop_chance),
     min_mod_rarity: parseScalar(mob.min_mod_rarity),
@@ -764,5 +762,5 @@ export function duplicateMobIdMap(mobs: MobDraft[]) {
 }
 
 export function mobFieldBooleanDefaults() {
-  return Object.fromEntries(MOB_BOOLEAN_FIELDS.map((key) => [key, key === "home_port_enabled"])) as Record<string, boolean>;
+  return Object.fromEntries(MOB_BOOLEAN_FIELDS.map((key) => [key, false])) as Record<string, boolean>;
 }
