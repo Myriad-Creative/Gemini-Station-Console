@@ -30,6 +30,7 @@ export interface MobDraft {
   can_attack: boolean;
   comms_directory: string[];
   hail_can_hail_target: boolean;
+  home_port_enabled: boolean;
   hail_greeting: string;
   hail_image: string;
   hail_name: string;

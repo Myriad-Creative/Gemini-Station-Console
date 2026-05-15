@@ -94,6 +94,11 @@ function booleanFromUnknown(value: unknown) {
   return false;
 }
 
+function booleanFromUnknownDefault(value: unknown, defaultValue: boolean) {
+  if (value === null || value === undefined) return defaultValue;
+  return booleanFromUnknown(value);
+}
+
 function stripKeys(source: JsonObject, keys: readonly string[]) {
   const excluded = new Set(keys);
   const next: JsonObject = {};
@@ -279,6 +284,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     can_attack: booleanFromUnknown(source.can_attack),
     comms_directory: stringListFromUnknown(source.comms_directory),
     hail_can_hail_target: booleanFromUnknown(source.hail_can_hail_target),
+    home_port_enabled: booleanFromUnknownDefault(source.home_port_enabled, true),
     hail_greeting: stringOrEmpty(source.hail_greeting).trim(),
     hail_image: stringOrEmpty(source.hail_image).trim(),
     hail_name: stringOrEmpty(source.hail_name).trim(),
@@ -364,6 +370,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     can_attack: true,
     comms_directory: [],
     hail_can_hail_target: false,
+    home_port_enabled: true,
     hail_greeting: "",
     hail_image: "",
     hail_name: "",
@@ -654,6 +661,7 @@ export function serializeMobDraft(mob: MobDraft) {
     services,
     comms_directory: commsDirectory,
     hail_can_hail_target: mob.hail_can_hail_target,
+    home_port_enabled: mob.home_port_enabled,
     hail_name: mob.hail_name.trim(),
     hail_greeting: mob.hail_greeting.trim(),
     hail_image: mob.hail_image.trim(),
@@ -756,5 +764,5 @@ export function duplicateMobIdMap(mobs: MobDraft[]) {
 }
 
 export function mobFieldBooleanDefaults() {
-  return Object.fromEntries(MOB_BOOLEAN_FIELDS.map((key) => [key, false])) as Record<string, boolean>;
+  return Object.fromEntries(MOB_BOOLEAN_FIELDS.map((key) => [key, key === "home_port_enabled"])) as Record<string, boolean>;
 }
