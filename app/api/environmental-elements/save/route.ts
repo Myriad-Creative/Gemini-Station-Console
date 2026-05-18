@@ -6,6 +6,16 @@ import { getLocalGameSourceState } from "@lib/local-game-source";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const SALVAGE_DEBRIS_SPRITES = [
+  "res://assets/environment/tut_debris/deb_2.png",
+  "res://assets/environment/tut_debris/deb_3.png",
+  "res://assets/environment/tut_debris/deb_4.png",
+  "res://assets/environment/tut_debris/deb_5.png",
+  "res://assets/environment/tut_debris/deb_6.png",
+  "res://assets/environment/tut_debris/deb_7.png",
+];
+const SALVAGE_DEBRIS_SPRITE_SET = new Set(SALVAGE_DEBRIS_SPRITES);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -161,6 +171,13 @@ function validateEnvironmentalElements(value: unknown) {
       if (data.textures !== undefined) {
         if (!Array.isArray(data.textures)) return `Salvage debris "${id}" textures must be an array.`;
         if (data.textures.some((texture) => typeof texture !== "string")) return `Salvage debris "${id}" textures must only contain string paths.`;
+        const unsupportedTextures = data.textures.filter((texture) => typeof texture === "string" && !SALVAGE_DEBRIS_SPRITE_SET.has(texture));
+        if (unsupportedTextures.length) {
+          return `Salvage debris "${id}" textures include unsupported sprite paths: ${unsupportedTextures.join(", ")}.`;
+        }
+      }
+      if (data.texture !== undefined && (typeof data.texture !== "string" || !SALVAGE_DEBRIS_SPRITE_SET.has(data.texture))) {
+        return `Salvage debris "${id}" texture must use one of the allowed tut_debris sprite paths.`;
       }
       const minCharges = Number(data.min_charges ?? data.charges_min ?? 1);
       const maxCharges = Number(data.max_charges ?? data.charges_max ?? 5);

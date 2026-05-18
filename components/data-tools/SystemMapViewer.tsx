@@ -543,7 +543,15 @@ const ASTEROID_SPRITES = [
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = ASTEROID_SPRITES[0];
 const DEFAULT_MINING_LOOT_ICON = "res://assets/items/icon_lootbox_mining.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
-const DEFAULT_SALVAGE_DEBRIS_TEXTURE = "res://assets/environment/debris/debris_1.png";
+const SALVAGE_DEBRIS_SPRITES = [
+  "res://assets/environment/tut_debris/deb_2.png",
+  "res://assets/environment/tut_debris/deb_3.png",
+  "res://assets/environment/tut_debris/deb_4.png",
+  "res://assets/environment/tut_debris/deb_5.png",
+  "res://assets/environment/tut_debris/deb_6.png",
+  "res://assets/environment/tut_debris/deb_7.png",
+];
+const DEFAULT_SALVAGE_DEBRIS_TEXTURE = SALVAGE_DEBRIS_SPRITES[0];
 const DEFAULT_SALVAGE_LOOT_ICON = "res://assets/items/icon_lootbox.png";
 const DEFAULT_SALVAGE_LOOT_TABLE = "salvage_debris";
 const BARRIER_DEBRIS_SPRITES = [
@@ -562,6 +570,28 @@ const BARRIER_GAS_SPRITES = [
   "res://assets/environment/cloud/cloud_lg_brown_fifty.png",
   "res://assets/environment/nebula/nebula_1.png",
 ];
+
+function normalizeSalvageDebrisTexture(texture: string) {
+  return SALVAGE_DEBRIS_SPRITES.includes(texture) ? texture : DEFAULT_SALVAGE_DEBRIS_TEXTURE;
+}
+
+function normalizeSalvageDebrisTextures(textures: string[], fallbackTexture = DEFAULT_SALVAGE_DEBRIS_TEXTURE) {
+  const allowed = new Set(SALVAGE_DEBRIS_SPRITES);
+  const normalized = textures.filter((texture) => allowed.has(texture));
+  const deduped = Array.from(new Set(normalized));
+  if (deduped.length) return deduped;
+  return [normalizeSalvageDebrisTexture(fallbackTexture)];
+}
+
+function toggleSalvageDebrisTextureSelection(currentValue: string, texture: string, checked: boolean, fallbackTexture = DEFAULT_SALVAGE_DEBRIS_TEXTURE) {
+  const current = new Set(normalizeSalvageDebrisTextures(parseStringListInput(currentValue)));
+  if (checked) {
+    current.add(texture);
+  } else {
+    current.delete(texture);
+  }
+  return stringListInputValue(normalizeSalvageDebrisTextures([...current], fallbackTexture));
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -1960,7 +1990,7 @@ function createSalvageDebrisDraftFromPoint(world: SystemMapVec, payload: SystemM
     count: 6,
     spawnRadius: 2600,
     texture: DEFAULT_SALVAGE_DEBRIS_TEXTURE,
-    textures: BARRIER_DEBRIS_SPRITES,
+    textures: SALVAGE_DEBRIS_SPRITES,
     radius: 160,
     visualScale: 1,
     level: 1,
@@ -2093,8 +2123,8 @@ function salvageDebrisToForm(debris: SystemMapSalvageDebris, mode: SalvageDebris
     localY: numberInputValue(debris.local.y),
     count: numberInputValue(debris.count),
     spawnRadius: numberInputValue(debris.spawnRadius),
-    texture: debris.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE,
-    textures: stringListInputValue(debris.textures),
+    texture: normalizeSalvageDebrisTexture(debris.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE),
+    textures: stringListInputValue(normalizeSalvageDebrisTextures(debris.textures, debris.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE)),
     radius: numberInputValue(debris.radius),
     visualScale: numberInputValue(debris.visualScale),
     level: numberInputValue(debris.level),
@@ -2651,6 +2681,8 @@ function withSalvageDebrisForm(
     y: Math.round(localY),
   };
   const world = sectorLocalToWorld(sector, local, sectorSize);
+  const selectedTexture = normalizeSalvageDebrisTexture(form.texture.trim());
+  const selectedTextures = normalizeSalvageDebrisTextures(parseStringListInput(form.textures), selectedTexture);
   const nextDebris: SystemMapSalvageDebris = {
     ...debris,
     id,
@@ -2666,8 +2698,8 @@ function withSalvageDebrisForm(
     world,
     count: Math.round(count),
     spawnRadius,
-    texture: form.texture.trim() || DEFAULT_SALVAGE_DEBRIS_TEXTURE,
-    textures: parseStringListInput(form.textures),
+    texture: selectedTexture,
+    textures: selectedTextures,
     radius,
     visualScale,
     level: Math.round(level),
@@ -2790,6 +2822,8 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
   if (element.type === "salvage_debris") {
     const minCharges = Math.max(1, Math.min(5, Math.round(element.minCharges)));
     const maxCharges = Math.max(minCharges, Math.max(1, Math.min(5, Math.round(element.maxCharges))));
+    const texture = normalizeSalvageDebrisTexture(element.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE);
+    const textures = normalizeSalvageDebrisTextures(element.textures, texture);
     return {
       id: element.id,
       type: element.type,
@@ -2803,8 +2837,8 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
         position: [Math.round(element.local.x), Math.round(element.local.y)],
         count: Math.max(1, Math.round(element.count)),
         spawn_radius: Math.max(0, element.spawnRadius),
-        texture: element.texture,
-        textures: element.textures,
+        texture,
+        textures,
         radius: element.radius,
         visual_scale: element.visualScale,
         level: Math.max(1, Math.round(element.level)),
@@ -9347,8 +9381,9 @@ export default function SystemMapViewer() {
             const debris = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDebrisForm.originalId);
             const activeDebris = debris?.type === "salvage_debris" ? debris : null;
             const ownerZone = activeDebris ? (mapZones.find((zone) => zoneOwnsSalvageDebris(zone, activeDebris)) ?? null) : null;
-            const previewIcon = safeIconSrc(environmentalDebrisForm.texture, environmentalDebrisForm.id, environmentalDebrisForm.name);
-            const currentTextureOptions = BARRIER_DEBRIS_SPRITES.includes(environmentalDebrisForm.texture) ? BARRIER_DEBRIS_SPRITES : [environmentalDebrisForm.texture, ...BARRIER_DEBRIS_SPRITES].filter(Boolean);
+            const texture = normalizeSalvageDebrisTexture(environmentalDebrisForm.texture);
+            const previewIcon = safeIconSrc(texture, environmentalDebrisForm.id, environmentalDebrisForm.name);
+            const selectedTextureVariants = new Set(normalizeSalvageDebrisTextures(parseStringListInput(environmentalDebrisForm.textures), texture));
             const currentLootIconOptions = miningLootIconOptionsWithCurrent(payload?.miningLootIconOptions ?? [], environmentalDebrisForm.salvageLootIcon);
             return (
               <div
@@ -9419,18 +9454,52 @@ export default function SystemMapViewer() {
                   </label>
                   <label className="text-sm text-white/65 sm:col-span-2">
                     Texture
-                    <select className="input mt-1" value={environmentalDebrisForm.texture} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, texture: event.target.value } : current))}>
-                      {currentTextureOptions.map((texture) => (
-                        <option key={texture} value={texture}>
-                          {texture}
+                    <select
+                      className="input mt-1"
+                      value={texture}
+                      onChange={(event) =>
+                        setEnvironmentalDebrisForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                texture: event.target.value,
+                                textures: toggleSalvageDebrisTextureSelection(current.textures, event.target.value, true, event.target.value),
+                              }
+                            : current,
+                        )
+                      }
+                    >
+                      {SALVAGE_DEBRIS_SPRITES.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
                         </option>
                       ))}
                     </select>
                   </label>
-                  <label className="text-sm text-white/65 sm:col-span-2">
+                  <div className="text-sm text-white/65 sm:col-span-2">
                     Texture Variants
-                    <textarea className="input mt-1 min-h-20 font-mono" value={environmentalDebrisForm.textures} placeholder="Optional, one texture path per line" onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, textures: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
-                  </label>
+                    <div className="mt-1 grid gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+                      {SALVAGE_DEBRIS_SPRITES.map((option) => (
+                        <label key={option} className="flex items-center gap-2 font-mono text-xs text-white/70">
+                          <input
+                            type="checkbox"
+                            checked={selectedTextureVariants.has(option)}
+                            onChange={(event) =>
+                              setEnvironmentalDebrisForm((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      textures: toggleSalvageDebrisTextureSelection(current.textures, option, event.target.checked, current.texture),
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                          {option}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   <label className="text-sm text-white/65">
                     Radius
                     <input className="input mt-1" type="number" min="1" value={environmentalDebrisForm.radius} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, radius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />

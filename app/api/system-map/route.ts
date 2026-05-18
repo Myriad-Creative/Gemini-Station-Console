@@ -47,7 +47,15 @@ const DEFAULT_HAZARD_BARRIER_BAND_WIDTH = 480;
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = "res://assets/environment/asteroids/ast_1.png";
 const DEFAULT_MINING_LOOT_ICON = "res://assets/items/icon_lootbox_mining.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
-const DEFAULT_SALVAGE_DEBRIS_TEXTURE = "res://assets/environment/debris/debris_1.png";
+const SALVAGE_DEBRIS_SPRITES = [
+  "res://assets/environment/tut_debris/deb_2.png",
+  "res://assets/environment/tut_debris/deb_3.png",
+  "res://assets/environment/tut_debris/deb_4.png",
+  "res://assets/environment/tut_debris/deb_5.png",
+  "res://assets/environment/tut_debris/deb_6.png",
+  "res://assets/environment/tut_debris/deb_7.png",
+];
+const DEFAULT_SALVAGE_DEBRIS_TEXTURE = SALVAGE_DEBRIS_SPRITES[0];
 const DEFAULT_SALVAGE_LOOT_ICON = "res://assets/items/icon_lootbox.png";
 const DEFAULT_SALVAGE_LOOT_TABLE = "salvage_debris";
 const ITEM_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
@@ -162,6 +170,18 @@ function stringArrayValue(value: unknown) {
   return asArray(value)
     .map((entry) => stringValue(entry).trim())
     .filter(Boolean);
+}
+
+function normalizeSalvageDebrisTexture(texture: string) {
+  return SALVAGE_DEBRIS_SPRITES.includes(texture) ? texture : DEFAULT_SALVAGE_DEBRIS_TEXTURE;
+}
+
+function normalizeSalvageDebrisTextures(textures: string[], fallbackTexture = DEFAULT_SALVAGE_DEBRIS_TEXTURE) {
+  const allowed = new Set(SALVAGE_DEBRIS_SPRITES);
+  const normalized = textures.filter((texture) => allowed.has(texture));
+  const deduped = Array.from(new Set(normalized));
+  if (deduped.length) return deduped;
+  return [normalizeSalvageDebrisTexture(fallbackTexture)];
 }
 
 function numberValue(value: unknown, fallback = 0) {
@@ -732,6 +752,8 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
           accentColor.length >= 4 ? [accentColor[0], accentColor[1], accentColor[2], accentColor[3]] : [1, 0.86, 0.12, 1];
         const minCharges = Math.max(1, Math.min(5, Math.round(numberValue(data.min_charges ?? data.charges_min, 1))));
         const maxCharges = Math.max(minCharges, Math.max(1, Math.min(5, Math.round(numberValue(data.max_charges ?? data.charges_max, 5)))));
+        const texture = normalizeSalvageDebrisTexture(stringValue(data.texture, DEFAULT_SALVAGE_DEBRIS_TEXTURE));
+        const textures = normalizeSalvageDebrisTextures(stringArrayValue(data.textures), texture);
         return {
           ...common,
           type: "salvage_debris" as const,
@@ -739,8 +761,8 @@ function buildEnvironmentalElements(elementsJson: unknown, hazardBarrierProfiles
           world: worldFromSectorLocal(sector, local),
           count: Math.max(1, Math.round(numberValue(data.count ?? data.spawn_count, 1))),
           spawnRadius: Math.max(0, numberValue(data.spawn_radius ?? data.field_radius, 0)),
-          texture: stringValue(data.texture, DEFAULT_SALVAGE_DEBRIS_TEXTURE),
-          textures: stringArrayValue(data.textures),
+          texture,
+          textures,
           radius: Math.max(1, numberValue(data.radius, 160)),
           visualScale: Math.max(0.01, numberValue(data.visual_scale, 1)),
           level: Math.max(1, Math.round(numberValue(data.level, 1))),
