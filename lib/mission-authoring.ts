@@ -9,6 +9,7 @@ export const MISSION_OBJECTIVE_TYPES = [
   "scan",
   "collect",
   "acquire",
+  "deliver",
   "kill",
   "mine",
   "sell",
@@ -424,7 +425,17 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     targetTags: [],
     targetType: "",
     itemId: "",
-    count: type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "scan" || type === "buy" || type === "sell" ? "1" : "",
+    count:
+      type === "collect" ||
+      type === "acquire" ||
+      type === "deliver" ||
+      type === "kill" ||
+      type === "mine" ||
+      type === "scan" ||
+      type === "buy" ||
+      type === "sell"
+        ? "1"
+        : "",
     dropChance: type === "collect" ? "1.0" : "",
     seconds: type === "travel" ? "1" : "",
     sectorId: "",
@@ -869,6 +880,16 @@ function serializeObjective(draft: MissionObjectiveDraft) {
         objective: draft.objective,
         progress_label: draft.progressLabel,
       });
+    case "deliver":
+      return serializeObjectiveWithExtra(draft, {
+        type,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
+        item_id: parseScalar(draft.itemId) ?? draft.itemId,
+        count: parseNumber(draft.count) ?? 1,
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+      });
     case "kill":
       return serializeObjectiveWithExtra(draft, {
         type,
@@ -1254,7 +1275,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           }
         }
         const hasFactionTarget = Boolean(objectiveExtra.target_faction || objectiveExtra.target_factions);
-        const needsSingleTarget = type === "talk" || type === "hail" || type === "buy" || type === "sell" || type === "repair";
+        const needsSingleTarget = type === "talk" || type === "hail" || type === "deliver" || type === "buy" || type === "sell" || type === "repair";
         if (needsSingleTarget && targetIds.length !== 1) {
           messages.push({
             level: "error",
@@ -1293,7 +1314,14 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
         }
 
         if (
-          (type === "scan" || type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "buy" || type === "sell") &&
+          (type === "scan" ||
+            type === "collect" ||
+            type === "acquire" ||
+            type === "deliver" ||
+            type === "kill" ||
+            type === "mine" ||
+            type === "buy" ||
+            type === "sell") &&
           objective.count.trim() &&
           parseNumber(objective.count) === undefined
         ) {
@@ -1306,16 +1334,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
           });
         }
 
-        if ((type === "collect" || type === "acquire") && !objective.itemId.trim()) {
-          messages.push({
-            level: "error",
-            scope: "missions",
-            draftIndex,
-            itemId: id || undefined,
-            message: `${prefix} requires an item_id.`,
-          });
-        }
-        if ((type === "buy" || type === "sell") && !objective.itemId.trim()) {
+        if ((type === "collect" || type === "acquire" || type === "deliver" || type === "buy" || type === "sell") && !objective.itemId.trim()) {
           messages.push({
             level: "error",
             scope: "missions",

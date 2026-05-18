@@ -56,6 +56,7 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   scan: "Scan",
   collect: "Collect",
   acquire: "Acquire",
+  deliver: "Deliver",
   kill: "Kill",
   mine: "Mine",
   sell: "Sell",
@@ -1473,6 +1474,7 @@ function MissionObjectiveEditor({
     type === "talk" ||
     type === "scan" ||
     type === "collect" ||
+    type === "deliver" ||
     type === "kill" ||
     type === "mine" ||
     type === "sell" ||
@@ -1595,7 +1597,14 @@ function MissionObjectiveEditor({
           </>
         ) : null}
 
-        {(type === "scan" || type === "collect" || type === "acquire" || type === "kill" || type === "mine" || type === "buy" || type === "sell") ? (
+        {(type === "scan" ||
+          type === "collect" ||
+          type === "acquire" ||
+          type === "deliver" ||
+          type === "kill" ||
+          type === "mine" ||
+          type === "buy" ||
+          type === "sell") ? (
           <Field
             label="Count"
             value={objective.count}
@@ -1604,7 +1613,7 @@ function MissionObjectiveEditor({
           />
         ) : null}
 
-        {(type === "collect" || type === "acquire" || type === "buy" || type === "sell") ? (
+        {(type === "collect" || type === "acquire" || type === "deliver" || type === "buy" || type === "sell") ? (
           <LookupIdField
             label="Item ID"
             value={objective.itemId}
