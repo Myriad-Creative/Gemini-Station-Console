@@ -1672,7 +1672,6 @@ export default function MobLabApp() {
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
                             {mob.bank_enabled ? <span className="badge border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">Cargo Transport</span> : null}
                             {mob.location_container ? <span className="badge border border-sky-300/20 bg-sky-300/10 text-sky-100">Location Container</span> : null}
-                            {!mob.home_port_enabled ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Home Port Off</span> : null}
                             {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
                             {hasErrors ? <span className="badge border border-red-300/20 bg-red-300/10 text-red-100">Needs Fixes</span> : null}

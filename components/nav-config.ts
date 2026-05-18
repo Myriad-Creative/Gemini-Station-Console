@@ -34,6 +34,7 @@ const MISSION_SECTION_LINKS: NavLink[] = [
 
 const COMBAT_SECTION_LINKS: NavLink[] = [
   { href: "/mob-lab", label: "Mob Lab" },
+  { href: "/ships", label: "Player Ships" },
   { href: "/data/ai", label: "AI JSON" },
   { href: "/abilities", label: "Abilities Dashboard" },
   { href: "/abilities/manager", label: "Abilities" },
@@ -90,7 +91,7 @@ export function getActiveSection(pathname: string | null | undefined): SectionKe
     return "missions";
   }
 
-  if (pathname === "/mob-lab" || pathname === "/data/ai" || pathname.startsWith("/data/ai/")) {
+  if (pathname === "/mob-lab" || pathname === "/ships" || pathname.startsWith("/ships/") || pathname === "/data/ai" || pathname.startsWith("/data/ai/")) {
     return "combat";
   }
 
