@@ -35,6 +35,7 @@ export interface MobDraft {
   hail_image: string;
   hail_name: string;
   hail_portrait: string;
+  is_sorter: boolean;
   is_vendor: boolean;
   item_drop_chance: string;
   item_loot_table: string;

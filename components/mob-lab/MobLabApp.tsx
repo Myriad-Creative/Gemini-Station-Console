@@ -817,6 +817,7 @@ export default function MobLabApp() {
           mob.scene,
           mob.sprite,
           mob.bank_enabled ? "cargo transport bank" : "",
+          mob.is_sorter ? "sorter sorting" : "",
           mob.location_container ? "location container" : "",
         ]
           .join(" ")
@@ -1671,6 +1672,7 @@ export default function MobLabApp() {
                             {mob.faction ? <span className="badge">{mob.faction}</span> : null}
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
                             {mob.bank_enabled ? <span className="badge border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">Cargo Transport</span> : null}
+                            {mob.is_sorter ? <span className="badge border border-violet-300/20 bg-violet-300/10 text-violet-100">Sorter</span> : null}
                             {mob.location_container ? <span className="badge border border-sky-300/20 bg-sky-300/10 text-sky-100">Location Container</span> : null}
                             {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
@@ -1897,7 +1899,7 @@ export default function MobLabApp() {
                   </div>
                 </Section>
 
-                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, home port, location containers, POIs, and repairs.">
+                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, home port, location containers, POIs, and repairs.">
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <ToggleField label="Can Attack" checked={selectedMob.can_attack} onChange={(next) => updateSelectedMob((current) => ({ ...current, can_attack: next }))} />
                     <ToggleField label="Vendor" checked={selectedMob.is_vendor} onChange={(next) => updateSelectedMob((current) => ({ ...current, is_vendor: next }))} />
@@ -1905,6 +1907,11 @@ export default function MobLabApp() {
                       label="Cargo Transport"
                       checked={selectedMob.bank_enabled}
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, bank_enabled: next }))}
+                    />
+                    <ToggleField
+                      label="Sorter"
+                      checked={selectedMob.is_sorter}
+                      onChange={(next) => updateSelectedMob((current) => ({ ...current, is_sorter: next }))}
                     />
                     <ToggleField
                       label="Home Port"
