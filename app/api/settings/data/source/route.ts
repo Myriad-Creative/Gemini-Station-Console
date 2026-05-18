@@ -10,6 +10,8 @@ const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
   "mobs",
   "comms",
   "merchantProfiles",
+  "sortingProfiles",
+  "smelterProfiles",
   "poi",
   "regions",
   "tradeRoutes",

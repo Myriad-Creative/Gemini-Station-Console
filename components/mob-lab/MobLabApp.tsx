@@ -101,6 +101,13 @@ type LootTableCatalog = {
   items: LootTableOption<LootTableItemRecord>[];
   mods: LootTableOption<LootTableModRecord>[];
 };
+
+type ProcessingProfile = {
+  id: string;
+  name: string;
+  description: string;
+  recipes: Array<{ id: string; name: string }>;
+};
 import {
   cloneMobDraft,
   createBlankMobDraft,
@@ -125,6 +132,44 @@ function labelize(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function stringFromUnknown(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function importProcessingProfiles(text: string) {
+  const parsed = JSON.parse(text) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((entry) => {
+      const source = asRecord(entry);
+      const recipes = Array.isArray(source.recipes) ? source.recipes : [];
+      return {
+        id: stringFromUnknown(source.id).trim(),
+        name: stringFromUnknown(source.name).trim(),
+        description: stringFromUnknown(source.description).trim(),
+        recipes: recipes
+          .map((recipe) => {
+            const recipeSource = asRecord(recipe);
+            return {
+              id: stringFromUnknown(recipeSource.id).trim(),
+              name: stringFromUnknown(recipeSource.name).trim(),
+            };
+          })
+          .filter((recipe) => recipe.id || recipe.name),
+      };
+    })
+    .filter((profile) => profile.id)
+    .sort((left, right) => {
+      const byName = (left.name || left.id).localeCompare(right.name || right.id);
+      return byName !== 0 ? byName : left.id.localeCompare(right.id);
+    });
 }
 
 function spriteScaleLabel(mob: Pick<MobDraft, "sprite_scale_x" | "sprite_scale_y">) {
@@ -336,6 +381,110 @@ function LootTablePicker<TRecord>({
           <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
             No loot tables matched the current search.
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProcessingProfilePicker({
+  label,
+  value,
+  placeholder,
+  profiles,
+  filteredProfiles,
+  search,
+  status,
+  missingLabel,
+  onSearchChange,
+  onValueChange,
+  onSelectProfile,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  profiles: ProcessingProfile[];
+  filteredProfiles: ProcessingProfile[];
+  search: string;
+  status: string;
+  missingLabel: string;
+  onSearchChange: (next: string) => void;
+  onValueChange: (next: string) => void;
+  onSelectProfile: (profile: ProcessingProfile) => void;
+}) {
+  const selected = profiles.find((profile) => profile.id === value.trim()) ?? null;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="label">{label}</div>
+          <div className="mt-1 text-xs text-white/45">
+            {selected
+              ? `${selected.recipes.length} recipe${selected.recipes.length === 1 ? "" : "s"}`
+              : `Pick from the local ${label.toLowerCase()} catalog, or clear for no profile.`}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded border border-white/10 px-3 py-2 text-xs text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!value.trim()}
+          onClick={() => onValueChange("")}
+        >
+          Clear
+        </button>
+      </div>
+
+      <input className="input" value={value} placeholder={placeholder} onFocus={selectInputContents} onChange={(event) => onValueChange(event.target.value)} />
+      <input className="input" value={search} placeholder={`Search ${label.toLowerCase()} by ID, name, description, or recipes...`} onChange={(event) => onSearchChange(event.target.value)} />
+
+      {value.trim() && !selected ? (
+        <div className="rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
+          Current profile "{value}" was not found in the loaded catalog.
+        </div>
+      ) : null}
+
+      {status ? <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{status}</div> : null}
+
+      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+        {filteredProfiles.length ? (
+          filteredProfiles.map((profile) => {
+            const isSelected = value.trim() === profile.id;
+            const sampleRecipes = profile.recipes.slice(0, 4);
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                className={`w-full rounded-xl border p-3 text-left transition ${
+                  isSelected ? "border-cyan-300/60 bg-cyan-300/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                }`}
+                onClick={() => onSelectProfile(profile)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-white">{profile.name || profile.id}</div>
+                    <div className="mt-1 font-mono text-xs text-white/45">{profile.id}</div>
+                  </div>
+                  <div className="shrink-0 rounded bg-white/5 px-2 py-1 text-xs text-white/55">
+                    {profile.recipes.length} recipe{profile.recipes.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                {profile.description ? <div className="mt-2 line-clamp-2 text-sm leading-5 text-white/60">{profile.description}</div> : null}
+                {sampleRecipes.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {sampleRecipes.map((recipe) => (
+                      <span key={`${profile.id}-${recipe.id || recipe.name}`} className="badge">
+                        {recipe.name || recipe.id}
+                      </span>
+                    ))}
+                    {profile.recipes.length > sampleRecipes.length ? <span className="badge">+{profile.recipes.length - sampleRecipes.length} more</span> : null}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">{missingLabel}</div>
         )}
       </div>
     </div>
@@ -741,6 +890,12 @@ export default function MobLabApp() {
   const [merchantProfileSearch, setMerchantProfileSearch] = useState("");
   const [merchantProfileCatalogStatus, setMerchantProfileCatalogStatus] = useState("");
   const [isCreatingMerchantProfile, setIsCreatingMerchantProfile] = useState(false);
+  const [sortingProfiles, setSortingProfiles] = useState<ProcessingProfile[]>([]);
+  const [sortingProfileSearch, setSortingProfileSearch] = useState("");
+  const [sortingProfileCatalogStatus, setSortingProfileCatalogStatus] = useState("");
+  const [smelterProfiles, setSmelterProfiles] = useState<ProcessingProfile[]>([]);
+  const [smelterProfileSearch, setSmelterProfileSearch] = useState("");
+  const [smelterProfileCatalogStatus, setSmelterProfileCatalogStatus] = useState("");
   const [commsContacts, setCommsContacts] = useState<CommsContactDraft[]>([]);
   const [commsContactSearch, setCommsContactSearch] = useState("");
   const [commsCatalogStatus, setCommsCatalogStatus] = useState("");
@@ -817,7 +972,10 @@ export default function MobLabApp() {
           mob.scene,
           mob.sprite,
           mob.bank_enabled ? "cargo transport bank" : "",
+          mob.is_smelter ? "smelter smelting refinery" : "",
           mob.is_sorter ? "sorter sorting" : "",
+          mob.smelter_profile,
+          mob.sorting_profile,
           mob.location_container ? "location container" : "",
         ]
           .join(" ")
@@ -957,6 +1115,35 @@ export default function MobLabApp() {
       }
     }
 
+    async function loadProcessingProfiles(
+      kind: "sortingProfiles" | "smelterProfiles",
+      setProfiles: (profiles: ProcessingProfile[]) => void,
+      setCatalogStatus: (status: string) => void,
+      missingMessage: string,
+    ) {
+      try {
+        const response = await fetch(`/api/settings/data/source?kind=${kind}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok || !payload.text) {
+          if (!cancelled) {
+            setProfiles([]);
+            setCatalogStatus(missingMessage);
+          }
+          return;
+        }
+
+        const profiles = importProcessingProfiles(payload.text);
+        if (cancelled) return;
+        setProfiles(profiles);
+        setCatalogStatus("");
+      } catch (error) {
+        if (!cancelled) {
+          setProfiles([]);
+          setCatalogStatus(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
     async function loadCommsContacts() {
       try {
         const response = await fetch("/api/settings/data/source?kind=comms");
@@ -1033,6 +1220,8 @@ export default function MobLabApp() {
 
     void loadFactions();
     void loadMerchantProfiles();
+    void loadProcessingProfiles("sortingProfiles", setSortingProfiles, setSortingProfileCatalogStatus, "No sorting profile catalog was found under the active local game root.");
+    void loadProcessingProfiles("smelterProfiles", setSmelterProfiles, setSmelterProfileCatalogStatus, "No smelter profile catalog was found under the active local game root.");
     void loadCommsContacts();
     void loadHailImages();
     void loadLootTables();
@@ -1096,6 +1285,20 @@ export default function MobLabApp() {
       return haystack.includes(query);
     });
   }, [merchantProfileSearch, merchantProfiles]);
+  const filteredSortingProfiles = useMemo(() => {
+    const query = sortingProfileSearch.trim().toLowerCase();
+    if (!query) return sortingProfiles;
+    return sortingProfiles.filter((profile) =>
+      [profile.id, profile.name, profile.description, ...profile.recipes.map((recipe) => `${recipe.id} ${recipe.name}`)].join(" ").toLowerCase().includes(query),
+    );
+  }, [sortingProfileSearch, sortingProfiles]);
+  const filteredSmelterProfiles = useMemo(() => {
+    const query = smelterProfileSearch.trim().toLowerCase();
+    if (!query) return smelterProfiles;
+    return smelterProfiles.filter((profile) =>
+      [profile.id, profile.name, profile.description, ...profile.recipes.map((recipe) => `${recipe.id} ${recipe.name}`)].join(" ").toLowerCase().includes(query),
+    );
+  }, [smelterProfileSearch, smelterProfiles]);
   const selectedCommsContact = useMemo(() => {
     if (!selectedMob) return null;
     const commDirectoryIds = new Set(selectedMob.comms_directory.map((entry) => entry.trim()).filter(Boolean));
@@ -1672,7 +1875,6 @@ export default function MobLabApp() {
                             {mob.faction ? <span className="badge">{mob.faction}</span> : null}
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
                             {mob.bank_enabled ? <span className="badge border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">Cargo Transport</span> : null}
-                            {mob.is_sorter ? <span className="badge border border-violet-300/20 bg-violet-300/10 text-violet-100">Sorter</span> : null}
                             {mob.location_container ? <span className="badge border border-sky-300/20 bg-sky-300/10 text-sky-100">Location Container</span> : null}
                             {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
@@ -1914,6 +2116,11 @@ export default function MobLabApp() {
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, is_sorter: next }))}
                     />
                     <ToggleField
+                      label="Smelter"
+                      checked={selectedMob.is_smelter}
+                      onChange={(next) => updateSelectedMob((current) => ({ ...current, is_smelter: next }))}
+                    />
+                    <ToggleField
                       label="Home Port"
                       checked={selectedMob.home_port_enabled}
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, home_port_enabled: next }))}
@@ -2031,6 +2238,37 @@ export default function MobLabApp() {
                         )}
                       </div>
                     </div>
+                  </div>
+                </Section>
+
+                <Section title="Processing Profiles" description="Assign sorting and smelting profile IDs from the local game profile catalogs.">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <ProcessingProfilePicker
+                      label="Sorting Profile"
+                      value={selectedMob.sorting_profile}
+                      placeholder="starter_sorter"
+                      profiles={sortingProfiles}
+                      filteredProfiles={filteredSortingProfiles}
+                      search={sortingProfileSearch}
+                      status={sortingProfileCatalogStatus}
+                      missingLabel="No sorting profiles matched the current search."
+                      onSearchChange={setSortingProfileSearch}
+                      onValueChange={(next) => updateSelectedMob((current) => ({ ...current, sorting_profile: next }))}
+                      onSelectProfile={(profile) => updateSelectedMob((current) => ({ ...current, sorting_profile: profile.id, is_sorter: true }))}
+                    />
+                    <ProcessingProfilePicker
+                      label="Smelter Profile"
+                      value={selectedMob.smelter_profile}
+                      placeholder="copper_queen_starter"
+                      profiles={smelterProfiles}
+                      filteredProfiles={filteredSmelterProfiles}
+                      search={smelterProfileSearch}
+                      status={smelterProfileCatalogStatus}
+                      missingLabel="No smelter profiles matched the current search."
+                      onSearchChange={setSmelterProfileSearch}
+                      onValueChange={(next) => updateSelectedMob((current) => ({ ...current, smelter_profile: next }))}
+                      onSelectProfile={(profile) => updateSelectedMob((current) => ({ ...current, smelter_profile: profile.id, is_smelter: true }))}
+                    />
                   </div>
                 </Section>
 

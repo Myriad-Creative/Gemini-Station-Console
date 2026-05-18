@@ -35,6 +35,7 @@ export interface MobDraft {
   hail_image: string;
   hail_name: string;
   hail_portrait: string;
+  is_smelter: boolean;
   is_sorter: boolean;
   is_vendor: boolean;
   item_drop_chance: string;
@@ -52,12 +53,14 @@ export interface MobDraft {
   poi_require_discovery: boolean;
   poi_show: boolean;
   repair_cost: string;
+  smelter_profile: string;
   scan_faction: string;
   scan_class: string;
   scan_notes: string;
   scan_tiers: ScanTierDraft[];
   scan_extra_json: string;
   services: string[];
+  sorting_profile: string;
   extra_json: string;
 }
 

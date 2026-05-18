@@ -9,6 +9,8 @@ export type UploadedDataAvailability = {
   abilities: boolean;
   comms: boolean;
   merchantProfiles: boolean;
+  sortingProfiles: boolean;
+  smelterProfiles: boolean;
   poi: boolean;
   regions: boolean;
   tradeRoutes: boolean;
@@ -56,6 +58,8 @@ export type UploadedDataFileKind =
   | "abilitiesIndex"
   | "comms"
   | "merchantProfiles"
+  | "sortingProfiles"
+  | "smelterProfiles"
   | "poi"
   | "regions"
   | "tradeRoutes"
@@ -81,6 +85,8 @@ export const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
   abilitiesIndex: path.join("data", "database", "abilities", "json", "_AbilityIndex.json"),
   comms: path.join("data", "database", "comms", "Comms.json"),
   merchantProfiles: path.join("data", "database", "vendor", "merchant_profiles.json"),
+  sortingProfiles: path.join("data", "database", "sorting", "sorting_profiles.json"),
+  smelterProfiles: path.join("data", "database", "smelter", "smelter_profiles.json"),
   poi: path.join("data", "map", "poi.json"),
   regions: path.join("data", "map", "regions.json"),
   tradeRoutes: path.join("data", "routes", "trade_routes.json"),
@@ -104,6 +110,8 @@ function emptyAvailability(): UploadedDataAvailability {
     abilities: false,
     comms: false,
     merchantProfiles: false,
+    sortingProfiles: false,
+    smelterProfiles: false,
     poi: false,
     regions: false,
     tradeRoutes: false,
@@ -143,6 +151,8 @@ function detectAvailability(root: string): UploadedDataAvailability {
     abilities: fs.existsSync(path.join(root, DATA_FILE_PATHS.abilitiesIndex)),
     comms: fs.existsSync(path.join(root, DATA_FILE_PATHS.comms)),
     merchantProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.merchantProfiles)),
+    sortingProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.sortingProfiles)),
+    smelterProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.smelterProfiles)),
     poi: fs.existsSync(path.join(root, DATA_FILE_PATHS.poi)),
     regions: fs.existsSync(path.join(root, DATA_FILE_PATHS.regions)),
     tradeRoutes: fs.existsSync(path.join(root, DATA_FILE_PATHS.tradeRoutes)),
