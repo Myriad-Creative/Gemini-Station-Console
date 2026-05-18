@@ -112,7 +112,7 @@ export type SystemMapEnvironmentalElementCommon = {
   draft?: boolean;
   modified?: boolean;
   zoneId?: string | null;
-  type: "hazard_barrier" | "environment_region" | "mineable_asteroid";
+  type: "hazard_barrier" | "environment_region" | "mineable_asteroid" | "salvage_debris";
   name: string;
   active: boolean;
   sector: SystemMapVec;
@@ -186,7 +186,39 @@ export type SystemMapMineableAsteroid = SystemMapEnvironmentalElementCommon & {
   randomizeRotation: boolean;
 };
 
-export type SystemMapEnvironmentalElement = SystemMapEnvironmentalHazardBarrier | SystemMapEnvironmentalRegion | SystemMapMineableAsteroid;
+export type SystemMapSalvageDebris = SystemMapEnvironmentalElementCommon & {
+  type: "salvage_debris";
+  local: SystemMapVec;
+  world: SystemMapVec;
+  count: number;
+  spawnRadius: number;
+  texture: string;
+  textures: string[];
+  radius: number;
+  visualScale: number;
+  level: number;
+  minCharges: number;
+  maxCharges: number;
+  respawnSeconds: number;
+  lootboxCount: number;
+  itemLootTable: string;
+  itemDropChance: number;
+  itemRolls: number;
+  itemNoDuplicates: boolean;
+  salvageSuccessChance: number;
+  salvageScannedSuccessBonus: number;
+  salvageBonusSuccessScale: number;
+  salvageExplosionChance: number;
+  salvageScannedExplosionChanceReduction: number;
+  salvageExplosionDamage: number;
+  salvageExplosionRadius: number;
+  salvageLootIcon: string;
+  salvageLootIconScale: SystemMapVec;
+  salvageLootAccentColor: [number, number, number, number];
+  randomizeRotation: boolean;
+};
+
+export type SystemMapEnvironmentalElement = SystemMapEnvironmentalHazardBarrier | SystemMapEnvironmentalRegion | SystemMapMineableAsteroid | SystemMapSalvageDebris;
 
 export type SystemMapMobSpawn = {
   key: string;

@@ -24,6 +24,7 @@ import type {
   SystemMapSceneBarrier,
   SystemMapSceneMobSpawn,
   SystemMapSector,
+  SystemMapSalvageDebris,
   SystemMapStageCatalogEntry,
   SystemMapStagePlacement,
   SystemMapVec,
@@ -61,7 +62,8 @@ type ContextMenuEditTarget =
   | { kind: "gate"; gateId: string }
   | { kind: "environmental_barrier"; elementId: string }
   | { kind: "environmental_region"; elementId: string }
-  | { kind: "mineable_asteroid"; elementId: string };
+  | { kind: "mineable_asteroid"; elementId: string }
+  | { kind: "salvage_debris"; elementId: string };
 type ContextMenuState = {
   x: number;
   y: number;
@@ -150,6 +152,46 @@ type MineableAsteroidForm = {
   miningLootIcon: string;
   miningLootIconScaleX: string;
   miningLootIconScaleY: string;
+  randomizeRotation: boolean;
+  tags: string;
+  notes: string;
+};
+type SalvageDebrisForm = {
+  mode: "create" | "edit";
+  originalId: string;
+  name: string;
+  id: string;
+  active: boolean;
+  sectorX: string;
+  sectorY: string;
+  localX: string;
+  localY: string;
+  count: string;
+  spawnRadius: string;
+  texture: string;
+  textures: string;
+  radius: string;
+  visualScale: string;
+  level: string;
+  minCharges: string;
+  maxCharges: string;
+  respawnSeconds: string;
+  lootboxCount: string;
+  itemLootTable: string;
+  itemDropChance: string;
+  itemRolls: string;
+  itemNoDuplicates: boolean;
+  salvageSuccessChance: string;
+  salvageScannedSuccessBonus: string;
+  salvageBonusSuccessScale: string;
+  salvageExplosionChance: string;
+  salvageScannedExplosionChanceReduction: string;
+  salvageExplosionDamage: string;
+  salvageExplosionRadius: string;
+  salvageLootIcon: string;
+  salvageLootIconScaleX: string;
+  salvageLootIconScaleY: string;
+  salvageLootAccentColor: string;
   randomizeRotation: boolean;
   tags: string;
   notes: string;
@@ -501,6 +543,9 @@ const ASTEROID_SPRITES = [
 const DEFAULT_MINEABLE_ASTEROID_TEXTURE = ASTEROID_SPRITES[0];
 const DEFAULT_MINING_LOOT_ICON = "res://assets/items/icon_lootbox_mining.png";
 const DEFAULT_MINING_LOOT_TABLE = "mining_asteroid_fragments";
+const DEFAULT_SALVAGE_DEBRIS_TEXTURE = "res://assets/environment/debris/debris_1.png";
+const DEFAULT_SALVAGE_LOOT_ICON = "res://assets/items/icon_lootbox.png";
+const DEFAULT_SALVAGE_LOOT_TABLE = "salvage_debris";
 const BARRIER_DEBRIS_SPRITES = [
   "res://assets/environment/debris/debris_1.png",
   "res://assets/environment/tut_debris/deb_1.png",
@@ -864,14 +909,28 @@ function mineableAsteroidZoneId(asteroid: SystemMapMineableAsteroid) {
   return asteroid.zoneId?.trim() || null;
 }
 
+function salvageDebrisZoneId(debris: SystemMapSalvageDebris) {
+  return debris.zoneId?.trim() || null;
+}
+
 function zoneOwnsMineableAsteroid(zone: SystemMapZone, asteroid: SystemMapMineableAsteroid) {
   const ownerZoneId = mineableAsteroidZoneId(asteroid);
   if (ownerZoneId) return ownerZoneId === zone.id || ownerZoneId === zoneIdentity(zone);
   return pointInZoneBounds(asteroid.world, zone);
 }
 
+function zoneOwnsSalvageDebris(zone: SystemMapZone, debris: SystemMapSalvageDebris) {
+  const ownerZoneId = salvageDebrisZoneId(debris);
+  if (ownerZoneId) return ownerZoneId === zone.id || ownerZoneId === zoneIdentity(zone);
+  return pointInZoneBounds(debris.world, zone);
+}
+
 function mineableAsteroidsForZone(zone: SystemMapZone, elements: SystemMapEnvironmentalElement[]) {
   return elements.filter((element): element is SystemMapMineableAsteroid => element.type === "mineable_asteroid" && zoneOwnsMineableAsteroid(zone, element));
+}
+
+function salvageDebrisForZone(zone: SystemMapZone, elements: SystemMapEnvironmentalElement[]) {
+  return elements.filter((element): element is SystemMapSalvageDebris => element.type === "salvage_debris" && zoneOwnsSalvageDebris(zone, element));
 }
 
 function pointInPolygon(point: SystemMapVec, polygon: SystemMapVec[]) {
@@ -933,35 +992,50 @@ function defaultEnvironmentProfile(
 
 function environmentalElementMatches(element: SystemMapEnvironmentalElement, query: string) {
   if (!query) return true;
-  const searchable =
-    element.type === "mineable_asteroid"
-      ? [
-          element.id,
-          element.name,
-          element.type,
-          element.texture,
-          ...element.textures,
-          element.oreItemId ?? "",
-          element.oreItemName ?? "",
-          element.oreItemIcon ?? "",
-          element.itemLootTable,
-          element.modLootTable,
-          element.miningLootIcon,
-          element.zoneId ?? "",
-          element.notes,
-          element.tags.join(" "),
-        ]
-      : [
-          element.id,
-          element.name,
-          element.type,
-          element.profileId,
-          element.baseStageProfile,
-          element.visualKind,
-          element.notes,
-          element.tags.join(" "),
-          ...(element.materialPaths ?? []),
-        ];
+  let searchable: string[];
+  if (element.type === "mineable_asteroid") {
+    searchable = [
+      element.id,
+      element.name,
+      element.type,
+      element.texture,
+      ...element.textures,
+      element.oreItemId ?? "",
+      element.oreItemName ?? "",
+      element.oreItemIcon ?? "",
+      element.itemLootTable,
+      element.modLootTable,
+      element.miningLootIcon,
+      element.zoneId ?? "",
+      element.notes,
+      element.tags.join(" "),
+    ];
+  } else if (element.type === "salvage_debris") {
+    searchable = [
+      element.id,
+      element.name,
+      element.type,
+      element.texture,
+      ...element.textures,
+      element.itemLootTable,
+      element.salvageLootIcon,
+      element.zoneId ?? "",
+      element.notes,
+      element.tags.join(" "),
+    ];
+  } else {
+    searchable = [
+      element.id,
+      element.name,
+      element.type,
+      element.profileId,
+      element.baseStageProfile,
+      element.visualKind,
+      element.notes,
+      element.tags.join(" "),
+      ...(element.materialPaths ?? []),
+    ];
+  }
   return searchable
     .join(" ")
     .toLowerCase()
@@ -1038,7 +1112,7 @@ function computeWorldBounds(
       for (const point of element.worldPoints) {
         bounds = expandBounds(bounds, point);
       }
-    } else if (element.type === "mineable_asteroid") {
+    } else if (element.type === "mineable_asteroid" || element.type === "salvage_debris") {
       const radius = Math.max(1, element.radius * element.visualScale, element.spawnRadius);
       bounds = mergeRect(bounds, {
         x: element.world.x - radius,
@@ -1859,6 +1933,59 @@ function createMineableAsteroidDraftFromPoint(world: SystemMapVec, payload: Syst
   };
 }
 
+function createSalvageDebrisDraftFromPoint(world: SystemMapVec, payload: SystemMapPayload, existingIds: string[], ownerZone?: SystemMapZone | null): SystemMapSalvageDebris {
+  const roundedWorld = {
+    x: Math.round(world.x),
+    y: Math.round(world.y),
+  };
+  const id = createUniqueId(sanitizeEnvironmentalElementId("New Salvage Debris Field"), existingIds);
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    id,
+    originalId: id,
+    draft: true,
+    modified: false,
+    zoneId: ownerZone ? zoneIdentity(ownerZone) : null,
+    type: "salvage_debris",
+    name: "New Salvage Debris Field",
+    active: true,
+    sector,
+    tags: ["salvage", "debris"],
+    notes: "",
+    local: {
+      x: Math.round(local.x),
+      y: Math.round(local.y),
+    },
+    world: roundedWorld,
+    count: 6,
+    spawnRadius: 2600,
+    texture: DEFAULT_SALVAGE_DEBRIS_TEXTURE,
+    textures: BARRIER_DEBRIS_SPRITES,
+    radius: 160,
+    visualScale: 1,
+    level: 1,
+    minCharges: 1,
+    maxCharges: 5,
+    respawnSeconds: 0,
+    lootboxCount: 1,
+    itemLootTable: DEFAULT_SALVAGE_LOOT_TABLE,
+    itemDropChance: 1,
+    itemRolls: 1,
+    itemNoDuplicates: false,
+    salvageSuccessChance: 0.6,
+    salvageScannedSuccessBonus: 0.25,
+    salvageBonusSuccessScale: 0.005,
+    salvageExplosionChance: 0.1,
+    salvageScannedExplosionChanceReduction: 0.05,
+    salvageExplosionDamage: 20,
+    salvageExplosionRadius: 500,
+    salvageLootIcon: DEFAULT_SALVAGE_LOOT_ICON,
+    salvageLootIconScale: { x: 0.1, y: 0.1 },
+    salvageLootAccentColor: [1, 0.86, 0.12, 1],
+    randomizeRotation: true,
+  };
+}
+
 function environmentalBarrierToForm(barrier: SystemMapEnvironmentalHazardBarrier, mode: EnvironmentalBarrierForm["mode"]): EnvironmentalBarrierForm {
   return {
     mode,
@@ -1950,6 +2077,49 @@ function mineableAsteroidToForm(asteroid: SystemMapMineableAsteroid, mode: Minea
     randomizeRotation: asteroid.randomizeRotation,
     tags: asteroid.tags.join(", "),
     notes: asteroid.notes,
+  };
+}
+
+function salvageDebrisToForm(debris: SystemMapSalvageDebris, mode: SalvageDebrisForm["mode"]): SalvageDebrisForm {
+  return {
+    mode,
+    originalId: environmentalElementIdentity(debris),
+    name: debris.name || debris.id,
+    id: debris.id,
+    active: debris.active,
+    sectorX: numberInputValue(debris.sector.x),
+    sectorY: numberInputValue(debris.sector.y),
+    localX: numberInputValue(debris.local.x),
+    localY: numberInputValue(debris.local.y),
+    count: numberInputValue(debris.count),
+    spawnRadius: numberInputValue(debris.spawnRadius),
+    texture: debris.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE,
+    textures: stringListInputValue(debris.textures),
+    radius: numberInputValue(debris.radius),
+    visualScale: numberInputValue(debris.visualScale),
+    level: numberInputValue(debris.level),
+    minCharges: numberInputValue(debris.minCharges),
+    maxCharges: numberInputValue(debris.maxCharges),
+    respawnSeconds: numberInputValue(debris.respawnSeconds),
+    lootboxCount: numberInputValue(debris.lootboxCount),
+    itemLootTable: debris.itemLootTable || DEFAULT_SALVAGE_LOOT_TABLE,
+    itemDropChance: numberInputValue(debris.itemDropChance),
+    itemRolls: numberInputValue(debris.itemRolls),
+    itemNoDuplicates: debris.itemNoDuplicates,
+    salvageSuccessChance: numberInputValue(debris.salvageSuccessChance),
+    salvageScannedSuccessBonus: numberInputValue(debris.salvageScannedSuccessBonus),
+    salvageBonusSuccessScale: numberInputValue(debris.salvageBonusSuccessScale),
+    salvageExplosionChance: numberInputValue(debris.salvageExplosionChance),
+    salvageScannedExplosionChanceReduction: numberInputValue(debris.salvageScannedExplosionChanceReduction),
+    salvageExplosionDamage: numberInputValue(debris.salvageExplosionDamage),
+    salvageExplosionRadius: numberInputValue(debris.salvageExplosionRadius),
+    salvageLootIcon: debris.salvageLootIcon || DEFAULT_SALVAGE_LOOT_ICON,
+    salvageLootIconScaleX: numberInputValue(debris.salvageLootIconScale.x),
+    salvageLootIconScaleY: numberInputValue(debris.salvageLootIconScale.y),
+    salvageLootAccentColor: debris.salvageLootAccentColor.join(", "),
+    randomizeRotation: debris.randomizeRotation,
+    tags: debris.tags.join(", "),
+    notes: debris.notes,
   };
 }
 
@@ -2386,6 +2556,154 @@ function moveEnvironmentalRegionByDelta(
   };
 }
 
+function withSalvageDebrisForm(
+  form: SalvageDebrisForm,
+  debris: SystemMapSalvageDebris,
+  sectorSize: number,
+  existingElements: SystemMapEnvironmentalElement[],
+): { error: string; debris: null; form: null } | { error: ""; debris: SystemMapSalvageDebris; form: SalvageDebrisForm } {
+  const id = sanitizeEnvironmentalElementId(form.id);
+  const sectorX = Number(form.sectorX);
+  const sectorY = Number(form.sectorY);
+  const localX = Number(form.localX);
+  const localY = Number(form.localY);
+  const count = Number(form.count);
+  const spawnRadius = Number(form.spawnRadius);
+  const radius = Number(form.radius);
+  const visualScale = Number(form.visualScale);
+  const level = Number(form.level);
+  const minCharges = Number(form.minCharges);
+  const maxCharges = Number(form.maxCharges);
+  const respawnSeconds = Number(form.respawnSeconds);
+  const lootboxCount = Number(form.lootboxCount);
+  const itemDropChance = Number(form.itemDropChance);
+  const itemRolls = Number(form.itemRolls);
+  const salvageSuccessChance = Number(form.salvageSuccessChance);
+  const salvageScannedSuccessBonus = Number(form.salvageScannedSuccessBonus);
+  const salvageBonusSuccessScale = Number(form.salvageBonusSuccessScale);
+  const salvageExplosionChance = Number(form.salvageExplosionChance);
+  const salvageScannedExplosionChanceReduction = Number(form.salvageScannedExplosionChanceReduction);
+  const salvageExplosionDamage = Number(form.salvageExplosionDamage);
+  const salvageExplosionRadius = Number(form.salvageExplosionRadius);
+  const salvageLootIconScaleX = Number(form.salvageLootIconScaleX);
+  const salvageLootIconScaleY = Number(form.salvageLootIconScaleY);
+  const accentColor = form.salvageLootAccentColor
+    .split(/[,\s]+/)
+    .map((entry) => Number(entry.trim()))
+    .filter(Number.isFinite);
+
+  if (!form.name.trim()) return { error: "Salvage debris name is required.", debris: null, form: null };
+  if (!id) return { error: "Salvage debris ID is required.", debris: null, form: null };
+  if (![sectorX, sectorY, localX, localY].every(Number.isFinite)) {
+    return { error: "Sector and local position must be valid numbers.", debris: null, form: null };
+  }
+  if (!Number.isFinite(count) || count < 1) {
+    return { error: "Debris count must be a valid number greater than zero.", debris: null, form: null };
+  }
+  if (!Number.isFinite(spawnRadius) || spawnRadius < 0) {
+    return { error: "Spawn radius must be a valid non-negative number.", debris: null, form: null };
+  }
+  if (![radius, visualScale].every((value) => Number.isFinite(value) && value > 0)) {
+    return { error: "Radius and visual scale must be valid numbers greater than zero.", debris: null, form: null };
+  }
+  if (!Number.isFinite(level) || level < 1) {
+    return { error: "Level must be a valid number greater than zero.", debris: null, form: null };
+  }
+  if (!Number.isFinite(minCharges) || minCharges < 1 || minCharges > 5 || !Number.isFinite(maxCharges) || maxCharges < minCharges || maxCharges > 5) {
+    return { error: "Charges must stay between 1 and 5, and max charges must be at least min charges.", debris: null, form: null };
+  }
+  if (!Number.isFinite(respawnSeconds) || respawnSeconds < 0) {
+    return { error: "Respawn seconds must be a valid non-negative number.", debris: null, form: null };
+  }
+  if (![lootboxCount, itemRolls].every((value) => Number.isFinite(value) && value >= 0)) {
+    return { error: "Lootbox count and item rolls must be valid non-negative numbers.", debris: null, form: null };
+  }
+  if (
+    ![
+      itemDropChance,
+      salvageSuccessChance,
+      salvageScannedSuccessBonus,
+      salvageBonusSuccessScale,
+      salvageExplosionChance,
+      salvageScannedExplosionChanceReduction,
+    ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+  ) {
+    return { error: "Drop, success, scan, and explosion chances must be between 0 and 1.", debris: null, form: null };
+  }
+  if (![salvageExplosionDamage, salvageExplosionRadius].every((value) => Number.isFinite(value) && value >= 0)) {
+    return { error: "Explosion damage and radius must be valid non-negative numbers.", debris: null, form: null };
+  }
+  if (![salvageLootIconScaleX, salvageLootIconScaleY].every((value) => Number.isFinite(value) && value > 0)) {
+    return { error: "Salvage loot icon scale must use valid numbers greater than zero.", debris: null, form: null };
+  }
+  if (accentColor.length < 4) {
+    return { error: "Loot accent color must be four numbers: r, g, b, a.", debris: null, form: null };
+  }
+  const idTaken = existingElements.some((element) => environmentalElementIdentity(element) !== form.originalId && element.id === id);
+  if (idTaken) return { error: `Salvage debris ID "${id}" already exists.`, debris: null, form: null };
+
+  const sector = {
+    x: Math.round(sectorX),
+    y: Math.round(sectorY),
+  };
+  const local = {
+    x: Math.round(localX),
+    y: Math.round(localY),
+  };
+  const world = sectorLocalToWorld(sector, local, sectorSize);
+  const nextDebris: SystemMapSalvageDebris = {
+    ...debris,
+    id,
+    name: form.name.trim(),
+    active: form.active,
+    sector,
+    tags: form.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    notes: form.notes.trim(),
+    local,
+    world,
+    count: Math.round(count),
+    spawnRadius,
+    texture: form.texture.trim() || DEFAULT_SALVAGE_DEBRIS_TEXTURE,
+    textures: parseStringListInput(form.textures),
+    radius,
+    visualScale,
+    level: Math.round(level),
+    minCharges: Math.round(minCharges),
+    maxCharges: Math.round(maxCharges),
+    respawnSeconds,
+    lootboxCount: Math.round(lootboxCount),
+    itemLootTable: form.itemLootTable.trim() || DEFAULT_SALVAGE_LOOT_TABLE,
+    itemDropChance,
+    itemRolls: Math.round(itemRolls),
+    itemNoDuplicates: form.itemNoDuplicates,
+    salvageSuccessChance,
+    salvageScannedSuccessBonus,
+    salvageBonusSuccessScale,
+    salvageExplosionChance,
+    salvageScannedExplosionChanceReduction,
+    salvageExplosionDamage,
+    salvageExplosionRadius,
+    salvageLootIcon: form.salvageLootIcon.trim() || DEFAULT_SALVAGE_LOOT_ICON,
+    salvageLootIconScale: {
+      x: salvageLootIconScaleX,
+      y: salvageLootIconScaleY,
+    },
+    salvageLootAccentColor: [accentColor[0], accentColor[1], accentColor[2], accentColor[3]],
+    randomizeRotation: form.randomizeRotation,
+    modified: debris.draft ? debris.modified : true,
+    originalId: debris.draft ? debris.originalId : debris.originalId ?? debris.id,
+  };
+
+  return {
+    error: "",
+    form: salvageDebrisToForm(nextDebris, form.mode),
+    debris: nextDebris,
+  };
+}
+
 function moveMineableAsteroidByDelta(
   asteroid: SystemMapMineableAsteroid,
   delta: SystemMapVec,
@@ -2407,6 +2725,26 @@ function moveMineableAsteroidByDelta(
     world: roundedWorld,
     modified: asteroid.draft ? asteroid.modified : true,
     originalId: asteroid.draft ? asteroid.originalId : asteroid.originalId ?? asteroid.id,
+  };
+}
+
+function moveSalvageDebrisByDelta(debris: SystemMapSalvageDebris, delta: SystemMapVec, payload: SystemMapPayload): SystemMapSalvageDebris {
+  const nextWorld = translateVec(debris.world, delta);
+  const roundedWorld = {
+    x: Math.round(nextWorld.x),
+    y: Math.round(nextWorld.y),
+  };
+  const { sector, local } = worldToSectorLocal(roundedWorld, payload.config.sectorSize, payload.config.sectorHalfExtent);
+  return {
+    ...debris,
+    sector,
+    local: {
+      x: Math.round(local.x),
+      y: Math.round(local.y),
+    },
+    world: roundedWorld,
+    modified: debris.draft ? debris.modified : true,
+    originalId: debris.draft ? debris.originalId : debris.originalId ?? debris.id,
   };
 }
 
@@ -2444,6 +2782,50 @@ function environmentalElementToJson(element: SystemMapEnvironmentalElement): Rec
         mod_rolls: element.modRolls,
         mining_loot_icon: element.miningLootIcon,
         mining_loot_icon_scale: [element.miningLootIconScale.x, element.miningLootIconScale.y],
+        randomize_rotation: element.randomizeRotation,
+      },
+    };
+  }
+
+  if (element.type === "salvage_debris") {
+    const minCharges = Math.max(1, Math.min(5, Math.round(element.minCharges)));
+    const maxCharges = Math.max(minCharges, Math.max(1, Math.min(5, Math.round(element.maxCharges))));
+    return {
+      id: element.id,
+      type: element.type,
+      name: element.name || element.id,
+      active: element.active,
+      sector_id: [Math.round(element.sector.x), Math.round(element.sector.y)],
+      ...(element.zoneId ? { zone_id: element.zoneId } : {}),
+      tags: element.tags,
+      notes: element.notes,
+      data: {
+        position: [Math.round(element.local.x), Math.round(element.local.y)],
+        count: Math.max(1, Math.round(element.count)),
+        spawn_radius: Math.max(0, element.spawnRadius),
+        texture: element.texture,
+        textures: element.textures,
+        radius: element.radius,
+        visual_scale: element.visualScale,
+        level: Math.max(1, Math.round(element.level)),
+        min_charges: minCharges,
+        max_charges: maxCharges,
+        respawn_seconds: element.respawnSeconds,
+        lootbox_count: element.lootboxCount,
+        item_loot_table: element.itemLootTable,
+        item_drop_chance: element.itemDropChance,
+        item_rolls: element.itemRolls,
+        item_no_duplicates: element.itemNoDuplicates,
+        salvage_success_chance: element.salvageSuccessChance,
+        salvage_scanned_success_bonus: element.salvageScannedSuccessBonus,
+        salvage_bonus_success_scale: element.salvageBonusSuccessScale,
+        salvage_explosion_chance: element.salvageExplosionChance,
+        salvage_scanned_explosion_chance_reduction: element.salvageScannedExplosionChanceReduction,
+        salvage_explosion_damage: element.salvageExplosionDamage,
+        salvage_explosion_radius: element.salvageExplosionRadius,
+        salvage_loot_icon: element.salvageLootIcon,
+        salvage_loot_icon_scale: [element.salvageLootIconScale.x, element.salvageLootIconScale.y],
+        salvage_loot_accent_color: element.salvageLootAccentColor,
         randomize_rotation: element.randomizeRotation,
       },
     };
@@ -3185,6 +3567,7 @@ export default function SystemMapViewer() {
   const [environmentalBarrierForm, setEnvironmentalBarrierForm] = useState<EnvironmentalBarrierForm | null>(null);
   const [environmentalRegionForm, setEnvironmentalRegionForm] = useState<EnvironmentalRegionForm | null>(null);
   const [environmentalAsteroidForm, setEnvironmentalAsteroidForm] = useState<MineableAsteroidForm | null>(null);
+  const [environmentalDebrisForm, setEnvironmentalDebrisForm] = useState<SalvageDebrisForm | null>(null);
   const [stagePlacementForm, setStagePlacementForm] = useState<StagePlacementForm | null>(null);
   const [stagePlacementSearch, setStagePlacementSearch] = useState("");
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
@@ -3447,19 +3830,23 @@ export default function SystemMapViewer() {
     setEditedZoneIds((current) => (current.includes(zoneId) ? current : [...current, zoneId]));
   }
 
-  function detachMineableAsteroidsFromDeletedZone(zone: SystemMapZone) {
+  function detachEnvironmentalFieldsFromDeletedZone(zone: SystemMapZone) {
     const zoneIds = new Set([zone.id, zoneIdentity(zone)].filter(Boolean));
     const affectedExistingIds = (payload?.environmentalElements ?? [])
-      .filter((element) => element.type === "mineable_asteroid" && element.zoneId && zoneIds.has(element.zoneId))
+      .filter((element) => (element.type === "mineable_asteroid" || element.type === "salvage_debris") && element.zoneId && zoneIds.has(element.zoneId))
       .map((element) => environmentalElementIdentity(element));
     setDraftEnvironmentalElements((current) =>
-      current.map((element) => (element.type === "mineable_asteroid" && element.zoneId && zoneIds.has(element.zoneId) ? { ...element, zoneId: null, modified: element.draft ? element.modified : true } : element)),
+      current.map((element) =>
+        (element.type === "mineable_asteroid" || element.type === "salvage_debris") && element.zoneId && zoneIds.has(element.zoneId)
+          ? { ...element, zoneId: null, modified: element.draft ? element.modified : true }
+          : element,
+      ),
     );
     setPayload((current) => {
       if (!current) return current;
       let changed = false;
       const nextElements = current.environmentalElements.map((element) => {
-        if (element.type !== "mineable_asteroid" || !element.zoneId || !zoneIds.has(element.zoneId)) return element;
+        if ((element.type !== "mineable_asteroid" && element.type !== "salvage_debris") || !element.zoneId || !zoneIds.has(element.zoneId)) return element;
         changed = true;
         return {
           ...element,
@@ -3497,7 +3884,7 @@ export default function SystemMapViewer() {
     }
     if (!window.confirm(`Delete zone "${zone.name || zone.id}"? This also removes its stage placements and mob spawns from Zones.json when saved.`)) return;
 
-    detachMineableAsteroidsFromDeletedZone(zone);
+    detachEnvironmentalFieldsFromDeletedZone(zone);
     if (zone.draft) {
       setDraftZones((current) => current.filter((entry) => zoneIdentity(entry) !== zoneId));
       setStatus({ tone: "neutral", message: `Removed draft zone "${zone.name || zone.id}".` });
@@ -3583,8 +3970,20 @@ export default function SystemMapViewer() {
               }
             : current,
         );
-      } else {
+      } else if (nextElement.type === "mineable_asteroid") {
         setEnvironmentalAsteroidForm((current) =>
+          current?.originalId === elementId
+            ? {
+                ...current,
+                sectorX: numberInputValue(nextElement.sector.x),
+                sectorY: numberInputValue(nextElement.sector.y),
+                localX: numberInputValue(nextElement.local.x),
+                localY: numberInputValue(nextElement.local.y),
+              }
+            : current,
+        );
+      } else {
+        setEnvironmentalDebrisForm((current) =>
           current?.originalId === elementId
             ? {
                 ...current,
@@ -3629,8 +4028,20 @@ export default function SystemMapViewer() {
             }
           : current,
       );
-    } else {
+    } else if (nextElement.type === "mineable_asteroid") {
       setEnvironmentalAsteroidForm((current) =>
+        current?.originalId === elementId
+          ? {
+              ...current,
+              sectorX: numberInputValue(nextElement.sector.x),
+              sectorY: numberInputValue(nextElement.sector.y),
+              localX: numberInputValue(nextElement.local.x),
+              localY: numberInputValue(nextElement.local.y),
+            }
+          : current,
+      );
+    } else {
+      setEnvironmentalDebrisForm((current) =>
         current?.originalId === elementId
           ? {
               ...current,
@@ -3743,6 +4154,25 @@ export default function SystemMapViewer() {
     return null;
   }
 
+  function findSalvageDebrisAtWorld(world: SystemMapVec) {
+    for (let index = filteredSalvageDebris.length - 1; index >= 0; index -= 1) {
+      const debris = filteredSalvageDebris[index];
+      if (distance(world, debris.world) <= Math.max(debris.radius * debris.visualScale, debris.spawnRadius, 10 / camera.zoom)) {
+        return debris;
+      }
+    }
+    return null;
+  }
+
+  function findSalvageDebrisDotAtWorld(world: SystemMapVec) {
+    const screenHitRadius = 14 / camera.zoom;
+    for (let index = filteredSalvageDebris.length - 1; index >= 0; index -= 1) {
+      const debris = filteredSalvageDebris[index];
+      if (distance(world, debris.world) <= screenHitRadius) return debris;
+    }
+    return null;
+  }
+
   function updateEnvironmentalBarrierPointPosition(elementId: string, pointIndex: number, world: SystemMapVec) {
     if (!payload) return;
     updateEnvironmentalElementInMap(elementId, (element) => {
@@ -3815,25 +4245,34 @@ export default function SystemMapViewer() {
     updateEnvironmentalElementInMap(elementId, () => {
       if (startElement.type === "hazard_barrier") return moveEnvironmentalBarrierByDelta(startElement, delta, payload);
       if (startElement.type === "mineable_asteroid") return moveMineableAsteroidByDelta(startElement, delta, payload);
+      if (startElement.type === "salvage_debris") return moveSalvageDebrisByDelta(startElement, delta, payload);
       return moveEnvironmentalRegionByDelta(startElement, delta, payload);
     });
   }
 
-  function moveMineableAsteroidsForZone(zone: SystemMapZone, delta: SystemMapVec, nextZoneId = zoneIdentity(zone)) {
+  function moveEnvironmentalFieldsForZone(zone: SystemMapZone, delta: SystemMapVec, nextZoneId = zoneIdentity(zone)) {
     if (!payload) return 0;
     if (delta.x === 0 && delta.y === 0 && nextZoneId === zoneIdentity(zone)) return 0;
-    const associatedAsteroids = mineableAsteroidsForZone(zone, mapEnvironmentalElements);
-    for (const asteroid of associatedAsteroids) {
-      const asteroidId = environmentalElementIdentity(asteroid);
-      updateEnvironmentalElementInMap(asteroidId, (element) => {
-        if (element.type !== "mineable_asteroid") return element;
-        return {
-          ...moveMineableAsteroidByDelta(element, delta, payload),
-          zoneId: nextZoneId,
-        };
+    const associatedFields = [...mineableAsteroidsForZone(zone, mapEnvironmentalElements), ...salvageDebrisForZone(zone, mapEnvironmentalElements)];
+    for (const field of associatedFields) {
+      const fieldId = environmentalElementIdentity(field);
+      updateEnvironmentalElementInMap(fieldId, (element) => {
+        if (element.type === "mineable_asteroid") {
+          return {
+            ...moveMineableAsteroidByDelta(element, delta, payload),
+            zoneId: nextZoneId,
+          };
+        }
+        if (element.type === "salvage_debris") {
+          return {
+            ...moveSalvageDebrisByDelta(element, delta, payload),
+            zoneId: nextZoneId,
+          };
+        }
+        return element;
       });
     }
-    return associatedAsteroids.length;
+    return associatedFields.length;
   }
 
   function updateStagePlacementPosition(zoneId: string, stageKey: string, world: SystemMapVec) {
@@ -3893,7 +4332,7 @@ export default function SystemMapViewer() {
         x: roundedWorld.x - draftZone.world.x,
         y: roundedWorld.y - draftZone.world.y,
       };
-      moveMineableAsteroidsForZone(draftZone, delta, zoneIdentity(draftZone));
+      moveEnvironmentalFieldsForZone(draftZone, delta, zoneIdentity(draftZone));
       setDraftZones((current) => current.map((zone) => (zoneIdentity(zone) === zoneId ? moveZoneToWorld(zone, roundedWorld, payload) : zone)));
       return;
     }
@@ -3904,7 +4343,7 @@ export default function SystemMapViewer() {
       x: roundedWorld.x - existingZone.world.x,
       y: roundedWorld.y - existingZone.world.y,
     };
-    moveMineableAsteroidsForZone(existingZone, delta, zoneIdentity(existingZone));
+    moveEnvironmentalFieldsForZone(existingZone, delta, zoneIdentity(existingZone));
     const movedZone = moveZoneToWorld(existingZone, roundedWorld, payload);
     const originalId = movedZone.originalId ?? existingZone.id;
     setPayload((current) =>
@@ -3930,6 +4369,7 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setStagePlacementForm(null);
     setMobSpawnForm(null);
     setActiveEnvironmentalPointAddId(null);
@@ -3965,6 +4405,7 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setActiveZoneBoundsPointAddId(null);
@@ -3983,6 +4424,7 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setActiveZoneBoundsPointAddId(null);
@@ -3998,12 +4440,11 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, barrier.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
-    setActiveZoneBoundsPointAddId(null);
-    setActiveMobSpawnAreaPointAddKey(null);
     setActiveZoneBoundsPointAddId(null);
     setActiveMobSpawnAreaPointAddKey(null);
     setContextMenu(null);
@@ -4016,6 +4457,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, region.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
@@ -4032,7 +4474,26 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalDebrisForm(null);
     setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, asteroid.draft ? "create" : "edit", payload?.mineableOreItems ?? []));
+    setEnvironmentalIdManuallyEdited(true);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
+    setContextMenu(null);
+    setStatus(null);
+  }
+
+  function openSalvageDebrisEditor(debris: SystemMapSalvageDebris) {
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
+    setEnvironmentalDebrisForm(salvageDebrisToForm(debris, debris.draft ? "create" : "edit"));
     setEnvironmentalIdManuallyEdited(true);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
@@ -4050,6 +4511,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setDraftEnvironmentalElements((current) => [...current, barrier]);
     setEnvironmentalBarrierForm(environmentalBarrierToForm(barrier, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -4069,6 +4531,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setDraftEnvironmentalElements((current) => [...current, region]);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -4088,6 +4551,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setDraftEnvironmentalElements((current) => [...current, region]);
     setEnvironmentalRegionForm(environmentalRegionToForm(region, "create"));
     setEnvironmentalIdManuallyEdited(false);
@@ -4107,6 +4571,7 @@ export default function SystemMapViewer() {
     setZoneForm(null);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
+    setEnvironmentalDebrisForm(null);
     setDraftEnvironmentalElements((current) => [...current, asteroid]);
     setEnvironmentalAsteroidForm(mineableAsteroidToForm(asteroid, "create", payload.mineableOreItems));
     setEnvironmentalIdManuallyEdited(false);
@@ -4121,12 +4586,37 @@ export default function SystemMapViewer() {
     });
   }
 
+  function openCreateSalvageDebrisForm(world: SystemMapVec, ownerZone?: SystemMapZone | null) {
+    if (!payload) return;
+    const debris = createSalvageDebrisDraftFromPoint(world, payload, existingEnvironmentalIds, ownerZone);
+    setGateForm(null);
+    setRouteForm(null);
+    setZoneForm(null);
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
+    setDraftEnvironmentalElements((current) => [...current, debris]);
+    setEnvironmentalDebrisForm(salvageDebrisToForm(debris, "create"));
+    setEnvironmentalIdManuallyEdited(false);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
+    setContextMenu(null);
+    setStatus({
+      tone: "success",
+      message: `Added draft salvage debris field "${debris.name}"${ownerZone ? ` to "${ownerZone.name || ownerZone.id}"` : ""}. Adjust its salvage and loot settings, then save to build.`,
+    });
+  }
+
   function startRouteDraft(world: SystemMapVec) {
     if (!payload) return;
     const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setActiveEnvironmentalPointAddId(null);
     setActiveEnvironmentalRegionPointAddId(null);
     setDraftRoutes((current) => [...current, route]);
@@ -4353,6 +4843,20 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
+    const targetSalvageDebris = toggles.barriers ? findSalvageDebrisDotAtWorld(world) : null;
+    if (targetSalvageDebris) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      environmentalDragRef.current = {
+        elementId: environmentalElementIdentity(targetSalvageDebris),
+        startScreen: screen,
+        startWorld: world,
+        elementStart: targetSalvageDebris,
+        moved: false,
+      };
+      setDraggingEnvironmentalId(environmentalElementIdentity(targetSalvageDebris));
+      clearHover();
+      return;
+    }
     const targetEnvironmentalBarrier = toggles.barriers ? findEnvironmentalBarrierAtWorld(world) : null;
     if (targetEnvironmentalBarrier && event.metaKey) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -4563,6 +5067,7 @@ export default function SystemMapViewer() {
     const world = screenToWorld(screen);
     const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
     const targetStagePlacement = toggles.stages ? findStagePlacementAtWorld(world) : null;
+    const targetSalvageDebris = toggles.barriers ? findSalvageDebrisAtWorld(world) : null;
     const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidAtWorld(world) : null;
     const targetGate = toggles.environment ? findGateAtWorld(world) : null;
     const targetEnvironmentalBarrier = toggles.barriers ? findEnvironmentalBarrierAtWorld(world) : null;
@@ -4575,19 +5080,21 @@ export default function SystemMapViewer() {
       ? { kind: "mob", zoneId: zoneIdentity(targetMobSpawn.zone), mobKey: mobIdentity(targetMobSpawn.mob) }
       : targetStagePlacement
         ? { kind: "stage", zoneId: zoneIdentity(targetStagePlacement.zone), stageKey: stageIdentity(targetStagePlacement.stage) }
-        : targetMineableAsteroid
-          ? { kind: "mineable_asteroid", elementId: environmentalElementIdentity(targetMineableAsteroid) }
-          : targetGate
-            ? { kind: "gate", gateId: gateIdentity(targetGate) }
-            : targetEnvironmentalBarrier
-              ? { kind: "environmental_barrier", elementId: environmentalElementIdentity(targetEnvironmentalBarrier) }
-              : targetEnvironmentalRegion
-                ? { kind: "environmental_region", elementId: environmentalElementIdentity(targetEnvironmentalRegion) }
-                : targetRoute
-                  ? { kind: "route", routeId: routeIdentity(targetRoute) }
-                  : targetZone
-                    ? { kind: "zone", zoneId: zoneIdentity(targetZone) }
-                    : null;
+        : targetSalvageDebris
+          ? { kind: "salvage_debris", elementId: environmentalElementIdentity(targetSalvageDebris) }
+          : targetMineableAsteroid
+            ? { kind: "mineable_asteroid", elementId: environmentalElementIdentity(targetMineableAsteroid) }
+            : targetGate
+              ? { kind: "gate", gateId: gateIdentity(targetGate) }
+              : targetEnvironmentalBarrier
+                ? { kind: "environmental_barrier", elementId: environmentalElementIdentity(targetEnvironmentalBarrier) }
+                : targetEnvironmentalRegion
+                  ? { kind: "environmental_region", elementId: environmentalElementIdentity(targetEnvironmentalRegion) }
+                  : targetRoute
+                    ? { kind: "route", routeId: routeIdentity(targetRoute) }
+                    : targetZone
+                      ? { kind: "zone", zoneId: zoneIdentity(targetZone) }
+                      : null;
     setContextMenu({
       x: screen.x,
       y: screen.y,
@@ -4617,6 +5124,8 @@ export default function SystemMapViewer() {
         return "Edit Region";
       case "mineable_asteroid":
         return "Edit Mineable Asteroid Field";
+      case "salvage_debris":
+        return "Edit Salvage Debris Field";
     }
   }
 
@@ -4634,6 +5143,8 @@ export default function SystemMapViewer() {
         return "Delete Region";
       case "mineable_asteroid":
         return "Delete Mineable Asteroid Field";
+      case "salvage_debris":
+        return "Delete Salvage Debris Field";
       case "route":
       case "gate":
         return "";
@@ -4675,6 +5186,7 @@ export default function SystemMapViewer() {
     const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === target.elementId);
     if (!element) return;
     if (target.kind === "mineable_asteroid" && element.type === "mineable_asteroid") openMineableAsteroidEditor(element);
+    if (target.kind === "salvage_debris" && element.type === "salvage_debris") openSalvageDebrisEditor(element);
     if (target.kind === "environmental_barrier" && element.type === "hazard_barrier") openEnvironmentalBarrierEditor(element);
     if (target.kind === "environmental_region" && element.type === "environment_region") openEnvironmentalRegionEditor(element);
   }
@@ -4702,6 +5214,10 @@ export default function SystemMapViewer() {
     }
     if (target.kind === "mineable_asteroid") {
       removeMineableAsteroid(target.elementId);
+      return;
+    }
+    if (target.kind === "salvage_debris") {
+      removeSalvageDebris(target.elementId);
     }
   }
 
@@ -4885,6 +5401,28 @@ export default function SystemMapViewer() {
                 `Radius: ${formatNumber(element.radius)}`,
                 `Durability: ${formatNumber(element.durability)}`,
                 `Respawn: ${formatNumber(element.respawnSeconds)}s`,
+                `Item loot: ${element.itemLootTable || "none"}`,
+                `Tags: ${element.tags.join(", ") || "none"}`,
+              ],
+            };
+          }
+        } else if (element.type === "salvage_debris") {
+          if (distance(world, element.world) <= Math.max(element.radius * element.visualScale, element.spawnRadius, 10 / camera.zoom)) {
+            const ownerZone = mapZones.find((zone) => zoneOwnsSalvageDebris(zone, element)) ?? null;
+            return {
+              x: screen.x,
+              y: screen.y,
+              title: element.name || element.id,
+              subtitle: `${element.draft ? "Unsaved draft" : element.modified ? "Unsaved edit" : "Salvage debris"}${ownerZone ? ` · zone ${ownerZone.name || ownerZone.id}` : ` · sector ${element.sector.x}, ${element.sector.y}`}`,
+              icon: safeIconSrc(element.texture, element.id, element.name),
+              lines: [
+                `Element ID: ${element.id}`,
+                ownerZone ? `Zone: ${ownerZone.name || ownerZone.id}` : `Zone: none`,
+                `Count: ${formatNumber(element.count)}`,
+                `Spawn radius: ${formatNumber(element.spawnRadius)}`,
+                `Charges: ${element.minCharges}-${element.maxCharges}`,
+                `Success: ${formatNumber(element.salvageSuccessChance)}`,
+                `Explosion: ${formatNumber(element.salvageExplosionChance)} for ${formatNumber(element.salvageExplosionDamage)} damage`,
                 `Item loot: ${element.itemLootTable || "none"}`,
                 `Tags: ${element.tags.join(", ") || "none"}`,
               ],
@@ -5369,6 +5907,12 @@ export default function SystemMapViewer() {
   }
 
   function openCreateStagePlacementForm(zone: SystemMapZone, world: SystemMapVec) {
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
+    setZoneForm(null);
+    setMobSpawnForm(null);
     const local = {
       x: Math.round(world.x - zone.world.x),
       y: Math.round(world.y - zone.world.y),
@@ -5388,6 +5932,12 @@ export default function SystemMapViewer() {
   }
 
   function openStagePlacementEditor(zone: SystemMapZone, stage: SystemMapStagePlacement) {
+    setEnvironmentalBarrierForm(null);
+    setEnvironmentalRegionForm(null);
+    setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
+    setZoneForm(null);
+    setMobSpawnForm(null);
     setStagePlacementForm({
       mode: "edit",
       zoneId: zoneIdentity(zone),
@@ -5408,6 +5958,7 @@ export default function SystemMapViewer() {
     setEnvironmentalBarrierForm(null);
     setEnvironmentalRegionForm(null);
     setEnvironmentalAsteroidForm(null);
+    setEnvironmentalDebrisForm(null);
     setStagePlacementForm(null);
     setMobSpawnForm({
       mode: "edit",
@@ -5512,6 +6063,23 @@ export default function SystemMapViewer() {
   function handleMineableAsteroidIdChange(id: string) {
     setEnvironmentalIdManuallyEdited(true);
     setEnvironmentalAsteroidForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
+  }
+
+  function handleSalvageDebrisNameChange(name: string) {
+    setEnvironmentalDebrisForm((current) => {
+      if (!current) return current;
+      const reservedIds = existingEnvironmentalIds.filter((id) => id !== current.id && id !== current.originalId);
+      return {
+        ...current,
+        name,
+        id: current.mode === "create" && !environmentalIdManuallyEdited ? createUniqueId(sanitizeEnvironmentalElementId(name), reservedIds) : current.id,
+      };
+    });
+  }
+
+  function handleSalvageDebrisIdChange(id: string) {
+    setEnvironmentalIdManuallyEdited(true);
+    setEnvironmentalDebrisForm((current) => (current ? { ...current, id: sanitizeEnvironmentalElementId(id) } : current));
   }
 
   function handleMineableAsteroidOreChange(oreItemId: string) {
@@ -5625,6 +6193,23 @@ export default function SystemMapViewer() {
     setStatus({ tone: "success", message: `Applied mineable asteroid details for "${applied.asteroid.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
   }
 
+  function applySalvageDebrisForm() {
+    if (!environmentalDebrisForm || !payload) return;
+    const element = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDebrisForm.originalId);
+    if (!element || element.type !== "salvage_debris") {
+      setStatus({ tone: "error", message: "Could not find the salvage debris field being edited." });
+      return;
+    }
+    const applied = withSalvageDebrisForm(environmentalDebrisForm, element, payload.config.sectorSize, mapEnvironmentalElements);
+    if (applied.error || !applied.debris || !applied.form) {
+      setStatus({ tone: "error", message: applied.error });
+      return;
+    }
+    updateEnvironmentalElementInMap(environmentalDebrisForm.originalId, () => applied.debris);
+    setEnvironmentalDebrisForm(applied.form);
+    setStatus({ tone: "success", message: `Applied salvage debris details for "${applied.debris.name}". Use Save Changes To Build to write EnvironmentalElements.json.` });
+  }
+
   function removeDraftRoute(routeId: string) {
     setDraftRoutes((current) => current.filter((route) => routeIdentity(route) !== routeId));
     setRouteForm((current) => (current?.originalId === routeId ? null : current));
@@ -5700,6 +6285,28 @@ export default function SystemMapViewer() {
     setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
     setEnvironmentalAsteroidForm(null);
     setStatus({ tone: "success", message: "Removed the mineable asteroid from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
+  }
+
+  function removeSalvageDebris(elementId: string) {
+    const draftElement = draftEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === elementId);
+    if (draftElement) {
+      setDraftEnvironmentalElements((current) => current.filter((entry) => environmentalElementIdentity(entry) !== elementId));
+      setEnvironmentalDebrisForm((current) => (current?.originalId === elementId ? null : current));
+      setStatus({ tone: "neutral", message: "Removed the unsaved salvage debris draft." });
+      return;
+    }
+
+    setPayload((current) =>
+      current
+        ? {
+            ...current,
+            environmentalElements: current.environmentalElements.filter((entry) => environmentalElementIdentity(entry) !== elementId),
+          }
+        : current,
+    );
+    setEditedEnvironmentalIds((current) => (current.includes(elementId) ? current : [...current, elementId]));
+    setEnvironmentalDebrisForm(null);
+    setStatus({ tone: "success", message: "Removed the salvage debris field from the map. Use Save Changes To Build to write EnvironmentalElements.json." });
   }
 
   function addEnvironmentalBarrierPointAtWorld(elementId: string, world: SystemMapVec) {
@@ -5865,7 +6472,7 @@ export default function SystemMapViewer() {
       ...applyZoneFormToZone(normalizedForm, baseZone, payload, id),
       originalId,
     };
-    moveMineableAsteroidsForZone(
+    moveEnvironmentalFieldsForZone(
       baseZone,
       {
         x: nextZone.world.x - baseZone.world.x,
@@ -6330,6 +6937,22 @@ export default function SystemMapViewer() {
         }
       }
 
+      if (environmentalDebrisForm) {
+        const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalDebrisForm.originalId);
+        if (element?.type === "salvage_debris") {
+          const applied = withSalvageDebrisForm(environmentalDebrisForm, element, payload.config.sectorSize, elementsForSave);
+          if (applied.error || !applied.debris || !applied.form) {
+            if (!suppressStatus) setStatus({ tone: "error", message: applied.error });
+            return false;
+          }
+          elementsForSave = elementsForSave.map((entry) => (environmentalElementIdentity(entry) === environmentalDebrisForm.originalId ? applied.debris : entry));
+          if (!applied.debris.draft && !editedEnvironmentalIdsForSave.includes(environmentalDebrisForm.originalId)) {
+            editedEnvironmentalIdsForSave = [...editedEnvironmentalIdsForSave, environmentalDebrisForm.originalId];
+          }
+          setEnvironmentalDebrisForm(applied.form);
+        }
+      }
+
       if (environmentalRegionForm) {
         const element = elementsForSave.find((entry) => environmentalElementIdentity(entry) === environmentalRegionForm.originalId);
         if (element?.type === "environment_region") {
@@ -6436,6 +7059,15 @@ export default function SystemMapViewer() {
           : current,
       );
       setEnvironmentalAsteroidForm((current) =>
+        current
+          ? {
+              ...current,
+              originalId: sanitizeEnvironmentalElementId(current.id),
+              mode: "edit",
+            }
+          : current,
+      );
+      setEnvironmentalDebrisForm((current) =>
         current
           ? {
               ...current,
@@ -6581,6 +7213,10 @@ export default function SystemMapViewer() {
     () => filteredEnvironmentalElements.filter((element): element is SystemMapMineableAsteroid => element.type === "mineable_asteroid"),
     [filteredEnvironmentalElements],
   );
+  const filteredSalvageDebris = useMemo(
+    () => filteredEnvironmentalElements.filter((element): element is SystemMapSalvageDebris => element.type === "salvage_debris"),
+    [filteredEnvironmentalElements],
+  );
   const measurementGridStep = useMemo(() => chooseMeasurementGridStep(camera, viewport), [camera, viewport]);
   const showAsteroidSprites = camera.zoom >= ASTEROID_SPRITE_DETAIL_ZOOM;
   const showBarrierSprites = camera.zoom >= BARRIER_SPRITE_DETAIL_ZOOM;
@@ -6606,6 +7242,12 @@ export default function SystemMapViewer() {
           if (texture) paths.add(texture);
         }
         if (element.miningLootIcon) paths.add(element.miningLootIcon);
+      } else if (element.type === "salvage_debris") {
+        if (element.texture) paths.add(element.texture);
+        for (const texture of element.textures) {
+          if (texture) paths.add(texture);
+        }
+        if (element.salvageLootIcon) paths.add(element.salvageLootIcon);
       } else {
         for (const materialPath of element.materialPaths ?? []) {
           if (materialPath) paths.add(materialPath);
@@ -6620,9 +7262,12 @@ export default function SystemMapViewer() {
   const environmentalRegionCount = mapEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const mineableAsteroidCount = mapEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
   const mineableAsteroidInstanceCount = mapEnvironmentalElements.reduce((sum, element) => (element.type === "mineable_asteroid" ? sum + element.count : sum), 0);
+  const salvageDebrisCount = mapEnvironmentalElements.filter((element) => element.type === "salvage_debris").length;
+  const salvageDebrisInstanceCount = mapEnvironmentalElements.reduce((sum, element) => (element.type === "salvage_debris" ? sum + element.count : sum), 0);
   const environmentalBarrierDraftCount = draftEnvironmentalElements.filter((element) => element.type === "hazard_barrier").length;
   const environmentalRegionDraftCount = draftEnvironmentalElements.filter((element) => element.type === "environment_region").length;
   const mineableAsteroidDraftCount = draftEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
+  const salvageDebrisDraftCount = draftEnvironmentalElements.filter((element) => element.type === "salvage_debris").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0 || deletedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
@@ -7028,6 +7673,73 @@ export default function SystemMapViewer() {
               : null}
 
             {toggles.barriers
+              ? filteredSalvageDebris.map((debris) => {
+                  const key = `salvage-debris:${environmentalElementIdentity(debris)}`;
+                  const isChanged = debris.draft || debris.modified;
+                  const renderRadius = Math.max(debris.radius * debris.visualScale, 8 / camera.zoom);
+                  const fieldRadius = Math.max(debris.spawnRadius, renderRadius);
+                  const spriteSize = Math.max(debris.radius * 2 * debris.visualScale, 18 / camera.zoom);
+                  const markerColor = debris.draft ? "#34d399" : debris.modified ? "#facc15" : "#f97316";
+                  return (
+                    <g key={key} opacity={debris.active ? 1 : 0.45}>
+                      {debris.count > 1 || debris.spawnRadius > 0 ? (
+                        <circle
+                          cx={debris.world.x}
+                          cy={debris.world.y}
+                          r={fieldRadius}
+                          fill="rgba(249,115,22,0.05)"
+                          stroke={debris.draft ? "rgba(52,211,153,0.28)" : debris.modified ? "rgba(250,204,21,0.28)" : "rgba(249,115,22,0.28)"}
+                          strokeDasharray={`${10 / camera.zoom} ${9 / camera.zoom}`}
+                          strokeWidth={1 / camera.zoom}
+                        />
+                      ) : null}
+                      <use
+                        href={`#${barrierSymbolId(debris.texture || DEFAULT_SALVAGE_DEBRIS_TEXTURE)}`}
+                        x={debris.world.x - spriteSize / 2}
+                        y={debris.world.y - spriteSize / 2}
+                        width={spriteSize}
+                        height={spriteSize}
+                        opacity={0.92}
+                      />
+                      <circle
+                        cx={debris.world.x}
+                        cy={debris.world.y}
+                        r={(draggingEnvironmentalId === environmentalElementIdentity(debris) ? 8 : 5) / camera.zoom}
+                        fill={markerColor}
+                        stroke="rgba(255,255,255,0.76)"
+                        strokeWidth={(draggingEnvironmentalId === environmentalElementIdentity(debris) ? 2 : 1) / camera.zoom}
+                      />
+                      {isChanged ? (
+                        <circle
+                          cx={debris.world.x}
+                          cy={debris.world.y}
+                          r={renderRadius}
+                          fill="none"
+                          stroke={debris.draft ? "rgba(52,211,153,0.55)" : "rgba(250,204,21,0.55)"}
+                          strokeDasharray={`${10 / camera.zoom} ${8 / camera.zoom}`}
+                          strokeWidth={1.5 / camera.zoom}
+                        />
+                      ) : null}
+                      {debris.count > 1 ? (
+                        <text
+                          x={debris.world.x + 10 / camera.zoom}
+                          y={debris.world.y - 10 / camera.zoom}
+                          fill="rgba(255,255,255,0.88)"
+                          fontSize={12 / camera.zoom}
+                          fontWeight={700}
+                          stroke="rgba(7,17,29,0.95)"
+                          strokeWidth={3 / camera.zoom}
+                          paintOrder="stroke"
+                        >
+                          x{debris.count}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })
+              : null}
+
+            {toggles.barriers
               ? filteredEnvironmentalRegions.map((region) => {
                   const isChanged = region.draft || region.modified;
                   const isActiveRegion = environmentalRegionForm?.originalId === environmentalElementIdentity(region);
@@ -7402,12 +8114,12 @@ export default function SystemMapViewer() {
             : null}
           {toggles.labels && toggles.barriers
             ? filteredEnvironmentalElements.map((element) => {
-                const anchor =
-                  element.type === "hazard_barrier"
-                    ? barrierWorldCenter(element)
-                    : element.type === "mineable_asteroid"
+                  const anchor =
+                    element.type === "hazard_barrier"
+                      ? barrierWorldCenter(element)
+                    : element.type === "mineable_asteroid" || element.type === "salvage_debris"
                       ? element.world
-                    : environmentalRegionWorldAnchor(element);
+                      : environmentalRegionWorldAnchor(element);
                 const point = worldToScreen(anchor);
                 return (
                   <div
@@ -7491,7 +8203,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers · player spawn ${mapPlayerSpawn ? mapPlayerSpawn.activeSpawnId : "missing"}${mapPlayerSpawn?.modified ? " (edited)" : ""}`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${salvageDebrisCount} debris fields${salvageDebrisDraftCount ? ` (${salvageDebrisDraftCount} draft${salvageDebrisDraftCount === 1 ? "" : "s"})` : ""} · ${salvageDebrisInstanceCount} salvage nodes · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers · player spawn ${mapPlayerSpawn ? mapPlayerSpawn.activeSpawnId : "missing"}${mapPlayerSpawn?.modified ? " (edited)" : ""}`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -7709,6 +8421,16 @@ export default function SystemMapViewer() {
             }}
           >
             {contextMenu.zoneId ? "Add Mineable Asteroid Field To Zone" : "Add Mineable Asteroid Field Here"}
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+            onClick={() => {
+              const zone = contextMenu.zoneId ? mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId) : null;
+              openCreateSalvageDebrisForm(contextMenu.world, zone);
+            }}
+          >
+            {contextMenu.zoneId ? "Add Salvage Debris Field To Zone" : "Add Salvage Debris Field Here"}
           </button>
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => startRouteDraft(contextMenu.world)}>
             Start Trade Route Here
@@ -8613,6 +9335,246 @@ export default function SystemMapViewer() {
                   </button>
                   <button type="button" className="btn-save-build" onClick={applyMineableAsteroidForm}>
                     {environmentalAsteroidForm.mode === "create" ? "Apply Draft Details" : "Apply Asteroid Details"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
+
+      {environmentalDebrisForm
+        ? (() => {
+            const debris = mapEnvironmentalElements.find((entry) => environmentalElementIdentity(entry) === environmentalDebrisForm.originalId);
+            const activeDebris = debris?.type === "salvage_debris" ? debris : null;
+            const ownerZone = activeDebris ? (mapZones.find((zone) => zoneOwnsSalvageDebris(zone, activeDebris)) ?? null) : null;
+            const previewIcon = safeIconSrc(environmentalDebrisForm.texture, environmentalDebrisForm.id, environmentalDebrisForm.name);
+            const currentTextureOptions = BARRIER_DEBRIS_SPRITES.includes(environmentalDebrisForm.texture) ? BARRIER_DEBRIS_SPRITES : [environmentalDebrisForm.texture, ...BARRIER_DEBRIS_SPRITES].filter(Boolean);
+            const currentLootIconOptions = miningLootIconOptionsWithCurrent(payload?.miningLootIconOptions ?? [], environmentalDebrisForm.salvageLootIcon);
+            return (
+              <div
+                data-system-map-ui="true"
+                className="absolute right-5 top-5 z-[115] max-h-[calc(100vh-2.5rem)] w-[min(520px,calc(100vw-2.5rem))] cursor-default overflow-auto rounded-2xl border border-white/10 bg-[#07111d]/95 p-4 shadow-2xl backdrop-blur"
+                onPointerEnter={clearHover}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onPointerCancel={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-white">{environmentalDebrisForm.mode === "create" ? "New Salvage Debris Field" : "Edit Salvage Debris Field"}</div>
+                    <div className="mt-1 text-sm text-white/55">Configure the SalvageDebrisField2D data: position, field count, charges, salvage chances, explosion risk, and loot table.</div>
+                  </div>
+                  <button type="button" className="rounded border border-white/10 px-3 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setEnvironmentalDebrisForm(null)}>
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-[88px_1fr]">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-white/10 bg-black/25">
+                    {previewIcon ? <img src={previewIcon} alt="" className="h-16 w-16 object-contain" /> : null}
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Map Position</div>
+                    <div className="mt-1">Zone: {ownerZone ? ownerZone.name || ownerZone.id : "none"}</div>
+                    <div>Sector: {environmentalDebrisForm.sectorX}, {environmentalDebrisForm.sectorY}</div>
+                    <div>Local: {environmentalDebrisForm.localX}, {environmentalDebrisForm.localY}</div>
+                    <div>World: {activeDebris ? formatVec(activeDebris.world) : "apply details to calculate"}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Field Name
+                    <input className="input mt-1" value={environmentalDebrisForm.name} onChange={(event) => handleSalvageDebrisNameChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Field ID
+                    <input className="input mt-1 font-mono" value={environmentalDebrisForm.id} onChange={(event) => handleSalvageDebrisIdChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector X
+                    <input className="input mt-1" type="number" value={environmentalDebrisForm.sectorX} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, sectorX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Sector Y
+                    <input className="input mt-1" type="number" value={environmentalDebrisForm.sectorY} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, sectorY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Local X
+                    <input className="input mt-1" type="number" value={environmentalDebrisForm.localX} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, localX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Local Y
+                    <input className="input mt-1" type="number" value={environmentalDebrisForm.localY} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, localY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Count
+                    <input className="input mt-1" type="number" min="1" step="1" value={environmentalDebrisForm.count} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, count: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Spawn Radius
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.spawnRadius} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, spawnRadius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Texture
+                    <select className="input mt-1" value={environmentalDebrisForm.texture} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, texture: event.target.value } : current))}>
+                      {currentTextureOptions.map((texture) => (
+                        <option key={texture} value={texture}>
+                          {texture}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Texture Variants
+                    <textarea className="input mt-1 min-h-20 font-mono" value={environmentalDebrisForm.textures} placeholder="Optional, one texture path per line" onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, textures: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Radius
+                    <input className="input mt-1" type="number" min="1" value={environmentalDebrisForm.radius} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, radius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Visual Scale
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalDebrisForm.visualScale} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, visualScale: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Level
+                    <input className="input mt-1" type="number" min="1" step="1" value={environmentalDebrisForm.level} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, level: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Respawn Seconds
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.respawnSeconds} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, respawnSeconds: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Min Charges
+                    <input className="input mt-1" type="number" min="1" max="5" step="1" value={environmentalDebrisForm.minCharges} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, minCharges: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Max Charges
+                    <input className="input mt-1" type="number" min="1" max="5" step="1" value={environmentalDebrisForm.maxCharges} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, maxCharges: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-white/65">
+                    Lootbox Count
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.lootboxCount} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, lootboxCount: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Item Rolls
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.itemRolls} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, itemRolls: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Item Loot Table
+                    <input className="input mt-1 font-mono" value={environmentalDebrisForm.itemLootTable} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, itemLootTable: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Item Drop Chance
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalDebrisForm.itemDropChance} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, itemDropChance: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Success Chance
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalDebrisForm.salvageSuccessChance} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageSuccessChance: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Scanned Success Bonus
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalDebrisForm.salvageScannedSuccessBonus} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageScannedSuccessBonus: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Bonus Success Scale
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.001" value={environmentalDebrisForm.salvageBonusSuccessScale} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageBonusSuccessScale: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Explosion Chance
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalDebrisForm.salvageExplosionChance} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageExplosionChance: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Scanned Explosion Reduction
+                    <input className="input mt-1" type="number" min="0" max="1" step="0.01" value={environmentalDebrisForm.salvageScannedExplosionChanceReduction} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageScannedExplosionChanceReduction: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Explosion Damage
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.salvageExplosionDamage} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageExplosionDamage: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Explosion Radius
+                    <input className="input mt-1" type="number" min="0" value={environmentalDebrisForm.salvageExplosionRadius} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageExplosionRadius: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Salvage Loot Icon
+                    <select className="input mt-1" value={environmentalDebrisForm.salvageLootIcon} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageLootIcon: event.target.value } : current))}>
+                      {currentLootIconOptions.map((icon) => (
+                        <option key={icon.resPath} value={icon.resPath}>
+                          {icon.label} ({icon.resPath})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Icon Scale X
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalDebrisForm.salvageLootIconScaleX} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageLootIconScaleX: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65">
+                    Icon Scale Y
+                    <input className="input mt-1" type="number" min="0.01" step="0.01" value={environmentalDebrisForm.salvageLootIconScaleY} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageLootIconScaleY: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Loot Accent Color
+                    <input className="input mt-1 font-mono" value={environmentalDebrisForm.salvageLootAccentColor} placeholder="1, 0.86, 0.12, 1" onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, salvageLootAccentColor: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Active</span>
+                    <input type="checkbox" checked={environmentalDebrisForm.active} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, active: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+                    <span>Randomize Rotation</span>
+                    <input type="checkbox" checked={environmentalDebrisForm.randomizeRotation} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, randomizeRotation: event.target.checked } : current))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                    <span>Item No Duplicates</span>
+                    <input type="checkbox" checked={environmentalDebrisForm.itemNoDuplicates} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, itemNoDuplicates: event.target.checked } : current))} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Tags
+                    <input className="input mt-1" value={environmentalDebrisForm.tags} placeholder="salvage, debris, crossroads" onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, tags: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                  <label className="text-sm text-white/65 sm:col-span-2">
+                    Notes
+                    <textarea className="input mt-1 min-h-24" value={environmentalDebrisForm.notes} onChange={(event) => setEnvironmentalDebrisForm((current) => (current ? { ...current, notes: event.target.value } : current))} onFocus={(event) => event.currentTarget.select()} />
+                  </label>
+                </div>
+
+                {activeDebris ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/55">
+                    <div className="font-semibold text-white/80">Debris Summary</div>
+                    <div className="mt-2">World: {formatVec(activeDebris.world)}</div>
+                    <div>Field: {activeDebris.count} debris node{activeDebris.count === 1 ? "" : "s"} inside {formatNumber(activeDebris.spawnRadius)} units</div>
+                    <div>Charges: {activeDebris.minCharges}-{activeDebris.maxCharges}</div>
+                    <div>Success: {formatNumber(activeDebris.salvageSuccessChance)} + scanned {formatNumber(activeDebris.salvageScannedSuccessBonus)}</div>
+                    <div>Explosion: {formatNumber(activeDebris.salvageExplosionChance)} at {formatNumber(activeDebris.salvageExplosionDamage)} damage / {formatNumber(activeDebris.salvageExplosionRadius)} radius</div>
+                    <div>Item loot: {activeDebris.itemLootTable || "none"} ({activeDebris.itemRolls} rolls at {activeDebris.itemDropChance})</div>
+                    <div>Sector-local position is what gets written into EnvironmentalElements.json.</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15"
+                    onClick={() => removeSalvageDebris(environmentalDebrisForm.originalId)}
+                  >
+                    {activeDebris?.draft ? "Remove Draft" : "Delete Debris Field"}
+                  </button>
+                  <button type="button" className="rounded border border-white/10 px-4 py-2 text-sm text-white/70 hover:bg-white/5" onClick={() => setEnvironmentalDebrisForm(null)}>
+                    Done
+                  </button>
+                  <button type="button" className="btn-save-build" onClick={applySalvageDebrisForm}>
+                    {environmentalDebrisForm.mode === "create" ? "Apply Draft Details" : "Apply Debris Details"}
                   </button>
                 </div>
               </div>

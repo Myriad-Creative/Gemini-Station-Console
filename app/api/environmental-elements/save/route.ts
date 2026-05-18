@@ -52,7 +52,7 @@ function validateEnvironmentalElements(value: unknown) {
 
     const type = typeof rawElement.type === "string" ? rawElement.type.trim() : "";
     if (!type) return `Element "${id}" is missing a type.`;
-    if (!["hazard_barrier", "environment_region", "mineable_asteroid"].includes(type)) {
+    if (!["hazard_barrier", "environment_region", "mineable_asteroid", "salvage_debris", "debris_field"].includes(type)) {
       return `Element "${id}" has unsupported type "${type}".`;
     }
 
@@ -137,6 +137,64 @@ function validateEnvironmentalElements(value: unknown) {
       if (data.mining_loot_icon_scale !== undefined) {
         const scaleError = validateVecArray([data.mining_loot_icon_scale], 1, `Mineable asteroid "${id}" mining_loot_icon_scale`);
         if (scaleError) return scaleError;
+      }
+    }
+
+    if (type === "salvage_debris" || type === "debris_field") {
+      const positionError = validateVecArray([data.position], 1, `Salvage debris "${id}" position`);
+      if (positionError) return positionError;
+      if (!isFiniteNumber(data.radius) || Number(data.radius) <= 0) {
+        return `Salvage debris "${id}" must have a valid positive radius.`;
+      }
+      if (data.count !== undefined && (!isFiniteNumber(data.count) || Number(data.count) <= 0)) {
+        return `Salvage debris "${id}" count must be a valid positive number.`;
+      }
+      if (data.spawn_count !== undefined && (!isFiniteNumber(data.spawn_count) || Number(data.spawn_count) <= 0)) {
+        return `Salvage debris "${id}" spawn_count must be a valid positive number.`;
+      }
+      if (data.spawn_radius !== undefined && (!isFiniteNumber(data.spawn_radius) || Number(data.spawn_radius) < 0)) {
+        return `Salvage debris "${id}" spawn_radius must be a valid non-negative number.`;
+      }
+      if (data.field_radius !== undefined && (!isFiniteNumber(data.field_radius) || Number(data.field_radius) < 0)) {
+        return `Salvage debris "${id}" field_radius must be a valid non-negative number.`;
+      }
+      if (data.textures !== undefined) {
+        if (!Array.isArray(data.textures)) return `Salvage debris "${id}" textures must be an array.`;
+        if (data.textures.some((texture) => typeof texture !== "string")) return `Salvage debris "${id}" textures must only contain string paths.`;
+      }
+      const minCharges = Number(data.min_charges ?? data.charges_min ?? 1);
+      const maxCharges = Number(data.max_charges ?? data.charges_max ?? 5);
+      if (!Number.isFinite(minCharges) || minCharges < 1 || minCharges > 5) {
+        return `Salvage debris "${id}" min_charges must be between 1 and 5.`;
+      }
+      if (!Number.isFinite(maxCharges) || maxCharges < minCharges || maxCharges > 5) {
+        return `Salvage debris "${id}" max_charges must be between min_charges and 5.`;
+      }
+      const optionalNumberError =
+        validateOptionalFiniteNumber(data.visual_scale, 0, `Salvage debris "${id}" visual_scale`) ||
+        validateOptionalFiniteNumber(data.level, 1, `Salvage debris "${id}" level`) ||
+        validateOptionalFiniteNumber(data.respawn_seconds, 0, `Salvage debris "${id}" respawn_seconds`) ||
+        validateOptionalFiniteNumber(data.lootbox_count, 0, `Salvage debris "${id}" lootbox_count`) ||
+        validateOptionalFiniteNumber(data.item_rolls, 0, `Salvage debris "${id}" item_rolls`) ||
+        validateOptionalFiniteNumber(data.salvage_explosion_damage, 0, `Salvage debris "${id}" salvage_explosion_damage`) ||
+        validateOptionalFiniteNumber(data.salvage_explosion_radius, 0, `Salvage debris "${id}" salvage_explosion_radius`);
+      if (optionalNumberError) return optionalNumberError;
+      const chanceError =
+        validateDropChance(data.item_drop_chance, `Salvage debris "${id}" item_drop_chance`) ||
+        validateDropChance(data.salvage_success_chance, `Salvage debris "${id}" salvage_success_chance`) ||
+        validateDropChance(data.salvage_scanned_success_bonus, `Salvage debris "${id}" salvage_scanned_success_bonus`) ||
+        validateDropChance(data.salvage_bonus_success_scale, `Salvage debris "${id}" salvage_bonus_success_scale`) ||
+        validateDropChance(data.salvage_explosion_chance, `Salvage debris "${id}" salvage_explosion_chance`) ||
+        validateDropChance(data.salvage_scanned_explosion_chance_reduction, `Salvage debris "${id}" salvage_scanned_explosion_chance_reduction`);
+      if (chanceError) return chanceError;
+      if (data.salvage_loot_icon_scale !== undefined) {
+        const scaleError = validateVecArray([data.salvage_loot_icon_scale], 1, `Salvage debris "${id}" salvage_loot_icon_scale`);
+        if (scaleError) return scaleError;
+      }
+      if (data.salvage_loot_accent_color !== undefined) {
+        if (!Array.isArray(data.salvage_loot_accent_color) || data.salvage_loot_accent_color.length < 4 || data.salvage_loot_accent_color.some((entry) => !isFiniteNumber(entry))) {
+          return `Salvage debris "${id}" salvage_loot_accent_color must be a valid [r, g, b, a] array.`;
+        }
       }
     }
   }
