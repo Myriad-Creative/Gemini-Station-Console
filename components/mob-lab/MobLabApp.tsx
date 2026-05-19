@@ -916,8 +916,10 @@ function ThrusterPlacementEditor({
   const [viewSize, setViewSize] = useState({ width: 720, height: 440 });
   const [imageSize, setImageSize] = useState({ width: 512, height: 512 });
   const [zoom, setZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [selectedKey, setSelectedKey] = useState<string | null>(mob.thrusters[0]?.key ?? null);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [panning, setPanning] = useState<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
     const node = viewRef.current;
@@ -961,12 +963,12 @@ function ThrusterPlacementEditor({
     const imageHeight = runtimeSpriteHeight * scale;
     return {
       scale,
-      originX: viewSize.width / 2,
-      originY: viewSize.height / 2,
+      originX: viewSize.width / 2 + panOffset.x,
+      originY: viewSize.height / 2 + panOffset.y,
       imageWidth,
       imageHeight,
     };
-  }, [imageSize.height, imageSize.width, runtimeSpriteScale.x, runtimeSpriteScale.y, viewSize.height, viewSize.width, zoom]);
+  }, [imageSize.height, imageSize.width, panOffset.x, panOffset.y, runtimeSpriteScale.x, runtimeSpriteScale.y, viewSize.height, viewSize.width, zoom]);
 
   const selectedThruster = mob.thrusters.find((thruster) => thruster.key === selectedKey) ?? null;
   const zoomPercent = Math.round(zoom * 100);
@@ -995,6 +997,14 @@ function ThrusterPlacementEditor({
       position_x: formatThrusterNumber(nextPosition.x),
       position_y: formatThrusterNumber(nextPosition.y),
     }));
+  }
+
+  function moveFrameFromPointer(clientX: number, clientY: number) {
+    if (!panning) return;
+    setPanOffset({
+      x: panning.originX + clientX - panning.startX,
+      y: panning.originY + clientY - panning.startY,
+    });
   }
 
   function addThrusterAt(clientX?: number, clientY?: number) {
@@ -1052,7 +1062,10 @@ function ThrusterPlacementEditor({
             <button
               type="button"
               className="rounded border border-white/10 px-2 py-1 text-xs text-white/65 hover:bg-white/5"
-              onClick={() => changeZoom(1)}
+              onClick={() => {
+                changeZoom(1);
+                setPanOffset({ x: 0, y: 0 });
+              }}
             >
               {zoomPercent}%
             </button>
@@ -1070,13 +1083,35 @@ function ThrusterPlacementEditor({
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div
           ref={viewRef}
-          className="relative h-[440px] overflow-hidden rounded-xl border border-white/10 bg-[#050b13] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_58%)]"
-          onPointerMove={(event) => {
-            if (!draggingKey) return;
-            moveThrusterFromPointer(draggingKey, event.clientX, event.clientY);
+          className={`relative h-[440px] overflow-hidden rounded-xl border border-white/10 bg-[#050b13] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_58%)] ${
+            panning ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setPanning({
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startY: event.clientY,
+              originX: panOffset.x,
+              originY: panOffset.y,
+            });
           }}
-          onPointerUp={() => setDraggingKey(null)}
-          onPointerCancel={() => setDraggingKey(null)}
+          onPointerMove={(event) => {
+            if (draggingKey) {
+              moveThrusterFromPointer(draggingKey, event.clientX, event.clientY);
+              return;
+            }
+            moveFrameFromPointer(event.clientX, event.clientY);
+          }}
+          onPointerUp={() => {
+            setDraggingKey(null);
+            setPanning(null);
+          }}
+          onPointerCancel={() => {
+            setDraggingKey(null);
+            setPanning(null);
+          }}
           onDoubleClick={(event) => addThrusterAt(event.clientX, event.clientY)}
         >
           <div
@@ -1137,6 +1172,7 @@ function ThrusterPlacementEditor({
                   event.currentTarget.setPointerCapture(event.pointerId);
                   setSelectedKey(thruster.key);
                   setDraggingKey(thruster.key);
+                  setPanning(null);
                 }}
               >
                 <ThrusterPlume thruster={thruster} selected={isSelected} />
