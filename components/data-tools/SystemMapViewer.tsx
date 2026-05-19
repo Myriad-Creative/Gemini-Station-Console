@@ -72,6 +72,9 @@ type ContextMenuState = {
   routeId: string | null;
   editTarget: ContextMenuEditTarget | null;
 };
+type PendingZoneDuplicate = {
+  sourceZoneId: string;
+};
 type EnvironmentalBarrierForm = {
   mode: "create" | "edit";
   originalId: string;
@@ -3305,6 +3308,38 @@ function moveZoneToWorld(zone: SystemMapZone, world: SystemMapVec, payload: Syst
   };
 }
 
+function duplicateZoneForPlacement(zone: SystemMapZone, world: SystemMapVec, payload: SystemMapPayload, existingIds: string[]): SystemMapZone {
+  const baseId = sanitizeZoneId(`${zone.id || zone.name || "zone"}_copy`);
+  const id = createUniqueId(baseId, existingIds);
+  const copy = JSON.parse(JSON.stringify(zone)) as SystemMapZone;
+  const moved = moveZoneToWorld(copy, { x: Math.round(world.x), y: Math.round(world.y) }, payload);
+  return {
+    ...moved,
+    id,
+    name: zone.name ? `${zone.name} Copy` : id,
+    source: "zones",
+    sourceFile: undefined,
+    generated: false,
+    draft: true,
+    modified: false,
+    originalId: undefined,
+    stages: moved.stages.map((stage) => ({
+      ...stage,
+      key: createDraftKey("map-zone-stage"),
+      originalIndex: null,
+      draft: true,
+      modified: false,
+    })),
+    mobs: moved.mobs.map((mob) => ({
+      ...mob,
+      key: createDraftKey("map-zone-mob"),
+      originalIndex: null,
+      draft: true,
+      modified: false,
+    })),
+  };
+}
+
 function moveStagePlacementToWorld(stage: SystemMapStagePlacement, world: SystemMapVec, zone: SystemMapZone): SystemMapStagePlacement {
   const roundedWorld = {
     x: Math.round(world.x),
@@ -3614,6 +3649,7 @@ export default function SystemMapViewer() {
   const [editedRouteIds, setEditedRouteIds] = useState<string[]>([]);
   const [editedGateIds, setEditedGateIds] = useState<string[]>([]);
   const [editedEnvironmentalIds, setEditedEnvironmentalIds] = useState<string[]>([]);
+  const [pendingZoneDuplicate, setPendingZoneDuplicate] = useState<PendingZoneDuplicate | null>(null);
   const [pendingRouteStart, setPendingRouteStart] = useState(false);
   const [activeRouteAddId, setActiveRouteAddId] = useState<string | null>(null);
   const [activeEnvironmentalPointAddId, setActiveEnvironmentalPointAddId] = useState<string | null>(null);
@@ -3687,6 +3723,12 @@ export default function SystemMapViewer() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (!isTypingTarget(event.target) && event.key === "Escape" && pendingZoneDuplicate) {
+        event.preventDefault();
+        setPendingZoneDuplicate(null);
+        setStatus({ tone: "neutral", message: "Cancelled zone duplicate placement." });
+        return;
+      }
       if (isTypingTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key !== "+" && event.key !== "-") return;
       event.preventDefault();
@@ -3701,7 +3743,7 @@ export default function SystemMapViewer() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [viewport.height, viewport.width]);
+  }, [pendingZoneDuplicate, viewport.height, viewport.width]);
 
   const mapZones = useMemo(() => (payload ? [...payload.zones, ...draftZones] : []), [draftZones, payload]);
   const mapRoutes = useMemo(() => (payload ? [...payload.routes, ...draftRoutes] : []), [draftRoutes, payload]);
@@ -4644,6 +4686,71 @@ export default function SystemMapViewer() {
     });
   }
 
+  function duplicateZoneEnvironmentalElements(sourceZone: SystemMapZone, duplicateZone: SystemMapZone, delta: SystemMapVec): SystemMapEnvironmentalElement[] {
+    if (!payload) return [];
+    const associatedFields = [...mineableAsteroidsForZone(sourceZone, mapEnvironmentalElements), ...salvageDebrisForZone(sourceZone, mapEnvironmentalElements)];
+    const nextIds = [...existingEnvironmentalIds];
+    return associatedFields.map((field) => {
+      const baseId = sanitizeEnvironmentalElementId(`${field.id || field.name || field.type}_copy`);
+      const id = createUniqueId(baseId, nextIds);
+      nextIds.push(id);
+      const moved = field.type === "mineable_asteroid" ? moveMineableAsteroidByDelta(field, delta, payload) : moveSalvageDebrisByDelta(field, delta, payload);
+      return {
+        ...moved,
+        id,
+        name: field.name ? `${field.name} Copy` : id,
+        zoneId: duplicateZone.id,
+        draft: true,
+        modified: false,
+        originalId: undefined,
+      };
+    });
+  }
+
+  function startZoneDuplicatePlacement(zoneId: string) {
+    const zone = mapZones.find((entry) => zoneIdentity(entry) === zoneId);
+    if (!zone) {
+      setStatus({ tone: "error", message: "Could not find the zone to duplicate." });
+      setContextMenu(null);
+      return;
+    }
+    setPendingZoneDuplicate({ sourceZoneId: zoneIdentity(zone) });
+    setPendingRouteStart(false);
+    setActiveRouteAddId(null);
+    setActiveEnvironmentalPointAddId(null);
+    setActiveEnvironmentalRegionPointAddId(null);
+    setActiveZoneBoundsPointAddId(null);
+    setActiveMobSpawnAreaPointAddKey(null);
+    setContextMenu(null);
+    setStatus({ tone: "neutral", message: `Click the map to place a duplicate of "${zone.name || zone.id}". Press Escape to cancel.` });
+  }
+
+  function placeZoneDuplicate(sourceZoneId: string, world: SystemMapVec) {
+    if (!payload) return;
+    const sourceZone = mapZones.find((entry) => zoneIdentity(entry) === sourceZoneId);
+    if (!sourceZone) {
+      setPendingZoneDuplicate(null);
+      setStatus({ tone: "error", message: "Could not find the source zone to duplicate." });
+      return;
+    }
+    const duplicateZone = duplicateZoneForPlacement(sourceZone, world, payload, existingZoneIds);
+    const delta = {
+      x: duplicateZone.world.x - sourceZone.world.x,
+      y: duplicateZone.world.y - sourceZone.world.y,
+    };
+    const duplicatedEnvironmentalElements = duplicateZoneEnvironmentalElements(sourceZone, duplicateZone, delta);
+    setDraftZones((current) => [...current, duplicateZone]);
+    if (duplicatedEnvironmentalElements.length) {
+      setDraftEnvironmentalElements((current) => [...current, ...duplicatedEnvironmentalElements]);
+    }
+    setPendingZoneDuplicate(null);
+    const saveTargets = duplicatedEnvironmentalElements.length ? "Zones.json and EnvironmentalElements.json" : "Zones.json";
+    setStatus({
+      tone: "success",
+      message: `Duplicated "${sourceZone.name || sourceZone.id}" as "${duplicateZone.id}" with ${duplicateZone.stages.length} stage${duplicateZone.stages.length === 1 ? "" : "s"}, ${duplicateZone.mobs.length} mob spawn${duplicateZone.mobs.length === 1 ? "" : "s"}, and ${duplicatedEnvironmentalElements.length} zone field${duplicatedEnvironmentalElements.length === 1 ? "" : "s"}. Use Save Changes To Build to write it into ${saveTargets}.`,
+    });
+  }
+
   function startRouteDraft(world: SystemMapVec) {
     if (!payload) return;
     const route = createRouteDraftFromPoint(world, payload, existingRouteIds);
@@ -4735,6 +4842,28 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
+    if (pendingZoneDuplicate) {
+      placeZoneDuplicate(pendingZoneDuplicate.sourceZoneId, world);
+      clearHover();
+      return;
+    }
+    if (event.metaKey && toggles.zones) {
+      const commandZone = findZoneAtWorld(world);
+      if (commandZone) {
+        const commandZoneId = zoneIdentity(commandZone);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        zoneDragRef.current = {
+          zoneId: commandZoneId,
+          startScreen: screen,
+          startWorld: world,
+          zoneStartWorld: commandZone.world,
+          moved: false,
+        };
+        setDraggingZoneId(commandZoneId);
+        clearHover();
+        return;
+      }
+    }
     const targetZoneBoundsPoint = toggles.zones ? findZoneBoundsPointAtWorld(world) : null;
     if (targetZoneBoundsPoint) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -5093,6 +5222,7 @@ export default function SystemMapViewer() {
   function handleContextMenu(event: MouseEvent<HTMLDivElement>) {
     if (isMapUiTarget(event.target)) return;
     event.preventDefault();
+    setPendingZoneDuplicate(null);
     const rect = event.currentTarget.getBoundingClientRect();
     const screen = {
       x: event.clientX - rect.left,
@@ -8365,7 +8495,7 @@ export default function SystemMapViewer() {
           </details>
         ) : null}
 
-        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Background dots are faint world-space measurement points and use 1,000 units as the finest increment. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit or delete it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
+        <div className="mt-4 text-xs leading-5 text-white/45">Drag to pan. Scroll to zoom fluidly around the cursor, or use <span className="text-white/65">+</span> and <span className="text-white/65">-</span> for stepped zoom at the viewport center. Background dots are faint world-space measurement points and use 1,000 units as the finest increment. Drag dots for zones, stage placements, mob spawns, belt gates, and mineable asteroid fields. Hold Command and drag anywhere inside a zone to move the zone, or hold Command and drag authored barrier or region bodies to move them. Drag barrier points or polygon vertices to reshape them. Right-click a dot or shape to edit, delete, or duplicate it. Right-click inside a zone to add zone-owned stage, mob, and mineable asteroid placements.</div>
       </div>
 
       {contextMenu ? (
@@ -8429,6 +8559,15 @@ export default function SystemMapViewer() {
               }}
             >
               Add Stage Here
+            </button>
+          ) : null}
+          {contextMenu.zoneId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+              onClick={() => startZoneDuplicatePlacement(contextMenu.zoneId!)}
+            >
+              Duplicate Zone
             </button>
           ) : null}
           <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10" onClick={() => openCreateZoneForm(contextMenu.world)}>
