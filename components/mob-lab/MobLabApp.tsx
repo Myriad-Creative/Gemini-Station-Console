@@ -945,13 +945,20 @@ function ThrusterPlacementEditor({
     }
   }, [mob.thrusters, selectedKey]);
 
+  const runtimeSpriteScale = {
+    x: Math.abs(parseThrusterNumber(mob.sprite_scale_x, 1)) || 1,
+    y: Math.abs(parseThrusterNumber(mob.sprite_scale_y, 1)) || 1,
+  };
+
   const layout = useMemo(() => {
     const padding = 34;
+    const runtimeSpriteWidth = imageSize.width * runtimeSpriteScale.x;
+    const runtimeSpriteHeight = imageSize.height * runtimeSpriteScale.y;
     const availableWidth = Math.max(1, viewSize.width - padding * 2);
     const availableHeight = Math.max(1, viewSize.height - padding * 2);
-    const scale = Math.min(availableWidth / imageSize.width, availableHeight / imageSize.height) * zoom;
-    const imageWidth = imageSize.width * scale;
-    const imageHeight = imageSize.height * scale;
+    const scale = Math.min(availableWidth / runtimeSpriteWidth, availableHeight / runtimeSpriteHeight) * zoom;
+    const imageWidth = runtimeSpriteWidth * scale;
+    const imageHeight = runtimeSpriteHeight * scale;
     return {
       scale,
       originX: viewSize.width / 2,
@@ -959,7 +966,7 @@ function ThrusterPlacementEditor({
       imageWidth,
       imageHeight,
     };
-  }, [imageSize.height, imageSize.width, viewSize.height, viewSize.width, zoom]);
+  }, [imageSize.height, imageSize.width, runtimeSpriteScale.x, runtimeSpriteScale.y, viewSize.height, viewSize.width, zoom]);
 
   const selectedThruster = mob.thrusters.find((thruster) => thruster.key === selectedKey) ?? null;
   const zoomPercent = Math.round(zoom * 100);
@@ -1008,7 +1015,9 @@ function ThrusterPlacementEditor({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-white">Visual Thruster Placement</div>
-          <div className="mt-1 text-xs text-white/50">Drag a plume to move it. Double-click the canvas to add one at that point.</div>
+          <div className="mt-1 text-xs text-white/50">
+            Drag a plume to move it. Double-click the canvas to add one at that point. Preview uses runtime sprite scale {runtimeSpriteScale.x} x {runtimeSpriteScale.y}.
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
