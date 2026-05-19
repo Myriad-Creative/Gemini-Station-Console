@@ -844,6 +844,10 @@ function parseThrusterNumber(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function clampThrusterZoom(value: number) {
+  return Math.min(4, Math.max(0.5, value));
+}
+
 function createMobThrusterDraft(positionX = 0, positionY = 120): MobThrusterDraft {
   return {
     key: `thruster-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -911,6 +915,7 @@ function ThrusterPlacementEditor({
   const viewRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ width: 720, height: 440 });
   const [imageSize, setImageSize] = useState({ width: 512, height: 512 });
+  const [zoom, setZoom] = useState(1);
   const [selectedKey, setSelectedKey] = useState<string | null>(mob.thrusters[0]?.key ?? null);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
 
@@ -944,7 +949,7 @@ function ThrusterPlacementEditor({
     const padding = 34;
     const availableWidth = Math.max(1, viewSize.width - padding * 2);
     const availableHeight = Math.max(1, viewSize.height - padding * 2);
-    const scale = Math.min(availableWidth / imageSize.width, availableHeight / imageSize.height);
+    const scale = Math.min(availableWidth / imageSize.width, availableHeight / imageSize.height) * zoom;
     const imageWidth = imageSize.width * scale;
     const imageHeight = imageSize.height * scale;
     return {
@@ -954,12 +959,17 @@ function ThrusterPlacementEditor({
       imageWidth,
       imageHeight,
     };
-  }, [imageSize.height, imageSize.width, viewSize.height, viewSize.width]);
+  }, [imageSize.height, imageSize.width, viewSize.height, viewSize.width, zoom]);
 
   const selectedThruster = mob.thrusters.find((thruster) => thruster.key === selectedKey) ?? null;
+  const zoomPercent = Math.round(zoom * 100);
 
   function updateThruster(key: string, updater: (current: MobThrusterDraft) => MobThrusterDraft) {
     onChange(mob.thrusters.map((thruster) => (thruster.key === key ? updater(thruster) : thruster)));
+  }
+
+  function changeZoom(nextZoom: number) {
+    setZoom(clampThrusterZoom(nextZoom));
   }
 
   function screenToWorld(clientX: number, clientY: number) {
@@ -1000,13 +1010,52 @@ function ThrusterPlacementEditor({
           <div className="text-sm font-medium text-white">Visual Thruster Placement</div>
           <div className="mt-1 text-xs text-white/50">Drag a plume to move it. Double-click the canvas to add one at that point.</div>
         </div>
-        <button
-          type="button"
-          className="rounded border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/15"
-          onClick={() => addThrusterAt()}
-        >
-          Add Thruster
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
+            <button
+              type="button"
+              className="h-8 w-8 rounded border border-white/10 text-sm font-semibold text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-35"
+              disabled={zoom <= 0.5}
+              onClick={() => changeZoom(zoom - 0.25)}
+              title="Zoom out"
+            >
+              -
+            </button>
+            <input
+              className="h-2 w-28 accent-cyan-300"
+              type="range"
+              min="0.5"
+              max="4"
+              step="0.05"
+              value={zoom}
+              aria-label="Thruster editor zoom"
+              onChange={(event) => changeZoom(Number(event.target.value))}
+            />
+            <button
+              type="button"
+              className="h-8 w-8 rounded border border-white/10 text-sm font-semibold text-white/75 hover:bg-white/5 disabled:cursor-default disabled:opacity-35"
+              disabled={zoom >= 4}
+              onClick={() => changeZoom(zoom + 0.25)}
+              title="Zoom in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="rounded border border-white/10 px-2 py-1 text-xs text-white/65 hover:bg-white/5"
+              onClick={() => changeZoom(1)}
+            >
+              {zoomPercent}%
+            </button>
+          </div>
+          <button
+            type="button"
+            className="rounded border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/15"
+            onClick={() => addThrusterAt()}
+          >
+            Add Thruster
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
