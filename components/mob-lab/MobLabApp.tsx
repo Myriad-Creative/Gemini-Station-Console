@@ -12,7 +12,7 @@ import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants
 import { mergeGeneratedMobStats, MOB_STAT_RANK_OPTIONS } from "@lib/mob-lab/stat-scaling";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
-import type { MobDraft, MobSortKey, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
+import type { MobDraft, MobSortKey, MobThrusterDraft, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
 import type { CommsContactDraft } from "@lib/comms-manager/types";
 import { importCommsWorkspace, resolvedPortraitPath } from "@lib/comms-manager/utils";
 import type { MerchantProfileDraft } from "@lib/merchant-lab/types";
@@ -834,6 +834,351 @@ function MobLootPreview({
   );
 }
 
+function formatThrusterNumber(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
+
+function parseThrusterNumber(value: string, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function createMobThrusterDraft(positionX = 0, positionY = 120): MobThrusterDraft {
+  return {
+    key: `thruster-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    position_x: formatThrusterNumber(positionX),
+    position_y: formatThrusterNumber(positionY),
+    scale_x: "0.5",
+    scale_y: "0.5",
+    rotation_degrees: "0",
+    z_index: "-2",
+    enabled: true,
+    velocity_threshold: "5",
+  };
+}
+
+function ThrusterPlume({ thruster, selected }: { thruster: MobThrusterDraft; selected: boolean }) {
+  const scaleX = Math.max(0.12, parseThrusterNumber(thruster.scale_x, 1));
+  const scaleY = Math.max(0.12, parseThrusterNumber(thruster.scale_y, 1));
+  const rotation = parseThrusterNumber(thruster.rotation_degrees, 0);
+  return (
+    <div className="relative h-10 w-10">
+      <div
+        className={`absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border ${
+          selected ? "border-cyan-100 bg-cyan-100" : "border-cyan-200/70 bg-cyan-200/70"
+        } shadow-[0_0_18px_rgba(103,232,249,0.7)]`}
+      />
+      <svg
+        viewBox="-24 -12 48 88"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-12"
+        style={{
+          transform: `translate(-50%, -12%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`,
+          transformOrigin: "50% 12%",
+          opacity: thruster.enabled ? 1 : 0.35,
+        }}
+        aria-hidden="true"
+      >
+        <defs>
+          <radialGradient id={`thruster-core-${thruster.key}`} cx="50%" cy="6%" r="58%">
+            <stop offset="0%" stopColor="#f8ffff" stopOpacity="1" />
+            <stop offset="42%" stopColor="#8ff7ff" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id={`thruster-tail-${thruster.key}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#eaffff" stopOpacity="0.95" />
+            <stop offset="42%" stopColor="#67e8f9" stopOpacity="0.75" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M 0 -4 C 18 14 13 46 0 76 C -13 46 -18 14 0 -4 Z" fill={`url(#thruster-tail-${thruster.key})`} />
+        <ellipse cx="0" cy="4" rx="15" ry="11" fill={`url(#thruster-core-${thruster.key})`} />
+        <path d="M 0 4 C 7 18 5 38 0 58 C -5 38 -7 18 0 4 Z" fill="#f8ffff" opacity="0.72" />
+      </svg>
+    </div>
+  );
+}
+
+function ThrusterPlacementEditor({
+  mob,
+  spriteSrc,
+  onChange,
+}: {
+  mob: MobDraft;
+  spriteSrc: string | null;
+  onChange: (next: MobThrusterDraft[]) => void;
+}) {
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [viewSize, setViewSize] = useState({ width: 720, height: 440 });
+  const [imageSize, setImageSize] = useState({ width: 512, height: 512 });
+  const [selectedKey, setSelectedKey] = useState<string | null>(mob.thrusters[0]?.key ?? null);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const node = viewRef.current;
+    if (!node) return;
+    const updateSize = () => {
+      const rect = node.getBoundingClientRect();
+      setViewSize({
+        width: Math.max(320, rect.width),
+        height: Math.max(320, rect.height),
+      });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!mob.thrusters.length) {
+      setSelectedKey(null);
+      return;
+    }
+    if (!selectedKey || !mob.thrusters.some((thruster) => thruster.key === selectedKey)) {
+      setSelectedKey(mob.thrusters[0].key);
+    }
+  }, [mob.thrusters, selectedKey]);
+
+  const layout = useMemo(() => {
+    const padding = 34;
+    const availableWidth = Math.max(1, viewSize.width - padding * 2);
+    const availableHeight = Math.max(1, viewSize.height - padding * 2);
+    const scale = Math.min(availableWidth / imageSize.width, availableHeight / imageSize.height);
+    const imageWidth = imageSize.width * scale;
+    const imageHeight = imageSize.height * scale;
+    return {
+      scale,
+      originX: viewSize.width / 2,
+      originY: viewSize.height / 2,
+      imageWidth,
+      imageHeight,
+    };
+  }, [imageSize.height, imageSize.width, viewSize.height, viewSize.width]);
+
+  const selectedThruster = mob.thrusters.find((thruster) => thruster.key === selectedKey) ?? null;
+
+  function updateThruster(key: string, updater: (current: MobThrusterDraft) => MobThrusterDraft) {
+    onChange(mob.thrusters.map((thruster) => (thruster.key === key ? updater(thruster) : thruster)));
+  }
+
+  function screenToWorld(clientX: number, clientY: number) {
+    const rect = viewRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: (clientX - rect.left - layout.originX) / layout.scale,
+      y: (clientY - rect.top - layout.originY) / layout.scale,
+    };
+  }
+
+  function moveThrusterFromPointer(key: string, clientX: number, clientY: number) {
+    const nextPosition = screenToWorld(clientX, clientY);
+    updateThruster(key, (current) => ({
+      ...current,
+      position_x: formatThrusterNumber(nextPosition.x),
+      position_y: formatThrusterNumber(nextPosition.y),
+    }));
+  }
+
+  function addThrusterAt(clientX?: number, clientY?: number) {
+    const position = clientX !== undefined && clientY !== undefined ? screenToWorld(clientX, clientY) : { x: 0, y: imageSize.height * 0.28 };
+    const nextThruster = createMobThrusterDraft(position.x, position.y);
+    onChange([...mob.thrusters, nextThruster]);
+    setSelectedKey(nextThruster.key);
+  }
+
+  function removeThruster(key: string) {
+    const nextThrusters = mob.thrusters.filter((thruster) => thruster.key !== key);
+    onChange(nextThrusters);
+    setSelectedKey(nextThrusters[0]?.key ?? null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-white">Visual Thruster Placement</div>
+          <div className="mt-1 text-xs text-white/50">Drag a plume to move it. Double-click the canvas to add one at that point.</div>
+        </div>
+        <button
+          type="button"
+          className="rounded border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/15"
+          onClick={() => addThrusterAt()}
+        >
+          Add Thruster
+        </button>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div
+          ref={viewRef}
+          className="relative h-[440px] overflow-hidden rounded-xl border border-white/10 bg-[#050b13] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_58%)]"
+          onPointerMove={(event) => {
+            if (!draggingKey) return;
+            moveThrusterFromPointer(draggingKey, event.clientX, event.clientY);
+          }}
+          onPointerUp={() => setDraggingKey(null)}
+          onPointerCancel={() => setDraggingKey(null)}
+          onDoubleClick={(event) => addThrusterAt(event.clientX, event.clientY)}
+        >
+          <div
+            className="pointer-events-none absolute border border-cyan-300/15"
+            style={{
+              left: layout.originX - layout.imageWidth / 2,
+              top: layout.originY - layout.imageHeight / 2,
+              width: layout.imageWidth,
+              height: layout.imageHeight,
+            }}
+          />
+          <div className="pointer-events-none absolute left-0 right-0 border-t border-white/10" style={{ top: layout.originY }} />
+          <div className="pointer-events-none absolute bottom-0 top-0 border-l border-white/10" style={{ left: layout.originX }} />
+          {spriteSrc ? (
+            <img
+              src={spriteSrc}
+              alt={mob.display_name || mob.id || "Mob sprite"}
+              className="pointer-events-none absolute object-contain opacity-90 drop-shadow-[0_0_18px_rgba(103,232,249,0.18)]"
+              style={{
+                left: layout.originX - layout.imageWidth / 2,
+                top: layout.originY - layout.imageHeight / 2,
+                width: layout.imageWidth,
+                height: layout.imageHeight,
+              }}
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                if (image.naturalWidth && image.naturalHeight) {
+                  setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
+                }
+              }}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-white/45">Add a sprite path to use the visual placement canvas.</div>
+          )}
+
+          {mob.thrusters.map((thruster, index) => {
+            const x = parseThrusterNumber(thruster.position_x, 0);
+            const y = parseThrusterNumber(thruster.position_y, 0);
+            const left = layout.originX + x * layout.scale;
+            const top = layout.originY + y * layout.scale;
+            const isSelected = thruster.key === selectedKey;
+            return (
+              <button
+                key={thruster.key}
+                type="button"
+                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full outline-none transition ${
+                  isSelected ? "ring-2 ring-cyan-200 ring-offset-2 ring-offset-[#050b13]" : "hover:ring-2 hover:ring-cyan-300/45"
+                }`}
+                style={{ left, top }}
+                title={`Thruster ${index + 1}: ${formatThrusterNumber(x)}, ${formatThrusterNumber(y)}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedKey(thruster.key);
+                }}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setSelectedKey(thruster.key);
+                  setDraggingKey(thruster.key);
+                }}
+              >
+                <ThrusterPlume thruster={thruster} selected={isSelected} />
+              </button>
+            );
+          })}
+
+          <div className="pointer-events-none absolute bottom-3 left-3 rounded border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-white/45">
+            origin 0,0
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-white">Thrusters</div>
+              <div className="mt-1 text-xs text-white/45">
+                {mob.thrusters.length} configured. Positive Y is down the sprite.
+              </div>
+            </div>
+            {selectedThruster ? (
+              <button
+                type="button"
+                className="shrink-0 rounded border border-red-400/25 px-3 py-2 text-xs text-red-100 hover:bg-red-400/10"
+                onClick={() => removeThruster(selectedThruster.key)}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+
+          {mob.thrusters.length ? (
+            <div className="flex flex-wrap gap-2">
+              {mob.thrusters.map((thruster, index) => (
+                <button
+                  key={thruster.key}
+                  type="button"
+                  className={`rounded border px-3 py-1.5 text-xs ${
+                    selectedKey === thruster.key ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-white/65 hover:bg-white/5"
+                  }`}
+                  onClick={() => setSelectedKey(thruster.key)}
+                >
+                  Thruster {index + 1}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
+              No thrusters configured for this mob yet.
+            </div>
+          )}
+
+          {selectedThruster ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Position X", "position_x", "1"],
+                ["Position Y", "position_y", "1"],
+                ["Scale X", "scale_x", "0.05"],
+                ["Scale Y", "scale_y", "0.05"],
+                ["Rotation", "rotation_degrees", "1"],
+                ["Z Index", "z_index", "1"],
+                ["Velocity Threshold", "velocity_threshold", "0.5"],
+              ].map(([label, field, step]) => (
+                <label key={field} className={field === "velocity_threshold" ? "sm:col-span-2" : ""}>
+                  <div className="label">{label}</div>
+                  <input
+                    className="input mt-1"
+                    type="number"
+                    step={step}
+                    value={selectedThruster[field as keyof Pick<
+                      MobThrusterDraft,
+                      "position_x" | "position_y" | "scale_x" | "scale_y" | "rotation_degrees" | "z_index" | "velocity_threshold"
+                    >]}
+                    onFocus={selectInputContents}
+                    onChange={(event) =>
+                      updateThruster(selectedThruster.key, (current) => ({
+                        ...current,
+                        [field]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              ))}
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                <span>Enabled</span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/15 bg-[#07111d] text-cyan-300 focus:ring-cyan-300/25"
+                  checked={selectedThruster.enabled}
+                  onChange={(event) => updateThruster(selectedThruster.key, (current) => ({ ...current, enabled: event.target.checked }))}
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function downloadTextFile(filename: string, contents: string) {
   const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -976,6 +1321,8 @@ export default function MobLabApp() {
           mob.is_sorter ? "sorter sorting" : "",
           mob.smelter_profile,
           mob.sorting_profile,
+          mob.thrusters.length ? "thruster thrusters plume engine" : "",
+          mob.thrusters.map((thruster) => `${thruster.position_x},${thruster.position_y}`).join(" "),
           mob.location_container ? "location container" : "",
         ]
           .join(" ")
@@ -2099,6 +2446,17 @@ export default function MobLabApp() {
                       <div className="mt-2 text-xs text-white/45">Console-only field. This is not exported into the live game JSON.</div>
                     </div>
                   </div>
+                </Section>
+
+                <Section
+                  title="Thruster Placement"
+                  description="Manage the programmatic thrusters exported to mobs.json. The canvas uses the mob sprite center as 0,0, matching the runtime Node2D placement."
+                >
+                  <ThrusterPlacementEditor
+                    mob={selectedMob}
+                    spriteSrc={spritePreviewSrc}
+                    onChange={(next) => updateSelectedMob((current) => ({ ...current, thrusters: next }))}
+                  />
                 </Section>
 
                 <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, home port, location containers, POIs, and repairs.">

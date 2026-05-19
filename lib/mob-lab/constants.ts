@@ -98,6 +98,7 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "sorter_profile",
   "sorting_profile",
   "stats",
+  "thrusters",
 ] as const;
 
 export const MOB_SORT_OPTIONS = [

@@ -10,6 +10,18 @@ export interface ScanTierDraft {
   text: string;
 }
 
+export interface MobThrusterDraft {
+  key: string;
+  position_x: string;
+  position_y: string;
+  scale_x: string;
+  scale_y: string;
+  rotation_degrees: string;
+  z_index: string;
+  enabled: boolean;
+  velocity_threshold: string;
+}
+
 export interface MobDraft {
   key: string;
   sourceIndex: number;
@@ -61,6 +73,7 @@ export interface MobDraft {
   scan_extra_json: string;
   services: string[];
   sorting_profile: string;
+  thrusters: MobThrusterDraft[];
   extra_json: string;
 }
 

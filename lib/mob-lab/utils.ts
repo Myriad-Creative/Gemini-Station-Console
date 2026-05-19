@@ -12,6 +12,7 @@ import type {
   MobLabParseStrategy,
   MobLabSourceShape,
   MobLabSummary,
+  MobThrusterDraft,
   MobLabWorkspace,
   MobValidationIssue,
   ScanTierDraft,
@@ -78,6 +79,37 @@ function normalizeVector2Draft(value: unknown) {
   return { x: "", y: "" };
 }
 
+function normalizeVector2DraftWithFallback(value: unknown, fallbackX: number, fallbackY: number) {
+  const normalized = normalizeVector2Draft(value);
+  return {
+    x: normalized.x || formatDraftNumber(fallbackX),
+    y: normalized.y || formatDraftNumber(fallbackY),
+  };
+}
+
+function normalizeThrusterDrafts(value: unknown): MobThrusterDraft[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const source = asObject(entry);
+      if (!Object.keys(source).length) return null;
+      const position = normalizeVector2DraftWithFallback(source.position, 0, 0);
+      const scale = normalizeVector2DraftWithFallback(source.scale, 1, 1);
+      return {
+        key: createDraftKey(),
+        position_x: position.x,
+        position_y: position.y,
+        scale_x: scale.x,
+        scale_y: scale.y,
+        rotation_degrees: formatDraftNumber(source.rotation_degrees ?? 0),
+        z_index: formatDraftNumber(source.z_index ?? -2),
+        enabled: source.enabled === undefined ? true : booleanFromUnknown(source.enabled),
+        velocity_threshold: formatDraftNumber(source.velocity_threshold ?? 5),
+      };
+    })
+    .filter((entry): entry is MobThrusterDraft => entry !== null);
+}
+
 function stringListFromUnknown(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter(Boolean);
@@ -133,6 +165,26 @@ function parseVector2Draft(xValue: string, yValue: string, label: string) {
 
   const xSource = xTrimmed || yTrimmed;
   const ySource = yTrimmed || xTrimmed;
+  const x = Number(xSource);
+  const y = Number(ySource);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error(`${label} must use numeric X and Y values.`);
+  }
+  return [x, y];
+}
+
+function parseRequiredNumberDraft(value: string, label: string) {
+  const trimmed = value.trim();
+  const parsed = Number(trimmed);
+  if (!trimmed || !Number.isFinite(parsed)) {
+    throw new Error(`${label} must be numeric.`);
+  }
+  return parsed;
+}
+
+function parseThrusterVectorDraft(xValue: string, yValue: string, label: string, fallbackX: number, fallbackY: number) {
+  const xSource = xValue.trim() || formatDraftNumber(fallbackX);
+  const ySource = yValue.trim() || formatDraftNumber(fallbackY);
   const x = Number(xSource);
   const y = Number(ySource);
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -310,6 +362,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     scan_extra_json: scanDraft.scan_extra_json,
     services: stringListFromUnknown(source.services),
     sorting_profile: stringOrEmpty(source.sorting_profile ?? source.sorter_profile ?? source.sorter).trim(),
+    thrusters: normalizeThrusterDrafts(source.thrusters),
     extra_json: formatJsonBlock(stripKeys(source, MOB_KNOWN_TOP_LEVEL_FIELDS)),
   };
 }
@@ -401,6 +454,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     scan_extra_json: "",
     services: [],
     sorting_profile: "",
+    thrusters: [],
     extra_json: "",
   };
 }
@@ -439,6 +493,7 @@ export function cloneMobDraft(source: MobDraft, existingIds: string[]) {
     comms_directory: [...source.comms_directory],
     scan_tiers: source.scan_tiers.map((tier) => ({ ...tier, key: createDraftKey() })),
     services: [...source.services],
+    thrusters: source.thrusters.map((thruster) => ({ ...thruster, key: createDraftKey() })),
   } satisfies MobDraft;
 }
 
@@ -536,6 +591,38 @@ export function validateMobDrafts(mobs: MobDraft[]): MobValidationIssue[] {
           field: "scan_tiers",
           message: `Scan tier ${index + 1} threshold must be numeric.`,
         });
+      }
+    }
+
+    for (const [index, thruster] of mob.thrusters.entries()) {
+      const numericFields = [
+        ["position_x", thruster.position_x],
+        ["position_y", thruster.position_y],
+        ["scale_x", thruster.scale_x],
+        ["scale_y", thruster.scale_y],
+        ["rotation_degrees", thruster.rotation_degrees],
+        ["z_index", thruster.z_index],
+        ["velocity_threshold", thruster.velocity_threshold],
+      ] as const;
+      for (const [field, value] of numericFields) {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          issues.push({
+            level: "error",
+            mobKey: mob.key,
+            field: "thrusters",
+            message: `Thruster ${index + 1} ${field} is required.`,
+          });
+          continue;
+        }
+        if (Number.isNaN(Number(trimmed))) {
+          issues.push({
+            level: "error",
+            mobKey: mob.key,
+            field: "thrusters",
+            message: `Thruster ${index + 1} ${field} must be numeric.`,
+          });
+        }
       }
     }
 
@@ -647,6 +734,16 @@ export function serializeMobDraft(mob: MobDraft) {
   const services = mob.services.map((entry) => entry.trim()).filter(Boolean);
   const commsDirectory = mob.comms_directory.map((entry) => entry.trim()).filter(Boolean);
   const spriteScale = parseVector2Draft(mob.sprite_scale_x, mob.sprite_scale_y, "sprite_scale");
+  const thrusters = mob.thrusters.map((thruster, index) =>
+    cleanObject({
+      position: parseThrusterVectorDraft(thruster.position_x, thruster.position_y, `thruster ${index + 1} position`, 0, 0),
+      scale: parseThrusterVectorDraft(thruster.scale_x, thruster.scale_y, `thruster ${index + 1} scale`, 1, 1),
+      rotation_degrees: parseRequiredNumberDraft(thruster.rotation_degrees, `thruster ${index + 1} rotation_degrees`),
+      z_index: parseRequiredNumberDraft(thruster.z_index, `thruster ${index + 1} z_index`),
+      enabled: thruster.enabled,
+      velocity_threshold: parseRequiredNumberDraft(thruster.velocity_threshold, `thruster ${index + 1} velocity_threshold`),
+    }),
+  );
 
   const known = cleanObject({
     id: mob.id.trim(),
@@ -690,6 +787,7 @@ export function serializeMobDraft(mob: MobDraft) {
     scan,
     sorting_profile: mob.sorting_profile.trim(),
     stats,
+    thrusters,
   });
 
   const next = { ...known } as JsonObject;
