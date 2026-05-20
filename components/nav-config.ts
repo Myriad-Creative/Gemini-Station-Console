@@ -30,6 +30,7 @@ const MISSION_SECTION_LINKS: NavLink[] = [
   { href: "/missions/explorer", label: "Explorer" },
   { href: "/missions/lab", label: "Lab", aliases: ["/mission-lab"] },
   { href: "/missions/creator", label: "Creator" },
+  { href: "/missions/dialogue", label: "Dialogue" },
 ];
 
 const COMBAT_SECTION_LINKS: NavLink[] = [

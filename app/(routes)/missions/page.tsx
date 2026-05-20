@@ -16,6 +16,11 @@ const missionLinks = [
     title: "Mission Creator",
     description: "Author and export richer mission drafts seeded from the shared mission workspace.",
   },
+  {
+    href: "/missions/dialogue",
+    title: "Mission Dialogue",
+    description: "Rewrite mission conversation beats with speaker portraits, dialogue text, responses, and objective lookahead.",
+  },
 ];
 
 export default function MissionsPage() {
@@ -39,7 +44,7 @@ export default function MissionsPage() {
         </Link>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         {missionLinks.map((link) => (
           <Link key={link.href} href={link.href} className="card block space-y-3 transition hover:border-cyan-300/30 hover:bg-white/[0.04]">
             <div className="text-xl font-semibold text-white">{link.title}</div>
