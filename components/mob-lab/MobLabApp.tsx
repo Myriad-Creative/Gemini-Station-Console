@@ -12,7 +12,7 @@ import { BUILT_IN_MOB_STAT_KEYS, MOB_SORT_OPTIONS } from "@lib/mob-lab/constants
 import { mergeGeneratedMobStats, MOB_STAT_RANK_OPTIONS } from "@lib/mob-lab/stat-scaling";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
-import type { MobDraft, MobSortKey, MobThrusterDraft, MobValidationIssue, MobLabWorkspace } from "@lib/mob-lab/types";
+import type { MobDraft, MobSortKey, MobThrusterDraft, MobValidationIssue, MobLabWorkspace, MobWeaponChargePointDraft } from "@lib/mob-lab/types";
 import type { CommsContactDraft } from "@lib/comms-manager/types";
 import { importCommsWorkspace, resolvedPortraitPath } from "@lib/comms-manager/utils";
 import type { MerchantProfileDraft } from "@lib/merchant-lab/types";
@@ -848,6 +848,12 @@ function clampThrusterZoom(value: number) {
   return Math.min(4, Math.max(0.5, value));
 }
 
+type PlacementKind = "thruster" | "weapon_charge";
+type PlacementSelection = {
+  kind: PlacementKind;
+  key: string;
+};
+
 function createMobThrusterDraft(positionX = 0, positionY = 120): MobThrusterDraft {
   return {
     key: `thruster-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -859,6 +865,18 @@ function createMobThrusterDraft(positionX = 0, positionY = 120): MobThrusterDraf
     z_index: "-2",
     enabled: true,
     velocity_threshold: "5",
+  };
+}
+
+function createMobWeaponChargePointDraft(positionX = 0, positionY = -120): MobWeaponChargePointDraft {
+  return {
+    key: `weapon-charge-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    position_x: formatThrusterNumber(positionX),
+    position_y: formatThrusterNumber(positionY),
+    scale_x: "1",
+    scale_y: "1",
+    z_index: "20",
+    enabled: true,
   };
 }
 
@@ -903,22 +921,61 @@ function ThrusterPlume({ thruster, selected }: { thruster: MobThrusterDraft; sel
   );
 }
 
+function WeaponChargePointMarker({ point, selected }: { point: MobWeaponChargePointDraft; selected: boolean }) {
+  const scaleX = Math.max(0.12, parseThrusterNumber(point.scale_x, 1));
+  const scaleY = Math.max(0.12, parseThrusterNumber(point.scale_y, 1));
+  return (
+    <div className="relative h-12 w-12">
+      <div
+        className={`absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border ${
+          selected ? "border-amber-100 bg-amber-100" : "border-amber-200/80 bg-amber-300/70"
+        } shadow-[0_0_20px_rgba(251,191,36,0.75)]`}
+      />
+      <svg
+        viewBox="-32 -32 64 64"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16"
+        style={{
+          transform: `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`,
+          opacity: point.enabled ? 1 : 0.35,
+        }}
+        aria-hidden="true"
+      >
+        <defs>
+          <radialGradient id={`weapon-charge-core-${point.key}`} cx="50%" cy="50%" r="55%">
+            <stop offset="0%" stopColor="#fff7ed" stopOpacity="1" />
+            <stop offset="45%" stopColor="#fbbf24" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <circle cx="0" cy="0" r="24" fill={`url(#weapon-charge-core-${point.key})`} />
+        <path d="M 0 -29 L 0 -16 M 0 16 L 0 29 M -29 0 L -16 0 M 16 0 L 29 0" stroke="#fde68a" strokeWidth="3" strokeLinecap="round" />
+        <circle cx="0" cy="0" r="13" fill="none" stroke="#fff7ed" strokeWidth="2" opacity="0.78" />
+      </svg>
+    </div>
+  );
+}
+
 function ThrusterPlacementEditor({
   mob,
   spriteSrc,
-  onChange,
+  onThrustersChange,
+  onWeaponChargePointsChange,
 }: {
   mob: MobDraft;
   spriteSrc: string | null;
-  onChange: (next: MobThrusterDraft[]) => void;
+  onThrustersChange: (next: MobThrusterDraft[]) => void;
+  onWeaponChargePointsChange: (next: MobWeaponChargePointDraft[]) => void;
 }) {
   const viewRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ width: 720, height: 440 });
   const [imageSize, setImageSize] = useState({ width: 512, height: 512 });
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [selectedKey, setSelectedKey] = useState<string | null>(mob.thrusters[0]?.key ?? null);
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [placementMode, setPlacementMode] = useState<PlacementKind>("thruster");
+  const [selectedPlacement, setSelectedPlacement] = useState<PlacementSelection | null>(
+    mob.thrusters[0] ? { kind: "thruster", key: mob.thrusters[0].key } : mob.weapon_charge_points[0] ? { kind: "weapon_charge", key: mob.weapon_charge_points[0].key } : null,
+  );
+  const [draggingPlacement, setDraggingPlacement] = useState<PlacementSelection | null>(null);
   const [panning, setPanning] = useState<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
@@ -938,14 +995,23 @@ function ThrusterPlacementEditor({
   }, []);
 
   useEffect(() => {
-    if (!mob.thrusters.length) {
-      setSelectedKey(null);
+    const selectedExists =
+      selectedPlacement?.kind === "thruster"
+        ? mob.thrusters.some((thruster) => thruster.key === selectedPlacement.key)
+        : selectedPlacement?.kind === "weapon_charge"
+          ? mob.weapon_charge_points.some((point) => point.key === selectedPlacement.key)
+          : false;
+    if (selectedExists) return;
+    if (mob.thrusters.length) {
+      setSelectedPlacement({ kind: "thruster", key: mob.thrusters[0].key });
       return;
     }
-    if (!selectedKey || !mob.thrusters.some((thruster) => thruster.key === selectedKey)) {
-      setSelectedKey(mob.thrusters[0].key);
+    if (mob.weapon_charge_points.length) {
+      setSelectedPlacement({ kind: "weapon_charge", key: mob.weapon_charge_points[0].key });
+      return;
     }
-  }, [mob.thrusters, selectedKey]);
+    setSelectedPlacement(null);
+  }, [mob.thrusters, mob.weapon_charge_points, selectedPlacement]);
 
   const runtimeSpriteScale = {
     x: Math.abs(parseThrusterNumber(mob.sprite_scale_x, 1)) || 1,
@@ -970,11 +1036,17 @@ function ThrusterPlacementEditor({
     };
   }, [imageSize.height, imageSize.width, panOffset.x, panOffset.y, runtimeSpriteScale.x, runtimeSpriteScale.y, viewSize.height, viewSize.width, zoom]);
 
-  const selectedThruster = mob.thrusters.find((thruster) => thruster.key === selectedKey) ?? null;
+  const selectedThruster = selectedPlacement?.kind === "thruster" ? mob.thrusters.find((thruster) => thruster.key === selectedPlacement.key) ?? null : null;
+  const selectedWeaponChargePoint =
+    selectedPlacement?.kind === "weapon_charge" ? mob.weapon_charge_points.find((point) => point.key === selectedPlacement.key) ?? null : null;
   const zoomPercent = Math.round(zoom * 100);
 
   function updateThruster(key: string, updater: (current: MobThrusterDraft) => MobThrusterDraft) {
-    onChange(mob.thrusters.map((thruster) => (thruster.key === key ? updater(thruster) : thruster)));
+    onThrustersChange(mob.thrusters.map((thruster) => (thruster.key === key ? updater(thruster) : thruster)));
+  }
+
+  function updateWeaponChargePoint(key: string, updater: (current: MobWeaponChargePointDraft) => MobWeaponChargePointDraft) {
+    onWeaponChargePointsChange(mob.weapon_charge_points.map((point) => (point.key === key ? updater(point) : point)));
   }
 
   function changeZoom(nextZoom: number) {
@@ -999,6 +1071,23 @@ function ThrusterPlacementEditor({
     }));
   }
 
+  function moveWeaponChargePointFromPointer(key: string, clientX: number, clientY: number) {
+    const nextPosition = screenToWorld(clientX, clientY);
+    updateWeaponChargePoint(key, (current) => ({
+      ...current,
+      position_x: formatThrusterNumber(nextPosition.x),
+      position_y: formatThrusterNumber(nextPosition.y),
+    }));
+  }
+
+  function movePlacementFromPointer(placement: PlacementSelection, clientX: number, clientY: number) {
+    if (placement.kind === "thruster") {
+      moveThrusterFromPointer(placement.key, clientX, clientY);
+      return;
+    }
+    moveWeaponChargePointFromPointer(placement.key, clientX, clientY);
+  }
+
   function moveFrameFromPointer(clientX: number, clientY: number) {
     if (!panning) return;
     setPanOffset({
@@ -1010,26 +1099,65 @@ function ThrusterPlacementEditor({
   function addThrusterAt(clientX?: number, clientY?: number) {
     const position = clientX !== undefined && clientY !== undefined ? screenToWorld(clientX, clientY) : { x: 0, y: imageSize.height * 0.28 };
     const nextThruster = createMobThrusterDraft(position.x, position.y);
-    onChange([...mob.thrusters, nextThruster]);
-    setSelectedKey(nextThruster.key);
+    onThrustersChange([...mob.thrusters, nextThruster]);
+    setPlacementMode("thruster");
+    setSelectedPlacement({ kind: "thruster", key: nextThruster.key });
+  }
+
+  function addWeaponChargePointAt(clientX?: number, clientY?: number) {
+    const position = clientX !== undefined && clientY !== undefined ? screenToWorld(clientX, clientY) : { x: 0, y: -imageSize.height * 0.23 };
+    const nextPoint = createMobWeaponChargePointDraft(position.x, position.y);
+    onWeaponChargePointsChange([...mob.weapon_charge_points, nextPoint]);
+    setPlacementMode("weapon_charge");
+    setSelectedPlacement({ kind: "weapon_charge", key: nextPoint.key });
+  }
+
+  function addPlacementAt(clientX?: number, clientY?: number) {
+    if (placementMode === "weapon_charge") {
+      addWeaponChargePointAt(clientX, clientY);
+      return;
+    }
+    addThrusterAt(clientX, clientY);
   }
 
   function removeThruster(key: string) {
     const nextThrusters = mob.thrusters.filter((thruster) => thruster.key !== key);
-    onChange(nextThrusters);
-    setSelectedKey(nextThrusters[0]?.key ?? null);
+    onThrustersChange(nextThrusters);
+    setSelectedPlacement(nextThrusters[0] ? { kind: "thruster", key: nextThrusters[0].key } : mob.weapon_charge_points[0] ? { kind: "weapon_charge", key: mob.weapon_charge_points[0].key } : null);
+  }
+
+  function removeWeaponChargePoint(key: string) {
+    const nextPoints = mob.weapon_charge_points.filter((point) => point.key !== key);
+    onWeaponChargePointsChange(nextPoints);
+    setSelectedPlacement(nextPoints[0] ? { kind: "weapon_charge", key: nextPoints[0].key } : mob.thrusters[0] ? { kind: "thruster", key: mob.thrusters[0].key } : null);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-white">Visual Thruster Placement</div>
+          <div className="text-sm font-medium text-white">Visual Thruster and Weapon Charge Placement</div>
           <div className="mt-1 text-xs text-white/50">
-            Drag a plume to move it. Double-click the canvas to add one at that point. Preview uses runtime sprite scale {runtimeSpriteScale.x} x {runtimeSpriteScale.y}.
+            Drag a plume or charge marker to move it. Double-click the canvas to add the selected placement type. Preview uses runtime sprite scale {runtimeSpriteScale.x} x {runtimeSpriteScale.y}.
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex rounded-lg border border-white/10 bg-black/20 p-1 text-xs">
+            <button
+              type="button"
+              className={`rounded px-3 py-1.5 ${placementMode === "thruster" ? "bg-cyan-300/15 text-cyan-100" : "text-white/55 hover:bg-white/5"}`}
+              onClick={() => setPlacementMode("thruster")}
+            >
+              Thrusters
+            </button>
+            <button
+              type="button"
+              className={`rounded px-3 py-1.5 ${placementMode === "weapon_charge" ? "bg-amber-300/15 text-amber-100" : "text-white/55 hover:bg-white/5"}`}
+              onClick={() => setPlacementMode("weapon_charge")}
+            >
+              Weapon Charge
+            </button>
+          </div>
           <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
             <button
               type="button"
@@ -1077,6 +1205,13 @@ function ThrusterPlacementEditor({
           >
             Add Thruster
           </button>
+          <button
+            type="button"
+            className="rounded border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-sm font-medium text-amber-100 hover:bg-amber-300/15"
+            onClick={() => addWeaponChargePointAt()}
+          >
+            Add Weapon Charge
+          </button>
         </div>
       </div>
 
@@ -1098,21 +1233,21 @@ function ThrusterPlacementEditor({
             });
           }}
           onPointerMove={(event) => {
-            if (draggingKey) {
-              moveThrusterFromPointer(draggingKey, event.clientX, event.clientY);
+            if (draggingPlacement) {
+              movePlacementFromPointer(draggingPlacement, event.clientX, event.clientY);
               return;
             }
             moveFrameFromPointer(event.clientX, event.clientY);
           }}
           onPointerUp={() => {
-            setDraggingKey(null);
+            setDraggingPlacement(null);
             setPanning(null);
           }}
           onPointerCancel={() => {
-            setDraggingKey(null);
+            setDraggingPlacement(null);
             setPanning(null);
           }}
-          onDoubleClick={(event) => addThrusterAt(event.clientX, event.clientY)}
+          onDoubleClick={(event) => addPlacementAt(event.clientX, event.clientY)}
         >
           <div
             className="pointer-events-none absolute border border-cyan-300/15"
@@ -1152,7 +1287,7 @@ function ThrusterPlacementEditor({
             const y = parseThrusterNumber(thruster.position_y, 0);
             const left = layout.originX + x * layout.scale;
             const top = layout.originY + y * layout.scale;
-            const isSelected = thruster.key === selectedKey;
+            const isSelected = selectedPlacement?.kind === "thruster" && thruster.key === selectedPlacement.key;
             return (
               <button
                 key={thruster.key}
@@ -1164,18 +1299,55 @@ function ThrusterPlacementEditor({
                 title={`Thruster ${index + 1}: ${formatThrusterNumber(x)}, ${formatThrusterNumber(y)}`}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setSelectedKey(thruster.key);
+                  setPlacementMode("thruster");
+                  setSelectedPlacement({ kind: "thruster", key: thruster.key });
                 }}
                 onDoubleClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   event.currentTarget.setPointerCapture(event.pointerId);
-                  setSelectedKey(thruster.key);
-                  setDraggingKey(thruster.key);
+                  setPlacementMode("thruster");
+                  setSelectedPlacement({ kind: "thruster", key: thruster.key });
+                  setDraggingPlacement({ kind: "thruster", key: thruster.key });
                   setPanning(null);
                 }}
               >
                 <ThrusterPlume thruster={thruster} selected={isSelected} />
+              </button>
+            );
+          })}
+
+          {mob.weapon_charge_points.map((point, index) => {
+            const x = parseThrusterNumber(point.position_x, 0);
+            const y = parseThrusterNumber(point.position_y, 0);
+            const left = layout.originX + x * layout.scale;
+            const top = layout.originY + y * layout.scale;
+            const isSelected = selectedPlacement?.kind === "weapon_charge" && point.key === selectedPlacement.key;
+            return (
+              <button
+                key={point.key}
+                type="button"
+                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full outline-none transition ${
+                  isSelected ? "ring-2 ring-amber-200 ring-offset-2 ring-offset-[#050b13]" : "hover:ring-2 hover:ring-amber-300/45"
+                }`}
+                style={{ left, top }}
+                title={`Weapon charge ${index + 1}: ${formatThrusterNumber(x)}, ${formatThrusterNumber(y)}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPlacementMode("weapon_charge");
+                  setSelectedPlacement({ kind: "weapon_charge", key: point.key });
+                }}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setPlacementMode("weapon_charge");
+                  setSelectedPlacement({ kind: "weapon_charge", key: point.key });
+                  setDraggingPlacement({ kind: "weapon_charge", key: point.key });
+                  setPanning(null);
+                }}
+              >
+                <WeaponChargePointMarker point={point} selected={isSelected} />
               </button>
             );
           })}
@@ -1185,12 +1357,12 @@ function ThrusterPlacementEditor({
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-white/10 bg-black/10 p-3">
+        <div className="space-y-4 rounded-xl border border-white/10 bg-black/10 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-medium text-white">Thrusters</div>
+              <div className="text-sm font-medium text-white">Placement Points</div>
               <div className="mt-1 text-xs text-white/45">
-                {mob.thrusters.length} configured. Positive Y is down the sprite.
+                {mob.thrusters.length} thruster{mob.thrusters.length === 1 ? "" : "s"} and {mob.weapon_charge_points.length} weapon charge point{mob.weapon_charge_points.length === 1 ? "" : "s"}. Positive Y is down the sprite.
               </div>
             </div>
             {selectedThruster ? (
@@ -1201,29 +1373,75 @@ function ThrusterPlacementEditor({
               >
                 Remove
               </button>
+            ) : selectedWeaponChargePoint ? (
+              <button
+                type="button"
+                className="shrink-0 rounded border border-red-400/25 px-3 py-2 text-xs text-red-100 hover:bg-red-400/10"
+                onClick={() => removeWeaponChargePoint(selectedWeaponChargePoint.key)}
+              >
+                Remove
+              </button>
             ) : null}
           </div>
 
-          {mob.thrusters.length ? (
-            <div className="flex flex-wrap gap-2">
-              {mob.thrusters.map((thruster, index) => (
-                <button
-                  key={thruster.key}
-                  type="button"
-                  className={`rounded border px-3 py-1.5 text-xs ${
-                    selectedKey === thruster.key ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-white/65 hover:bg-white/5"
-                  }`}
-                  onClick={() => setSelectedKey(thruster.key)}
-                >
-                  Thruster {index + 1}
-                </button>
-              ))}
+          <div className="space-y-3">
+            <div>
+              <div className="label">Thrusters</div>
+              {mob.thrusters.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {mob.thrusters.map((thruster, index) => (
+                    <button
+                      key={thruster.key}
+                      type="button"
+                      className={`rounded border px-3 py-1.5 text-xs ${
+                        selectedPlacement?.kind === "thruster" && selectedPlacement.key === thruster.key
+                          ? "border-cyan-300/60 bg-cyan-300/10 text-cyan-100"
+                          : "border-white/10 text-white/65 hover:bg-white/5"
+                      }`}
+                      onClick={() => {
+                        setPlacementMode("thruster");
+                        setSelectedPlacement({ kind: "thruster", key: thruster.key });
+                      }}
+                    >
+                      Thruster {index + 1}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-sm text-white/45">
+                  No thrusters configured for this mob yet.
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-white/45">
-              No thrusters configured for this mob yet.
+            <div>
+              <div className="label">Weapon Charge Points</div>
+              {mob.weapon_charge_points.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {mob.weapon_charge_points.map((point, index) => (
+                    <button
+                      key={point.key}
+                      type="button"
+                      className={`rounded border px-3 py-1.5 text-xs ${
+                        selectedPlacement?.kind === "weapon_charge" && selectedPlacement.key === point.key
+                          ? "border-amber-300/60 bg-amber-300/10 text-amber-100"
+                          : "border-white/10 text-white/65 hover:bg-white/5"
+                      }`}
+                      onClick={() => {
+                        setPlacementMode("weapon_charge");
+                        setSelectedPlacement({ kind: "weapon_charge", key: point.key });
+                      }}
+                    >
+                      Charge {index + 1}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-sm text-white/45">
+                  No weapon charge points configured for this mob yet.
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           {selectedThruster ? (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1263,6 +1481,42 @@ function ThrusterPlacementEditor({
                   className="h-4 w-4 rounded border-white/15 bg-[#07111d] text-cyan-300 focus:ring-cyan-300/25"
                   checked={selectedThruster.enabled}
                   onChange={(event) => updateThruster(selectedThruster.key, (current) => ({ ...current, enabled: event.target.checked }))}
+                />
+              </label>
+            </div>
+          ) : selectedWeaponChargePoint ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Position X", "position_x", "1"],
+                ["Position Y", "position_y", "1"],
+                ["Scale X", "scale_x", "0.05"],
+                ["Scale Y", "scale_y", "0.05"],
+                ["Z Index", "z_index", "1"],
+              ].map(([label, field, step]) => (
+                <label key={field} className={field === "z_index" ? "sm:col-span-2" : ""}>
+                  <div className="label">{label}</div>
+                  <input
+                    className="input mt-1"
+                    type="number"
+                    step={step}
+                    value={selectedWeaponChargePoint[field as keyof Pick<MobWeaponChargePointDraft, "position_x" | "position_y" | "scale_x" | "scale_y" | "z_index">]}
+                    onFocus={selectInputContents}
+                    onChange={(event) =>
+                      updateWeaponChargePoint(selectedWeaponChargePoint.key, (current) => ({
+                        ...current,
+                        [field]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              ))}
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 sm:col-span-2">
+                <span>Enabled</span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/15 bg-[#07111d] text-amber-300 focus:ring-amber-300/25"
+                  checked={selectedWeaponChargePoint.enabled}
+                  onChange={(event) => updateWeaponChargePoint(selectedWeaponChargePoint.key, (current) => ({ ...current, enabled: event.target.checked }))}
                 />
               </label>
             </div>
@@ -1417,6 +1671,8 @@ export default function MobLabApp() {
           mob.sorting_profile,
           mob.thrusters.length ? "thruster thrusters plume engine" : "",
           mob.thrusters.map((thruster) => `${thruster.position_x},${thruster.position_y}`).join(" "),
+          mob.weapon_charge_points.length ? "weapon charge ability vfx point points" : "",
+          mob.weapon_charge_points.map((point) => `${point.position_x},${point.position_y}`).join(" "),
           mob.location_container ? "location container" : "",
         ]
           .join(" ")
@@ -2543,13 +2799,14 @@ export default function MobLabApp() {
                 </Section>
 
                 <Section
-                  title="Thruster Placement"
-                  description="Manage the programmatic thrusters exported to mobs.json. The canvas uses the mob sprite center as 0,0, matching the runtime Node2D placement."
+                  title="Thruster and Weapon Charge Placement"
+                  description="Manage programmatic thrusters and weapon charge VFX points exported to mobs.json. The canvas uses the mob sprite center as 0,0, matching runtime Node2D placement."
                 >
                   <ThrusterPlacementEditor
                     mob={selectedMob}
                     spriteSrc={spritePreviewSrc}
-                    onChange={(next) => updateSelectedMob((current) => ({ ...current, thrusters: next }))}
+                    onThrustersChange={(next) => updateSelectedMob((current) => ({ ...current, thrusters: next }))}
+                    onWeaponChargePointsChange={(next) => updateSelectedMob((current) => ({ ...current, weapon_charge_points: next }))}
                   />
                 </Section>
 

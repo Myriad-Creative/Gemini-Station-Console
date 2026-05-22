@@ -99,6 +99,14 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "sorting_profile",
   "stats",
   "thrusters",
+  "weapon_charge_point",
+  "weapon_charge_points",
+  "weapon_charge_vfx_point",
+  "weapon_charge_vfx_points",
+  "charge_point",
+  "charge_points",
+  "charge_vfx_point",
+  "charge_vfx_points",
 ] as const;
 
 export const MOB_SORT_OPTIONS = [

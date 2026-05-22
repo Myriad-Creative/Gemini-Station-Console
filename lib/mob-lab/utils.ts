@@ -13,6 +13,7 @@ import type {
   MobLabSourceShape,
   MobLabSummary,
   MobThrusterDraft,
+  MobWeaponChargePointDraft,
   MobLabWorkspace,
   MobValidationIssue,
   ScanTierDraft,
@@ -108,6 +109,37 @@ function normalizeThrusterDrafts(value: unknown): MobThrusterDraft[] {
       };
     })
     .filter((entry): entry is MobThrusterDraft => entry !== null);
+}
+
+function normalizeWeaponChargePointDrafts(source: JsonObject): MobWeaponChargePointDraft[] {
+  const value =
+    source.weapon_charge_points ??
+    source.charge_points ??
+    source.weapon_charge_vfx_points ??
+    source.charge_vfx_points;
+  const singleValue =
+    source.weapon_charge_point ??
+    source.charge_point ??
+    source.weapon_charge_vfx_point ??
+    source.charge_vfx_point;
+  const entries = Array.isArray(value) ? value : singleValue === undefined ? [] : [singleValue];
+  return entries
+    .map((entry) => {
+      const pointSource = asObject(entry);
+      if (!Object.keys(pointSource).length && entry === null) return null;
+      const position = Object.keys(pointSource).length ? normalizeVector2DraftWithFallback(pointSource.position, 0, -120) : normalizeVector2DraftWithFallback(entry, 0, -120);
+      const scale = normalizeVector2DraftWithFallback(pointSource.scale, 1, 1);
+      return {
+        key: createDraftKey(),
+        position_x: position.x,
+        position_y: position.y,
+        scale_x: scale.x,
+        scale_y: scale.y,
+        z_index: formatDraftNumber(pointSource.z_index ?? 20),
+        enabled: pointSource.enabled === undefined ? true : booleanFromUnknown(pointSource.enabled),
+      };
+    })
+    .filter((entry): entry is MobWeaponChargePointDraft => entry !== null);
 }
 
 function stringListFromUnknown(value: unknown) {
@@ -363,6 +395,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     services: stringListFromUnknown(source.services),
     sorting_profile: stringOrEmpty(source.sorting_profile ?? source.sorter_profile ?? source.sorter).trim(),
     thrusters: normalizeThrusterDrafts(source.thrusters),
+    weapon_charge_points: normalizeWeaponChargePointDrafts(source),
     extra_json: formatJsonBlock(stripKeys(source, MOB_KNOWN_TOP_LEVEL_FIELDS)),
   };
 }
@@ -455,6 +488,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     services: [],
     sorting_profile: "",
     thrusters: [],
+    weapon_charge_points: [],
     extra_json: "",
   };
 }
@@ -494,6 +528,7 @@ export function cloneMobDraft(source: MobDraft, existingIds: string[]) {
     scan_tiers: source.scan_tiers.map((tier) => ({ ...tier, key: createDraftKey() })),
     services: [...source.services],
     thrusters: source.thrusters.map((thruster) => ({ ...thruster, key: createDraftKey() })),
+    weapon_charge_points: source.weapon_charge_points.map((point) => ({ ...point, key: createDraftKey() })),
   } satisfies MobDraft;
 }
 
@@ -626,6 +661,36 @@ export function validateMobDrafts(mobs: MobDraft[]): MobValidationIssue[] {
       }
     }
 
+    for (const [index, point] of mob.weapon_charge_points.entries()) {
+      const numericFields = [
+        ["position_x", point.position_x],
+        ["position_y", point.position_y],
+        ["scale_x", point.scale_x],
+        ["scale_y", point.scale_y],
+        ["z_index", point.z_index],
+      ] as const;
+      for (const [field, value] of numericFields) {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          issues.push({
+            level: "error",
+            mobKey: mob.key,
+            field: "weapon_charge_points",
+            message: `Weapon charge point ${index + 1} ${field} is required.`,
+          });
+          continue;
+        }
+        if (Number.isNaN(Number(trimmed))) {
+          issues.push({
+            level: "error",
+            mobKey: mob.key,
+            field: "weapon_charge_points",
+            message: `Weapon charge point ${index + 1} ${field} must be numeric.`,
+          });
+        }
+      }
+    }
+
     if (mob.scan_extra_json.trim()) {
       try {
         const scanExtra = parseObjectTextarea(mob.scan_extra_json, "Scan Extra JSON");
@@ -744,6 +809,14 @@ export function serializeMobDraft(mob: MobDraft) {
       velocity_threshold: parseRequiredNumberDraft(thruster.velocity_threshold, `thruster ${index + 1} velocity_threshold`),
     }),
   );
+  const weaponChargePoints = mob.weapon_charge_points.map((point, index) =>
+    cleanObject({
+      position: parseThrusterVectorDraft(point.position_x, point.position_y, `weapon charge point ${index + 1} position`, 0, -120),
+      scale: parseThrusterVectorDraft(point.scale_x, point.scale_y, `weapon charge point ${index + 1} scale`, 1, 1),
+      z_index: parseRequiredNumberDraft(point.z_index, `weapon charge point ${index + 1} z_index`),
+      enabled: point.enabled,
+    }),
+  );
 
   const known = cleanObject({
     id: mob.id.trim(),
@@ -788,6 +861,7 @@ export function serializeMobDraft(mob: MobDraft) {
     sorting_profile: mob.sorting_profile.trim(),
     stats,
     thrusters,
+    weapon_charge_points: weaponChargePoints,
   });
 
   const next = { ...known } as JsonObject;

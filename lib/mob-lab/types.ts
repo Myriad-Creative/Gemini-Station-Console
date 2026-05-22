@@ -22,6 +22,16 @@ export interface MobThrusterDraft {
   velocity_threshold: string;
 }
 
+export interface MobWeaponChargePointDraft {
+  key: string;
+  position_x: string;
+  position_y: string;
+  scale_x: string;
+  scale_y: string;
+  z_index: string;
+  enabled: boolean;
+}
+
 export interface MobDraft {
   key: string;
   sourceIndex: number;
@@ -74,6 +84,7 @@ export interface MobDraft {
   services: string[];
   sorting_profile: string;
   thrusters: MobThrusterDraft[];
+  weapon_charge_points: MobWeaponChargePointDraft[];
   extra_json: string;
 }
 
