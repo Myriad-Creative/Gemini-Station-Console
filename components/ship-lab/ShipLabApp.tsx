@@ -23,6 +23,7 @@ type StatusState = { tone: "neutral" | "success" | "error"; message: string } | 
 type EditableShip = {
   key: string;
   sourceFileName: string | null;
+  targetFileName: string;
   profileIndex: number | null;
   isNew: boolean;
   data: ShipJsonObject;
@@ -71,6 +72,7 @@ function editableFromProfile(profile: ShipProfile): EditableShip {
   return {
     key: profile.key,
     sourceFileName: profile.fileName,
+    targetFileName: profile.fileName,
     profileIndex: profile.profileIndex,
     isNew: false,
     data,
@@ -85,6 +87,7 @@ function editableFromData(data: ShipJsonObject, sourceFileName: string | null, i
   return {
     key: `${String(cloned.id ?? "ship")}-${Date.now()}`,
     sourceFileName,
+    targetFileName: fileNameForShipId(String(cloned.id ?? "ship")),
     profileIndex: null,
     isNew,
     data: cloned,
@@ -175,6 +178,7 @@ export default function ShipLabApp() {
   const [status, setStatus] = useState<StatusState>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [newStatKey, setNewStatKey] = useState("");
   const [newSlotKey, setNewSlotKey] = useState("");
 
@@ -223,6 +227,26 @@ export default function ShipLabApp() {
     updateDraftData((current) => ({ ...current, [key]: value }));
   }
 
+  function setShipId(nextId: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      const previousId = String(current.data.id ?? "");
+      const previousAutoFileName = fileNameForShipId(previousId);
+      const shouldKeepFileNameInSync = current.isNew && (!current.targetFileName || current.targetFileName === previousAutoFileName);
+      return {
+        ...current,
+        targetFileName: shouldKeepFileNameInSync ? fileNameForShipId(nextId) : current.targetFileName,
+        data: { ...current.data, id: nextId },
+      };
+    });
+  }
+
+  function normalizeShipFileName(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    return trimmed.toLowerCase().endsWith(".json") ? trimmed : `${trimmed}.json`;
+  }
+
   function setObjectField(section: string, key: string, value: ShipJsonValue | undefined) {
     updateDraftData((current) => {
       const source = asObject(current[section]);
@@ -260,20 +284,47 @@ export default function ShipLabApp() {
     setSaving(true);
     try {
       const profile = serializeEditableShip(draft);
-      const targetFileName = draft.isNew || draft.profileIndex !== null ? fileNameForShipId(String(profile.id ?? "")) : draft.sourceFileName || fileNameForShipId(String(profile.id ?? ""));
+      const targetFileName = normalizeShipFileName(draft.targetFileName) || fileNameForShipId(String(profile.id ?? ""));
       const response = await fetch("/api/ships/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileName: targetFileName, profile }),
+        body: JSON.stringify({
+          action: "save",
+          fileName: targetFileName,
+          sourceFileName: draft.sourceFileName,
+          profileIndex: draft.profileIndex,
+          profile,
+        }),
       });
       const result = (await response.json()) as { ok?: boolean; error?: string; savedPath?: string; fileName?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Ship profile save failed.");
-      setStatus({ tone: "success", message: `Saved ${result.fileName} to the game folder.` });
       await loadShips(String(profile.id ?? ""));
+      setStatus({ tone: "success", message: `Saved ${result.fileName} to the game folder.` });
     } catch (error) {
       setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteSelectedShipFile() {
+    if (!selectedProfile) return;
+    if (!window.confirm(`Delete player ship file "${selectedProfile.fileName}" from data/ships?`)) return;
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/ships/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete", fileName: selectedProfile.fileName }),
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string; fileName?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Ship profile delete failed.");
+      await loadShips();
+      setStatus({ tone: "success", message: `Deleted ${result.fileName} from the game folder.` });
+    } catch (error) {
+      setStatus({ tone: "error", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -310,6 +361,14 @@ export default function ShipLabApp() {
             onClick={duplicateShip}
           >
             Duplicate
+          </button>
+          <button
+            type="button"
+            className="rounded border border-red-300/25 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10 disabled:cursor-default disabled:opacity-40"
+            disabled={!selectedProfile || deleting}
+            onClick={() => void deleteSelectedShipFile()}
+          >
+            {deleting ? "Deleting..." : "Delete File"}
           </button>
           <button type="button" className="btn-save-build disabled:cursor-default disabled:opacity-40" disabled={!draft || saving} onClick={saveShip}>
             {saving ? "Saving..." : "Save Ship To Game"}
@@ -392,8 +451,14 @@ export default function ShipLabApp() {
                   )}
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <InputField label="Ship ID" value={stringValue(draft.data.id)} onChange={(next) => setTopLevelField("id", next)} />
+                  <InputField label="Ship ID" value={stringValue(draft.data.id)} onChange={setShipId} />
                   <InputField label="Display Name" value={stringValue(draft.data.display_name)} onChange={(next) => setTopLevelField("display_name", next)} />
+                  <InputField
+                    label="JSON File Name"
+                    value={draft.targetFileName}
+                    onChange={(next) => setDraft((current) => (current ? { ...current, targetFileName: next } : current))}
+                    placeholder="trainer.json"
+                  />
                   <InputField label="Scene" value={stringValue(draft.data.scene)} onChange={(next) => setTopLevelField("scene", next)} />
                   <InputField label="Sprite" value={stringValue(draft.data.sprite)} onChange={(next) => setTopLevelField("sprite", next)} />
                   <InputField label="Inherits" value={stringValue(draft.data.inherits)} onChange={(next) => setTopLevelField("inherits", next)} placeholder="Optional parent ship ID" />
@@ -406,7 +471,7 @@ export default function ShipLabApp() {
                   <div>
                     <div className="label">Save Target</div>
                     <div className="mt-2 rounded border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-sm text-white/65">
-                      {draft.isNew || draft.profileIndex !== null ? fileNameForShipId(stringValue(draft.data.id)) : draft.sourceFileName}
+                      {normalizeShipFileName(draft.targetFileName) || fileNameForShipId(stringValue(draft.data.id))}
                     </div>
                   </div>
                 </div>
