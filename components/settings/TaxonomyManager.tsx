@@ -30,6 +30,16 @@ function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.map(cleanName).filter(Boolean))).sort((left, right) => left.localeCompare(right));
 }
 
+function duplicateNames(values: string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const cleaned = cleanName(value).toLowerCase();
+    if (!cleaned) continue;
+    counts.set(cleaned, (counts.get(cleaned) ?? 0) + 1);
+  }
+  return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([name]) => name));
+}
+
 export default function TaxonomyManager({ kind }: { kind: CatalogKind }) {
   const [payload, setPayload] = useState<TaxonomyPayload | null>(null);
   const [entries, setEntries] = useState<string[]>([]);
@@ -63,6 +73,16 @@ export default function TaxonomyManager({ kind }: { kind: CatalogKind }) {
   const gameFactionByName = useMemo(() => {
     return new Map((payload?.factions ?? []).filter((entry) => entry.source === "game").map((entry) => [entry.name, entry]));
   }, [payload]);
+  const duplicateEntries = useMemo(() => duplicateNames(entries), [entries]);
+  const hasDuplicateEntries = duplicateEntries.size > 0;
+
+  function updateEntry(index: number, value: string) {
+    setEntries((current) => current.map((entry, entryIndex) => (entryIndex === index ? value : entry)));
+  }
+
+  function removeEntry(index: number) {
+    setEntries((current) => current.filter((_, entryIndex) => entryIndex !== index));
+  }
 
   function addEntry() {
     const cleaned = cleanName(newEntry);
@@ -72,10 +92,17 @@ export default function TaxonomyManager({ kind }: { kind: CatalogKind }) {
   }
 
   async function saveEntries() {
+    const cleanedEntries = entries.map(cleanName).filter(Boolean);
+    const normalizedEntries = uniqueSorted(cleanedEntries);
+    if (entries.some((entry) => !cleanName(entry)) || hasDuplicateEntries) {
+      setStatus(`Fix duplicate or blank ${noun} names before saving.`);
+      return;
+    }
+
     setSaving(true);
     setStatus("");
     try {
-      const body = kind === "factions" ? { factions: entries } : { classes: entries };
+      const body = kind === "factions" ? { factions: normalizedEntries } : { classes: normalizedEntries };
       const response = await fetch("/api/taxonomy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -88,7 +115,7 @@ export default function TaxonomyManager({ kind }: { kind: CatalogKind }) {
       }
       setPayload(json);
       setEntries(kind === "factions" ? uniqueSorted((json.factions ?? []).map((entry) => entry.name)) : uniqueSorted(json.classes ?? []));
-      setStatus(`Saved ${entries.length} ${noun}${entries.length === 1 ? "" : "s"}.`);
+      setStatus(`Saved ${normalizedEntries.length} ${noun}${normalizedEntries.length === 1 ? "" : "s"}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : `Could not save ${noun} catalog.`);
     } finally {
@@ -139,21 +166,30 @@ export default function TaxonomyManager({ kind }: { kind: CatalogKind }) {
         </div>
 
         <div className="space-y-2">
-          {entries.map((entry) => {
-            const gameFaction = gameFactionByName.get(entry);
+          {hasDuplicateEntries ? <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">Duplicate names need to be resolved before saving.</div> : null}
+          {entries.map((entry, index) => {
+            const cleanedEntry = cleanName(entry);
+            const gameFaction = gameFactionByName.get(cleanedEntry);
+            const isDuplicate = duplicateEntries.has(cleanedEntry.toLowerCase());
             return (
-              <div key={entry} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+              <div key={index} className="grid gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                 <div>
-                  <div className="font-medium text-white">{entry}</div>
+                  <input
+                    className={`input ${isDuplicate ? "border-amber-300/40" : ""}`}
+                    value={entry}
+                    onChange={(event) => updateEntry(index, event.target.value)}
+                    aria-label={`${kind === "factions" ? "Faction" : "Class"} name`}
+                  />
                   {kind === "factions" && gameFaction ? (
                     <div className="mt-1 text-xs text-white/45">
                       Game faction · default {gameFaction.defaultPoints ?? "n/a"} · forced {gameFaction.forcedPoints ?? "none"}
                     </div>
                   ) : null}
+                  {isDuplicate ? <div className="mt-1 text-xs text-amber-100/80">This name is duplicated.</div> : null}
                 </div>
                 <button
                   className="rounded border border-red-300/25 bg-red-400/10 px-3 py-1.5 text-sm text-red-100 hover:bg-red-400/15"
-                  onClick={() => setEntries((current) => current.filter((value) => value !== entry))}
+                  onClick={() => removeEntry(index)}
                 >
                   Remove
                 </button>
