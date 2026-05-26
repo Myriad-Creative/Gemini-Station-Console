@@ -75,6 +75,22 @@ type ContextMenuState = {
 type PendingZoneDuplicate = {
   sourceZoneId: string;
 };
+type SystemMapLootTableEntry = {
+  id: string;
+  weight: number;
+  name: string | null;
+};
+type SystemMapLootTableOption = {
+  id: string;
+  rolls: number;
+  entryCount: number;
+  totalWeight: number;
+  entries: SystemMapLootTableEntry[];
+};
+type SystemMapLootTableCatalog = {
+  items: SystemMapLootTableOption[];
+  mods: SystemMapLootTableOption[];
+};
 type EnvironmentalBarrierForm = {
   mode: "create" | "edit";
   originalId: string;
@@ -272,6 +288,8 @@ type MobSpawnForm = {
   levelMin: string;
   levelMax: string;
   rank: string;
+  itemLootTable: string;
+  modLootTable: string;
 };
 type MobDragState = {
   zoneId: string;
@@ -3074,6 +3092,8 @@ function systemMapMobToManagerDraft(mob: SystemMapMobSpawn, existingDraft?: Zone
     levelMin: mob.levelMin === null ? "" : numberInputValue(mob.levelMin),
     levelMax: mob.levelMax === null ? "" : numberInputValue(mob.levelMax),
     rank: mob.rank,
+    itemLootTable: mob.itemLootTable,
+    modLootTable: mob.modLootTable,
   };
 }
 
@@ -3145,6 +3165,8 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     levelMax: form.levelMax.trim() ? Number(form.levelMax) : null,
     level: entry?.level ?? null,
     rank: form.rank.trim() || "normal",
+    itemLootTable: form.itemLootTable.trim(),
+    modLootTable: form.modLootTable.trim(),
     faction: entry?.faction || "",
     sprite: entry?.sprite || "",
     spriteScale: entry?.spriteScale ?? null,
@@ -3541,7 +3563,7 @@ function zoneMatches(zone: SystemMapZone, query: string) {
     zone.sector.x,
     zone.sector.y,
     ...zone.stages.flatMap((stage) => [stage.stageId, stage.name, stage.shape]),
-    ...zone.mobs.flatMap((mob) => [mob.mobId, mob.displayName, mob.faction]),
+    ...zone.mobs.flatMap((mob) => [mob.mobId, mob.displayName, mob.faction, mob.itemLootTable, mob.modLootTable]),
   ]
     .join(" ")
     .toLowerCase()
@@ -3575,7 +3597,15 @@ function updateZonePois(pois: SystemMapPoi[], originalZoneId: string, zone: Syst
 
 function mobMatches(mob: SystemMapMobSpawn | SystemMapSceneMobSpawn, query: string) {
   if (!query) return true;
-  return [mob.mobId, mob.displayName, mob.faction].join(" ").toLowerCase().includes(query);
+  return [mob.mobId, mob.displayName, mob.faction, "itemLootTable" in mob ? mob.itemLootTable : "", "modLootTable" in mob ? mob.modLootTable : ""].join(" ").toLowerCase().includes(query);
+}
+
+function lootTableMatches(table: SystemMapLootTableOption, query: string) {
+  if (!query) return true;
+  return [table.id, ...table.entries.slice(0, 12).flatMap((entry) => [entry.id, entry.name ?? ""])]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
 }
 
 function routeMatches(route: SystemMapRoute, query: string) {
@@ -3599,6 +3629,99 @@ function isMapUiTarget(target: EventTarget | null) {
 
 function isTypingTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+function LootTableChoice({
+  label,
+  value,
+  search,
+  options,
+  allOptions,
+  status,
+  placeholder,
+  onChange,
+  onSearchChange,
+}: {
+  label: string;
+  value: string;
+  search: string;
+  options: SystemMapLootTableOption[];
+  allOptions: SystemMapLootTableOption[];
+  status: string;
+  placeholder: string;
+  onChange: (next: string) => void;
+  onSearchChange: (next: string) => void;
+}) {
+  const selected = allOptions.find((table) => table.id === value.trim()) ?? null;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-white">{label}</div>
+          <div className="mt-1 text-xs text-white/45">
+            {selected
+              ? `${selected.rolls} roll${selected.rolls === 1 ? "" : "s"} · ${selected.entryCount} entr${selected.entryCount === 1 ? "y" : "ies"} · weight ${selected.totalWeight}`
+              : value.trim()
+                ? "This table is not in the loaded loot catalog."
+                : "Optional spawn-local override. Blank falls back to the mob's base loot table."}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="rounded border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/5 disabled:cursor-default disabled:opacity-40"
+          disabled={!value.trim()}
+          onClick={() => onChange("")}
+        >
+          Clear
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <input className="input font-mono" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+        <input className="input" value={search} placeholder={`Search ${label.toLowerCase()}...`} onChange={(event) => onSearchChange(event.target.value)} />
+      </div>
+      {status ? <div className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">{status}</div> : null}
+      {value.trim() && !selected ? <div className="mt-2 rounded-lg border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-xs text-yellow-100">Current value "{value}" is not a loaded table ID.</div> : null}
+      <div className="mt-3 max-h-48 space-y-2 overflow-auto pr-1">
+        {options.length ? (
+          options.map((table) => {
+            const isSelected = table.id === value.trim();
+            const sampleEntries = table.entries.slice(0, 3);
+            return (
+              <button
+                key={table.id}
+                type="button"
+                className={`w-full rounded-lg border p-2 text-left transition ${isSelected ? "border-cyan-300/55 bg-cyan-300/10" : "border-white/10 bg-white/[0.03] hover:bg-white/10"}`}
+                onClick={() => onChange(table.id)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-sm font-semibold text-white">{table.id}</div>
+                    <div className="mt-1 text-xs text-white/45">
+                      {table.rolls} roll{table.rolls === 1 ? "" : "s"} · {table.entryCount} entries
+                    </div>
+                  </div>
+                  {isSelected ? <span className="rounded bg-cyan-300/15 px-2 py-1 text-xs text-cyan-100">Selected</span> : null}
+                </div>
+                {sampleEntries.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {sampleEntries.map((entry) => (
+                      <span key={`${table.id}-${entry.id}`} className="badge">
+                        {entry.name || entry.id} · {entry.weight}
+                      </span>
+                    ))}
+                    {table.entries.length > sampleEntries.length ? <span className="badge">+{table.entries.length - sampleEntries.length} more</span> : null}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })
+        ) : (
+          <div className="rounded-lg border border-dashed border-white/10 px-3 py-5 text-center text-sm text-white/45">No matching tables.</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function SystemMapViewer() {
@@ -3641,6 +3764,10 @@ export default function SystemMapViewer() {
   const [stagePlacementSearch, setStagePlacementSearch] = useState("");
   const [mobSpawnForm, setMobSpawnForm] = useState<MobSpawnForm | null>(null);
   const [mobSpawnSearch, setMobSpawnSearch] = useState("");
+  const [lootTables, setLootTables] = useState<SystemMapLootTableCatalog>({ items: [], mods: [] });
+  const [lootTableCatalogStatus, setLootTableCatalogStatus] = useState("");
+  const [mobItemLootTableSearch, setMobItemLootTableSearch] = useState("");
+  const [mobModLootTableSearch, setMobModLootTableSearch] = useState("");
   const [zoneIdManuallyEdited, setZoneIdManuallyEdited] = useState(false);
   const [routeIdManuallyEdited, setRouteIdManuallyEdited] = useState(false);
   const [environmentalIdManuallyEdited, setEnvironmentalIdManuallyEdited] = useState(false);
@@ -3693,6 +3820,37 @@ export default function SystemMapViewer() {
       }
     }
     void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLootTables() {
+      try {
+        const response = await fetch("/api/loot-tables", { cache: "no-store" });
+        const data = await response.json().catch(() => ({}));
+        const catalog = data?.data as Partial<SystemMapLootTableCatalog> | undefined;
+        if (cancelled) return;
+        if (!response.ok || !data?.ok) {
+          setLootTables({ items: [], mods: [] });
+          setLootTableCatalogStatus(data?.error ? String(data.error) : "Unable to load loot tables from the active game root.");
+          return;
+        }
+        setLootTables({
+          items: Array.isArray(catalog?.items) ? catalog.items : [],
+          mods: Array.isArray(catalog?.mods) ? catalog.mods : [],
+        });
+        setLootTableCatalogStatus("");
+      } catch (loadError) {
+        if (!cancelled) {
+          setLootTables({ items: [], mods: [] });
+          setLootTableCatalogStatus(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      }
+    }
+    void loadLootTables();
     return () => {
       cancelled = true;
     };
@@ -5443,6 +5601,8 @@ export default function SystemMapViewer() {
                 `Count: ${mob.count}`,
                 mob.spawnArea.shape.toLowerCase() === "polygon" ? `Spawn area: polygon (${mob.spawnArea.points.length} points)` : `Radius: ${formatNumber(mob.radius)}`,
                 `Level: ${mob.levelMin ?? "?"}-${mob.levelMax ?? "?"} (${mob.rank})`,
+                `Item loot table: ${mob.itemLootTable || "none"}`,
+                `Mod loot table: ${mob.modLootTable || "none"}`,
                 `Faction: ${mob.faction || "not set"}`,
                 ...(mob.spriteScale ? [`Sprite scale: ${formatScale(mob.spriteScale)}`] : []),
                 `World: ${formatVec(mob.world)}`,
@@ -6064,8 +6224,12 @@ export default function SystemMapViewer() {
       levelMin: "",
       levelMax: "",
       rank: "normal",
+      itemLootTable: "",
+      modLootTable: "",
     });
     setMobSpawnSearch("");
+    setMobItemLootTableSearch("");
+    setMobModLootTableSearch("");
     setContextMenu(null);
     setStatus(null);
   }
@@ -6139,8 +6303,12 @@ export default function SystemMapViewer() {
       levelMin: mob.levelMin === null ? "" : numberInputValue(mob.levelMin),
       levelMax: mob.levelMax === null ? "" : numberInputValue(mob.levelMax),
       rank: mob.rank || "normal",
+      itemLootTable: mob.itemLootTable,
+      modLootTable: mob.modLootTable,
     });
     setMobSpawnSearch(mob.displayName || mob.mobId);
+    setMobItemLootTableSearch(mob.itemLootTable);
+    setMobModLootTableSearch(mob.modLootTable);
     setContextMenu(null);
     setStatus(null);
   }
@@ -7459,6 +7627,14 @@ export default function SystemMapViewer() {
       )
       .slice(0, 40);
   }, [mobSpawnSearch, payload?.mobCatalog]);
+  const filteredMobItemLootTables = useMemo(() => {
+    const normalized = mobItemLootTableSearch.trim().toLowerCase();
+    return lootTables.items.filter((table) => lootTableMatches(table, normalized)).slice(0, 30);
+  }, [lootTables.items, mobItemLootTableSearch]);
+  const filteredMobModLootTables = useMemo(() => {
+    const normalized = mobModLootTableSearch.trim().toLowerCase();
+    return lootTables.mods.filter((table) => lootTableMatches(table, normalized)).slice(0, 30);
+  }, [lootTables.mods, mobModLootTableSearch]);
   const activeMobSpawnZone = useMemo(
     () => (mobSpawnForm ? mapZones.find((zone) => zoneIdentity(zone) === mobSpawnForm.zoneId) ?? null : null),
     [mapZones, mobSpawnForm],
@@ -9922,7 +10098,7 @@ export default function SystemMapViewer() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">{mobSpawnForm.mode === "create" ? "Add Mob Spawn" : "Edit Mob Spawn"}</div>
-                <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, rank, spawn shape, and respawn cooldown.</div>
+                <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, loot tables, rank, spawn shape, and respawn cooldown.</div>
               </div>
               <button
                 type="button"
@@ -10024,6 +10200,31 @@ export default function SystemMapViewer() {
                   <option value="elite">Elite</option>
                 </select>
               </label>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <LootTableChoice
+                label="Item Loot Table"
+                value={mobSpawnForm.itemLootTable}
+                search={mobItemLootTableSearch}
+                options={filteredMobItemLootTables}
+                allOptions={lootTables.items}
+                status={lootTableCatalogStatus}
+                placeholder="item_loot_table"
+                onChange={(next) => setMobSpawnForm((current) => (current ? { ...current, itemLootTable: next } : current))}
+                onSearchChange={setMobItemLootTableSearch}
+              />
+              <LootTableChoice
+                label="Mod Loot Table"
+                value={mobSpawnForm.modLootTable}
+                search={mobModLootTableSearch}
+                options={filteredMobModLootTables}
+                allOptions={lootTables.mods}
+                status={lootTableCatalogStatus}
+                placeholder="mod_loot_table"
+                onChange={(next) => setMobSpawnForm((current) => (current ? { ...current, modLootTable: next } : current))}
+                onSearchChange={setMobModLootTableSearch}
+              />
             </div>
 
             {(() => {

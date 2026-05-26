@@ -1102,6 +1102,8 @@ function buildMobSpawn(
     levelMax: nullableNumberValue(spawn.level_max),
     level: nullableNumberValue(mob.level),
     rank: stringValue(spawn.rank, "normal"),
+    itemLootTable: stringValue(spawn.item_loot_table ?? spawn.loot_table ?? spawn.item_table, ""),
+    modLootTable: stringValue(spawn.mod_loot_table ?? spawn.mod_table, ""),
     faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
     sprite: stringValue(mob.sprite, ""),
     spriteScale: nullableVecValue(mob.sprite_scale),

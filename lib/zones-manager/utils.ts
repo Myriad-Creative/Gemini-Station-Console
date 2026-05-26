@@ -36,7 +36,23 @@ const ZONE_TOP_LEVEL_KEYS = [
 
 const BOUNDS_KEYS = ["shape", "width", "height", "points"] as const;
 const STAGE_KEYS = ["stage_id", "pos"] as const;
-const MOB_KEYS = ["mob_id", "count", "radius", "spawn_area", "respawn_delay", "pos", "angle_deg", "level_min", "level_max", "rank"] as const;
+const MOB_KEYS = [
+  "mob_id",
+  "count",
+  "radius",
+  "spawn_area",
+  "respawn_delay",
+  "pos",
+  "angle_deg",
+  "level_min",
+  "level_max",
+  "rank",
+  "item_loot_table",
+  "loot_table",
+  "item_table",
+  "mod_loot_table",
+  "mod_table",
+] as const;
 
 function asObject(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -149,6 +165,8 @@ function createZoneMobSpawnDraft(value?: JsonObject): ZoneMobSpawnDraft {
     levelMin: toNumberString(value?.level_min),
     levelMax: toNumberString(value?.level_max),
     rank: String(value?.rank ?? "").trim(),
+    itemLootTable: String(value?.item_loot_table ?? value?.loot_table ?? value?.item_table ?? "").trim(),
+    modLootTable: String(value?.mod_loot_table ?? value?.mod_table ?? "").trim(),
     extraJson: formatJsonObject(objectWithoutKeys(value ?? {}, [...MOB_KEYS])),
   };
 }
@@ -173,6 +191,8 @@ function exportZoneMobSpawnDraft(draft: ZoneMobSpawnDraft) {
     level_min: parseOptionalNumber(draft.levelMin),
     level_max: parseOptionalNumber(draft.levelMax),
     rank: draft.rank.trim(),
+    item_loot_table: draft.itemLootTable.trim() || undefined,
+    mod_loot_table: draft.modLootTable.trim() || undefined,
     ...parseExtraJsonObject(draft.extraJson, `Extra JSON for zone mob "${draft.mobId || "untitled"}"`),
   });
 }

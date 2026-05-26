@@ -23,6 +23,8 @@ export type ZoneMobSpawnDraft = {
   levelMin: string;
   levelMax: string;
   rank: string;
+  itemLootTable: string;
+  modLootTable: string;
   extraJson: string;
 };
 

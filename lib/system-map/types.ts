@@ -242,6 +242,8 @@ export type SystemMapMobSpawn = {
   levelMax: number | null;
   level: number | null;
   rank: string;
+  itemLootTable: string;
+  modLootTable: string;
   faction: string;
   sprite: string;
   spriteScale: SystemMapVec | null;
