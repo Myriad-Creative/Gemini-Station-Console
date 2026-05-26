@@ -1156,6 +1156,26 @@ export default function ZonesManagerApp() {
                                   }))
                                 }
                               />
+                              <Field
+                                label="Item Loot Table"
+                                value={mob.itemLootTable}
+                                onChange={(next) =>
+                                  updateSelectedZone((zone) => ({
+                                    ...zone,
+                                    mobs: zone.mobs.map((entry) => (entry.key === mob.key ? { ...entry, itemLootTable: next } : entry)),
+                                  }))
+                                }
+                              />
+                              <Field
+                                label="Mod Loot Table"
+                                value={mob.modLootTable}
+                                onChange={(next) =>
+                                  updateSelectedZone((zone) => ({
+                                    ...zone,
+                                    mobs: zone.mobs.map((entry) => (entry.key === mob.key ? { ...entry, modLootTable: next } : entry)),
+                                  }))
+                                }
+                              />
                             </div>
 
                             <div className="mt-4">

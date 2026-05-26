@@ -85,6 +85,8 @@ type LootTablePayload = {
 };
 
 type LootKind = "mods" | "items";
+
+const DROP_WEIGHT_STEP = 10;
 type StatusTone = "neutral" | "success" | "error";
 type SaveStatus = {
   tone: StatusTone;
@@ -540,7 +542,7 @@ function ModLootCard({
               className="input h-8 px-2 py-1 text-right text-xs"
               type="number"
               min="1"
-              step="1"
+              step={DROP_WEIGHT_STEP}
               value={entry.weight}
               onChange={(event) => onWeightChange(Number(event.target.value))}
               onFocus={(event) => event.currentTarget.select()}
@@ -631,7 +633,7 @@ function ModCatalogAddCard({
               className="input h-8 px-2 py-1 text-right text-xs"
               type="number"
               min="1"
-              step="1"
+              step={DROP_WEIGHT_STEP}
               value={weight}
               onChange={(event) => onWeightChange(event.target.value)}
               onFocus={(event) => event.currentTarget.select()}
@@ -888,7 +890,7 @@ function EntryAddControl<TRecord extends { id: string; name: string }>({
         </select>
         <label>
           <span className="label mb-1 block">Drop weight</span>
-          <input className="input" type="number" min="1" step="1" value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <input className="input" type="number" min="1" step={DROP_WEIGHT_STEP} value={weight} onChange={(event) => setWeight(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
         </label>
         <button
           type="button"
@@ -1028,7 +1030,7 @@ function ItemTableView({
                     className="input h-8 px-2 py-1 text-right text-xs"
                     type="number"
                     min="1"
-                    step="1"
+                    step={DROP_WEIGHT_STEP}
                     value={entry.weight}
                     onChange={(event) =>
                       onChange({
