@@ -67,6 +67,7 @@ export type SystemMapSceneMobSpawn = {
   mobId: string;
   displayName: string;
   level: number | null;
+  canAttack: boolean;
   local: SystemMapVec;
   world: SystemMapVec;
   angleDeg: number | null;
@@ -241,6 +242,7 @@ export type SystemMapMobSpawn = {
   levelMin: number | null;
   levelMax: number | null;
   level: number | null;
+  canAttack: boolean;
   rank: string;
   itemLootTable: string;
   modLootTable: string;
@@ -258,6 +260,7 @@ export type SystemMapMobCatalogEntry = {
   displayName: string;
   level: number | null;
   faction: string;
+  canAttack: boolean;
   cargoTransport: boolean;
   sprite: string;
   spriteScale: SystemMapVec | null;
@@ -306,6 +309,13 @@ export type SystemMapPoi = {
   world: SystemMapVec;
   map: boolean;
   hidden: boolean;
+};
+
+export type SystemMapMissionStart = {
+  missionId: string;
+  title: string;
+  giverId: string;
+  zoneId: string;
 };
 
 export type SystemMapRoute = {
@@ -380,6 +390,7 @@ export type SystemMapPayload = {
   stageCatalog: SystemMapStageCatalogEntry[];
   mobCatalog: SystemMapMobCatalogEntry[];
   pois: SystemMapPoi[];
+  missionStarts: SystemMapMissionStart[];
   routes: SystemMapRoute[];
   asteroidBeltGates: SystemMapAsteroidBeltGate[];
   environmentProfiles: SystemMapEnvironmentProfile[];

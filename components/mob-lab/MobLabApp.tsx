@@ -108,6 +108,21 @@ type ProcessingProfile = {
   description: string;
   recipes: Array<{ id: string; name: string }>;
 };
+
+type SpriteScale = {
+  x: number;
+  y: number;
+};
+
+type SceneSpriteMetadata = {
+  scene: string;
+  spriteNodeName: string | null;
+  spriteScale: SpriteScale | null;
+  error?: string;
+};
+
+type SceneSpriteMetadataMap = Record<string, SceneSpriteMetadata>;
+
 import {
   cloneMobDraft,
   createBlankMobDraft,
@@ -177,6 +192,34 @@ function spriteScaleLabel(mob: Pick<MobDraft, "sprite_scale_x" | "sprite_scale_y
   const y = mob.sprite_scale_y.trim();
   if (!x && !y) return "";
   return `${x || y} x ${y || x}`;
+}
+
+function formatSpriteScale(scale: SpriteScale) {
+  return `${Number(scale.x.toFixed(3))} x ${Number(scale.y.toFixed(3))}`;
+}
+
+function resolveExplicitSpriteScale(mob: Pick<MobDraft, "sprite_scale_x" | "sprite_scale_y">): SpriteScale | null {
+  const xValue = mob.sprite_scale_x.trim();
+  const yValue = mob.sprite_scale_y.trim();
+  if (!xValue && !yValue) return null;
+
+  const x = Number(xValue || yValue);
+  const y = Number(yValue || xValue);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+  return { x, y };
+}
+
+function normalizedPlacementScale(scale: SpriteScale | null | undefined): SpriteScale {
+  return {
+    x: Math.abs(scale?.x ?? 1) || 1,
+    y: Math.abs(scale?.y ?? 1) || 1,
+  };
+}
+
+function isNonDefaultScale(scale: SpriteScale | null | undefined) {
+  if (!scale) return false;
+  return Math.abs(scale.x - 1) > 0.001 || Math.abs(scale.y - 1) > 0.001;
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -958,11 +1001,15 @@ function WeaponChargePointMarker({ point, selected }: { point: MobWeaponChargePo
 function ThrusterPlacementEditor({
   mob,
   spriteSrc,
+  sceneSpriteScale,
+  sceneSpriteScaleError,
   onThrustersChange,
   onWeaponChargePointsChange,
 }: {
   mob: MobDraft;
   spriteSrc: string | null;
+  sceneSpriteScale: SpriteScale | null;
+  sceneSpriteScaleError?: string;
   onThrustersChange: (next: MobThrusterDraft[]) => void;
   onWeaponChargePointsChange: (next: MobWeaponChargePointDraft[]) => void;
 }) {
@@ -1013,10 +1060,9 @@ function ThrusterPlacementEditor({
     setSelectedPlacement(null);
   }, [mob.thrusters, mob.weapon_charge_points, selectedPlacement]);
 
-  const runtimeSpriteScale = {
-    x: Math.abs(parseThrusterNumber(mob.sprite_scale_x, 1)) || 1,
-    y: Math.abs(parseThrusterNumber(mob.sprite_scale_y, 1)) || 1,
-  };
+  const explicitSpriteScale = resolveExplicitSpriteScale(mob);
+  const runtimeSpriteScale = normalizedPlacementScale(explicitSpriteScale ?? sceneSpriteScale);
+  const runtimeSpriteScaleSource = explicitSpriteScale ? "mobs.json sprite_scale" : sceneSpriteScale ? "scene Sprite2D scale" : "default scene scale";
 
   const layout = useMemo(() => {
     const padding = 34;
@@ -1138,8 +1184,14 @@ function ThrusterPlacementEditor({
         <div>
           <div className="text-sm font-medium text-white">Visual Thruster and Weapon Charge Placement</div>
           <div className="mt-1 text-xs text-white/50">
-            Drag a plume or charge marker to move it. Double-click the canvas to add the selected placement type. Preview uses runtime sprite scale {runtimeSpriteScale.x} x {runtimeSpriteScale.y}.
+            Drag a plume or charge marker to move it. Double-click the canvas to add the selected placement type. Preview uses {runtimeSpriteScaleSource} {formatSpriteScale(runtimeSpriteScale)}.
           </div>
+          {!explicitSpriteScale && sceneSpriteScale && isNonDefaultScale(sceneSpriteScale) ? (
+            <div className="mt-2 rounded border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
+              This mob has no JSON sprite_scale, so the canvas is using the scale baked into its scene. Saved placement coordinates still export as normal local mob coordinates.
+            </div>
+          ) : null}
+          {sceneSpriteScaleError ? <div className="mt-2 text-xs text-amber-200">{sceneSpriteScaleError}</div> : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex rounded-lg border border-white/10 bg-black/20 p-1 text-xs">
@@ -1599,6 +1651,7 @@ export default function MobLabApp() {
   const [itemLootTableSearch, setItemLootTableSearch] = useState("");
   const [modLootTableSearch, setModLootTableSearch] = useState("");
   const [lootTableCatalogStatus, setLootTableCatalogStatus] = useState("");
+  const [sceneSpriteMetadata, setSceneSpriteMetadata] = useState<SceneSpriteMetadataMap>({});
   const [status, setStatus] = useState<TimedStatusState>({
     tone: "neutral",
     message: "Mob Lab reads mobs.json directly from the active local game root in Settings.",
@@ -1719,6 +1772,11 @@ export default function MobLabApp() {
     }
   }, [filteredMobs, selectedMobKey, workspace]);
 
+  const scenePathsKey = useMemo(() => {
+    const scenes = Array.from(new Set((workspace?.mobs ?? []).map((mob) => mob.scene.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
+    return scenes.join("\n");
+  }, [workspace]);
+
   useEffect(() => {
     let cancelled = false;
     async function loadSharedWorkspace() {
@@ -1749,6 +1807,57 @@ export default function MobLabApp() {
       cancelled = true;
     };
   }, [sharedDataVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSceneSpriteMetadata() {
+      const scenes = scenePathsKey ? scenePathsKey.split("\n").filter(Boolean) : [];
+      if (!scenes.length) {
+        setSceneSpriteMetadata({});
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/mobs/scene-metadata", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ scenes }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+          if (!cancelled) setSceneSpriteMetadata({});
+          return;
+        }
+
+        const next: SceneSpriteMetadataMap = {};
+        const metadata = asRecord(payload.metadata);
+        for (const [scene, value] of Object.entries(metadata)) {
+          const source = asRecord(value);
+          const scaleSource = asRecord(source.spriteScale);
+          const x = Number(scaleSource.x);
+          const y = Number(scaleSource.y);
+          next[scene] = {
+            scene,
+            spriteNodeName: stringFromUnknown(source.spriteNodeName).trim() || null,
+            spriteScale: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null,
+            error: stringFromUnknown(source.error).trim() || undefined,
+          };
+        }
+
+        if (!cancelled) setSceneSpriteMetadata(next);
+      } catch {
+        if (!cancelled) setSceneSpriteMetadata({});
+      }
+    }
+
+    void loadSceneSpriteMetadata();
+    return () => {
+      cancelled = true;
+    };
+  }, [scenePathsKey, sharedDataVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1940,6 +2049,8 @@ export default function MobLabApp() {
     ? buildIconSrc(selectedMob.sprite || undefined, selectedMob.id || "mob", selectedMob.display_name || "Mob", sharedDataVersion)
     : null;
   const selectedSpriteScaleLabel = selectedMob ? spriteScaleLabel(selectedMob) : "";
+  const selectedSceneSpriteMetadata = selectedMob?.scene.trim() ? sceneSpriteMetadata[selectedMob.scene.trim()] ?? null : null;
+  const selectedSceneSpriteScale = selectedSceneSpriteMetadata?.spriteScale ?? null;
   const hailPortraitPreviewSrc = selectedMob
     ? buildIconSrc(
         selectedMob.hail_portrait || undefined,
@@ -2781,7 +2892,11 @@ export default function MobLabApp() {
                           <img src={spritePreviewSrc} alt={selectedMob.display_name || selectedMob.id || "Mob sprite"} className="h-full w-full object-contain" />
                         </div>
                         <div className="mt-2 text-xs text-white/45">
-                          {selectedSpriteScaleLabel ? `Runtime sprite_scale: ${selectedSpriteScaleLabel}` : "Runtime sprite_scale: scene default"}
+                          {selectedSpriteScaleLabel
+                            ? `Runtime sprite_scale: ${selectedSpriteScaleLabel}`
+                            : selectedSceneSpriteScale
+                              ? `Runtime scene Sprite2D scale: ${formatSpriteScale(normalizedPlacementScale(selectedSceneSpriteScale))}`
+                              : "Runtime sprite_scale: scene default"}
                         </div>
                       </div>
                     ) : null}
@@ -2805,6 +2920,8 @@ export default function MobLabApp() {
                   <ThrusterPlacementEditor
                     mob={selectedMob}
                     spriteSrc={spritePreviewSrc}
+                    sceneSpriteScale={selectedSceneSpriteScale}
+                    sceneSpriteScaleError={selectedSceneSpriteMetadata?.error}
                     onThrustersChange={(next) => updateSelectedMob((current) => ({ ...current, thrusters: next }))}
                     onWeaponChargePointsChange={(next) => updateSelectedMob((current) => ({ ...current, weapon_charge_points: next }))}
                   />

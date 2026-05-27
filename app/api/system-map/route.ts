@@ -10,6 +10,7 @@ import type {
   SystemMapEnvironmentProfile,
   SystemMapMineableOreItem,
   SystemMapMiningLootIconOption,
+  SystemMapMissionStart,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -463,6 +464,7 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
         displayName: stringValue(mob.display_name ?? mob.name, id),
         level: nullableNumberValue(mob.level),
         faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
+        canAttack: boolValue(mob.can_attack),
         cargoTransport: mobHasCargoTransport(mob),
         sprite: stringValue(mob.sprite, ""),
         spriteScale: nullableVecValue(mob.sprite_scale),
@@ -903,6 +905,7 @@ function parseSceneContents(
       mobId,
       displayName: stringValue(mob.display_name ?? mob.name, mobId),
       level: nullableNumberValue(mob.level),
+      canAttack: boolValue(mob.can_attack),
       local: position,
       world: addVec(parentWorld, position),
       angleDeg,
@@ -1101,6 +1104,7 @@ function buildMobSpawn(
     levelMin: nullableNumberValue(spawn.level_min),
     levelMax: nullableNumberValue(spawn.level_max),
     level: nullableNumberValue(mob.level),
+    canAttack: boolValue(mob.can_attack),
     rank: stringValue(spawn.rank, "normal"),
     itemLootTable: stringValue(spawn.item_loot_table ?? spawn.loot_table ?? spawn.item_table, ""),
     modLootTable: stringValue(spawn.mod_loot_table ?? spawn.mod_table, ""),
@@ -1200,6 +1204,107 @@ function buildPois(poiJson: unknown, zones: SystemMapZone[]): SystemMapPoi[] {
     }));
 
   return [...legacyPois, ...zonePois];
+}
+
+function missionTargetAliases(value: unknown) {
+  const raw = stringValue(value).trim();
+  if (!raw) return [];
+  const lower = raw.toLowerCase();
+  const underscored = lower.replace(/\s+/g, "_");
+  const compact = lower.replace(/[^a-z0-9]+/g, "");
+  const aliases = new Set([lower, underscored, compact]);
+  for (const alias of Array.from(aliases)) {
+    if (alias.endsWith("_loc")) aliases.add(alias.slice(0, -4));
+    if (alias.endsWith("loc") && alias.length > 3) aliases.add(alias.slice(0, -3));
+    if (alias.endsWith("_location")) aliases.add(alias.slice(0, -9));
+    if (alias.endsWith("location") && alias.length > 8) aliases.add(alias.slice(0, -8));
+  }
+  return Array.from(aliases).filter(Boolean);
+}
+
+function addMissionTargetZone(targets: Map<string, Set<string>>, value: unknown, zoneId: string) {
+  for (const alias of missionTargetAliases(value)) {
+    const zoneIds = targets.get(alias) ?? new Set<string>();
+    zoneIds.add(zoneId);
+    targets.set(alias, zoneIds);
+  }
+}
+
+function buildMissionTargetZoneLookup(zones: SystemMapZone[]) {
+  const targets = new Map<string, Set<string>>();
+  for (const zone of zones) {
+    addMissionTargetZone(targets, zone.id, zone.id);
+    addMissionTargetZone(targets, zone.name, zone.id);
+    addMissionTargetZone(targets, zone.poiLabel, zone.id);
+    for (const mob of zone.mobs) {
+      addMissionTargetZone(targets, mob.mobId, zone.id);
+      addMissionTargetZone(targets, mob.displayName, zone.id);
+      for (const sceneMob of mob.sceneSpawns) {
+        addMissionTargetZone(targets, sceneMob.mobId, zone.id);
+        addMissionTargetZone(targets, sceneMob.displayName, zone.id);
+      }
+    }
+  }
+  return targets;
+}
+
+function resolveMissionStartZoneId(giverId: string, targets: Map<string, Set<string>>) {
+  for (const alias of missionTargetAliases(giverId)) {
+    const zoneIds = targets.get(alias);
+    if (!zoneIds?.size) continue;
+    return Array.from(zoneIds).sort()[0];
+  }
+  return "";
+}
+
+async function loadMissionStarts(missionsRootPath: string | null, zones: SystemMapZone[]): Promise<{ missionStarts: SystemMapMissionStart[]; warnings: string[] }> {
+  if (!missionsRootPath || !fs.existsSync(missionsRootPath)) {
+    return {
+      missionStarts: [],
+      warnings: [],
+    };
+  }
+
+  const missionStarts: SystemMapMissionStart[] = [];
+  const warnings: string[] = [];
+  const targetZoneLookup = buildMissionTargetZoneLookup(zones);
+
+  async function walk(currentPath: string) {
+    const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) continue;
+
+      const relativePath = path.relative(missionsRootPath!, absolutePath);
+      const text = await fs.promises.readFile(absolutePath, "utf-8");
+      const parsed = parseTolerantJsonText(text);
+      warnings.push(...parsed.errors.map((error) => `Missions/${relativePath}: ${error}`));
+      const mission = asRecord(parsed.value);
+      const missionId = stringValue(mission.id).trim();
+      const giverId = stringValue(mission.giver_id).trim();
+      if (!missionId || !giverId) continue;
+
+      const zoneId = resolveMissionStartZoneId(giverId, targetZoneLookup);
+      if (!zoneId) continue;
+      missionStarts.push({
+        missionId,
+        title: stringValue(mission.title, missionId),
+        giverId,
+        zoneId,
+      });
+    }
+  }
+
+  await walk(missionsRootPath);
+  missionStarts.sort((a, b) => a.zoneId.localeCompare(b.zoneId) || a.title.localeCompare(b.title) || a.missionId.localeCompare(b.missionId));
+  return {
+    missionStarts,
+    warnings,
+  };
 }
 
 function routePointToWorld(routeSector: SystemMapVec, value: unknown): SystemMapVec {
@@ -1382,6 +1487,7 @@ export async function GET() {
       sourceFile: "data/database/zones/Zones.json",
     }),
   ];
+  const missionStartResult = await loadMissionStarts(local.missionsRootPath, zones);
   const payload: SystemMapPayload = {
     ok: true,
     sourceRoot: local.gameRootPath,
@@ -1404,6 +1510,7 @@ export async function GET() {
     stageCatalog: buildStageCatalogEntries(stagesResult.value),
     mobCatalog: buildMobCatalogEntries(mobsResult.value),
     pois: buildPois(poiResult.value, zones),
+    missionStarts: missionStartResult.missionStarts,
     routes: buildRoutes(routesResult.value),
     asteroidBeltGates: buildAsteroidBeltGates(asteroidBeltGatesResult.value),
     environmentProfiles: buildEnvironmentProfiles(hazardBarrierProfilesResult.value, stagesResult.value),
@@ -1411,7 +1518,7 @@ export async function GET() {
     mineableOreItems: buildMineableOreItems(itemsResult.value),
     miningLootIconOptions: buildMiningLootIconOptions(local.assetsRootPath, itemsResult.value),
     playerSpawn: buildPlayerSpawn(playerSpawnResult.value),
-    warnings,
+    warnings: [...warnings, ...missionStartResult.warnings],
   };
 
   return NextResponse.json(payload);

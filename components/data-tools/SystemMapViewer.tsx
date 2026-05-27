@@ -14,6 +14,7 @@ import type {
   SystemMapMineableAsteroid,
   SystemMapMineableOreItem,
   SystemMapMiningLootIconOption,
+  SystemMapMissionStart,
   SystemMapMobCatalogEntry,
   SystemMapMobSpawn,
   SystemMapPayload,
@@ -275,6 +276,7 @@ type StageDragState = {
 };
 type MobSpawnForm = {
   mode: "create" | "edit";
+  placementKind: "single" | "spawner";
   zoneId: string;
   mobKey: string | null;
   mobId: string;
@@ -455,14 +457,31 @@ function sceneMobLevelRange(mob: SystemMapSceneMobSpawn): { min: number | null; 
   };
 }
 
+function activeSpawnCount(count: number) {
+  return Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
+}
+
+function mobCountsForDifficulty(mob: SystemMapMobSpawn) {
+  return !mob.missing && mob.canAttack && activeSpawnCount(mob.count) > 0;
+}
+
+function sceneMobCountsForDifficulty(mob: SystemMapSceneMobSpawn) {
+  return !mob.missing && mob.canAttack;
+}
+
 function buildZoneDifficultySummary(zone: SystemMapZone): DifficultySummary {
   const summary = createDifficultySummary();
   for (const mob of zone.mobs) {
-    const range = mobSpawnLevelRange(mob);
-    addDifficultyRange(summary, range.min, range.max, mob.count);
-    for (const sceneMob of mob.sceneSpawns) {
-      const sceneRange = sceneMobLevelRange(sceneMob);
-      addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+    if (mobCountsForDifficulty(mob)) {
+      const range = mobSpawnLevelRange(mob);
+      addDifficultyRange(summary, range.min, range.max, mob.count);
+    }
+    if (activeSpawnCount(mob.count) > 0) {
+      for (const sceneMob of mob.sceneSpawns) {
+        if (!sceneMobCountsForDifficulty(sceneMob)) continue;
+        const sceneRange = sceneMobLevelRange(sceneMob);
+        addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+      }
     }
   }
   return summary;
@@ -481,11 +500,16 @@ function buildSectorDifficultySummaries(sectors: SystemMapSector[], zones: Syste
   for (const zone of zones) {
     const summary = summaries.get(sectorKey(zone.sector)) ?? createDifficultySummary();
     for (const mob of zone.mobs) {
-      const range = mobSpawnLevelRange(mob);
-      addDifficultyRange(summary, range.min, range.max, mob.count);
-      for (const sceneMob of mob.sceneSpawns) {
-        const sceneRange = sceneMobLevelRange(sceneMob);
-        addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+      if (mobCountsForDifficulty(mob)) {
+        const range = mobSpawnLevelRange(mob);
+        addDifficultyRange(summary, range.min, range.max, mob.count);
+      }
+      if (activeSpawnCount(mob.count) > 0) {
+        for (const sceneMob of mob.sceneSpawns) {
+          if (!sceneMobCountsForDifficulty(sceneMob)) continue;
+          const sceneRange = sceneMobLevelRange(sceneMob);
+          addDifficultyRange(summary, sceneRange.min, sceneRange.max, 1);
+        }
       }
     }
     summaries.set(sectorKey(zone.sector), summary);
@@ -494,7 +518,7 @@ function buildSectorDifficultySummaries(sectors: SystemMapSector[], zones: Syste
 }
 
 function difficultyLabel(summary: DifficultySummary) {
-  if (!summary.mobRows) return "No mobs";
+  if (!summary.mobRows) return "No encounter mobs";
   const levelRange = summary.min === null || summary.max === null ? "Lv ?" : summary.min === summary.max ? `Lv ${summary.min}` : `Lv ${summary.min}-${summary.max}`;
   return `${levelRange} · ${summary.spawnCount} spawn${summary.spawnCount === 1 ? "" : "s"}`;
 }
@@ -3164,6 +3188,7 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     levelMin: form.levelMin.trim() ? Number(form.levelMin) : null,
     levelMax: form.levelMax.trim() ? Number(form.levelMax) : null,
     level: entry?.level ?? null,
+    canAttack: entry?.canAttack ?? existingMob?.canAttack ?? false,
     rank: form.rank.trim() || "normal",
     itemLootTable: form.itemLootTable.trim(),
     modLootTable: form.modLootTable.trim(),
@@ -3908,6 +3933,15 @@ export default function SystemMapViewer() {
   const mapGates = useMemo(() => payload?.asteroidBeltGates ?? [], [payload]);
   const mapEnvironmentalElements = useMemo(() => (payload ? [...payload.environmentalElements, ...draftEnvironmentalElements] : []), [draftEnvironmentalElements, payload]);
   const mapPlayerSpawn = editedPlayerSpawn ?? payload?.playerSpawn ?? null;
+  const missionStartsByZone = useMemo(() => {
+    const startsByZone = new Map<string, SystemMapMissionStart[]>();
+    for (const start of payload?.missionStarts ?? []) {
+      const starts = startsByZone.get(start.zoneId) ?? [];
+      starts.push(start);
+      startsByZone.set(start.zoneId, starts);
+    }
+    return startsByZone;
+  }, [payload?.missionStarts]);
   const existingZoneIds = useMemo(() => mapZones.map((zone) => zone.id).filter(Boolean), [mapZones]);
   const existingRouteIds = useMemo(() => mapRoutes.map((route) => route.id).filter(Boolean), [mapRoutes]);
   const existingEnvironmentalIds = useMemo(() => mapEnvironmentalElements.map((element) => element.id).filter(Boolean), [mapEnvironmentalElements]);
@@ -5435,7 +5469,7 @@ export default function SystemMapViewer() {
       case "stage":
         return "Edit Stage";
       case "mob":
-        return "Edit Mob Spawn";
+        return "Edit Mob Placement";
       case "route":
         return "Edit Trade Route";
       case "gate":
@@ -5458,7 +5492,7 @@ export default function SystemMapViewer() {
       case "stage":
         return "Delete Stage";
       case "mob":
-        return "Delete Mob Spawn";
+        return "Delete Mob Placement";
       case "environmental_barrier":
         return "Delete Barrier";
       case "environmental_region":
@@ -5541,6 +5575,37 @@ export default function SystemMapViewer() {
     if (target.kind === "salvage_debris") {
       removeSalvageDebris(target.elementId);
     }
+  }
+
+  function missionStartsForZone(zone: SystemMapZone) {
+    const zoneKeys = [zoneIdentity(zone), zone.id, zone.originalId].filter((key): key is string => Boolean(key));
+    for (const key of zoneKeys) {
+      const starts = missionStartsByZone.get(key);
+      if (starts) return starts;
+    }
+    return [];
+  }
+
+  function missionStartCountForZones(zones: SystemMapZone[]) {
+    const missionIds = new Set<string>();
+    for (const zone of zones) {
+      for (const mission of missionStartsForZone(zone)) {
+        missionIds.add(mission.missionId);
+      }
+    }
+    return missionIds.size;
+  }
+
+  function zoneTooltipLabel(zone: SystemMapZone) {
+    return zone.name && zone.name !== zone.id ? `${zone.id} (${zone.name})` : zone.id;
+  }
+
+  function sectorZoneLine(zones: SystemMapZone[], focusedZone: SystemMapZone | null) {
+    if (focusedZone) return `Zone: ${zoneTooltipLabel(focusedZone)}`;
+    if (!zones.length) return "Zones: none";
+    const labels = zones.map((zone) => zoneTooltipLabel(zone));
+    const visibleLabels = labels.slice(0, 3).join(", ");
+    return labels.length > 3 ? `Zones: ${visibleLabels} +${labels.length - 3} more` : `Zones: ${visibleLabels}`;
   }
 
   function clearHover() {
@@ -5816,6 +5881,7 @@ export default function SystemMapViewer() {
           const zoneMineableAsteroids = mineableAsteroidsForZone(zone, mapEnvironmentalElements);
           const zoneMineableInstanceCount = zoneMineableAsteroids.reduce((sum, asteroid) => sum + asteroid.count, 0);
           const zoneDifficulty = zoneDifficultySummaries.get(zoneIdentity(zone)) ?? createDifficultySummary();
+          const missionStartCount = missionStartsForZone(zone).length;
           return {
             x: screen.x,
             y: screen.y,
@@ -5828,6 +5894,7 @@ export default function SystemMapViewer() {
               `Activation radius: ${formatNumber(zone.activationRadius)}`,
               zone.bounds.shape.toLowerCase() === "polygon" ? `Bounds: polygon (${zone.bounds.points.length} points)` : `Bounds: ${zone.bounds.shape}, ${formatNumber(zone.bounds.width)} x ${formatNumber(zone.bounds.height)}`,
               `Difficulty: ${difficultyLabel(zoneDifficulty)}${zoneDifficulty.unknownCount ? `, ${zoneDifficulty.unknownCount} unknown` : ""}`,
+              `Missions beginning here: ${missionStartCount}`,
               `Stages: ${zone.stages.length}`,
               `Zone mob rows: ${zone.mobs.length}`,
               `Scene mob markers: ${zone.mobs.reduce((sum, mob) => sum + mob.sceneSpawns.length, 0)}`,
@@ -5915,14 +5982,18 @@ export default function SystemMapViewer() {
     for (const sector of payload.sectors) {
       if (pointInRect(world, sector.rect)) {
         const sectorDifficulty = sectorDifficultySummaries.get(sectorKey(sector)) ?? createDifficultySummary();
+        const sectorZones = mapZones.filter((zone) => zone.sector.x === sector.x && zone.sector.y === sector.y);
+        const focusedZone = sectorZones.find((zone) => pointInZoneBounds(world, zone) || distance(world, zone.world) <= screenHitRadius) ?? null;
+        const missionStartCount = focusedZone ? missionStartsForZone(focusedZone).length : missionStartCountForZones(sectorZones);
         return {
           x: screen.x,
           y: screen.y,
           title: sector.name,
-          subtitle: `Sector ${sector.x}, ${sector.y}`,
+          subtitle: sector.y === 0 ? `Sector ${sector.x}` : `Sector ${sector.x}, ${sector.y}`,
           lines: [
+            sectorZoneLine(sectorZones, focusedZone),
+            `Missions beginning here: ${missionStartCount}`,
             `Difficulty: ${difficultyLabel(sectorDifficulty)}${sectorDifficulty.unknownCount ? `, ${sectorDifficulty.unknownCount} unknown` : ""}`,
-            `Bounds: ${formatVec({ x: sector.rect.x, y: sector.rect.y })} to ${formatVec({ x: sector.rect.x + sector.rect.w, y: sector.rect.y + sector.rect.h })}`,
           ],
         };
       }
@@ -6197,7 +6268,7 @@ export default function SystemMapViewer() {
     setStatus(null);
   }
 
-  function openCreateMobSpawnForm(zone: SystemMapZone, world: SystemMapVec) {
+  function openCreateMobSpawnForm(zone: SystemMapZone, world: SystemMapVec, placementKind: MobSpawnForm["placementKind"] = "spawner") {
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
@@ -6211,6 +6282,7 @@ export default function SystemMapViewer() {
     };
     setMobSpawnForm({
       mode: "create",
+      placementKind,
       zoneId: zoneIdentity(zone),
       mobKey: null,
       mobId: payload?.mobCatalog[0]?.id ?? "",
@@ -6219,7 +6291,7 @@ export default function SystemMapViewer() {
       count: "1",
       radius: "0",
       spawnAreaShape: "circle",
-      respawnDelay: "30",
+      respawnDelay: placementKind === "single" ? "0" : "30",
       angleDeg: "0",
       levelMin: "",
       levelMax: "",
@@ -6290,6 +6362,7 @@ export default function SystemMapViewer() {
     setStagePlacementForm(null);
     setMobSpawnForm({
       mode: "edit",
+      placementKind: mob.count <= 1 && mob.radius <= 0 && mob.respawnDelay <= 0 && mob.spawnArea.shape.toLowerCase() !== "polygon" ? "single" : "spawner",
       zoneId: zoneIdentity(zone),
       mobKey: mobIdentity(mob),
       mobId: mob.mobId,
@@ -6939,8 +7012,8 @@ export default function SystemMapViewer() {
     setStatus({
       tone: zone.active ? "success" : "neutral",
       message: zone.active
-        ? `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.`
-        : `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} mob spawn "${nextMob.displayName}", but "${zone.name || zone.id}" is inactive. The game will skip this spawn until the zone is marked Active.`,
+        ? `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.`
+        : `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}", but "${zone.name || zone.id}" is inactive. The game will skip this placement until the zone is marked Active.`,
     });
   }
 
@@ -8715,10 +8788,22 @@ export default function SystemMapViewer() {
               className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
               onClick={() => {
                 const zone = mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId);
-                if (zone) openCreateMobSpawnForm(zone, contextMenu.world);
+                if (zone) openCreateMobSpawnForm(zone, contextMenu.world, "single");
               }}
             >
-              Add Mob Spawn Here
+              Place Single Mob Here
+            </button>
+          ) : null}
+          {contextMenu.zoneId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-white hover:bg-white/10"
+              onClick={() => {
+                const zone = mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId);
+                if (zone) openCreateMobSpawnForm(zone, contextMenu.world, "spawner");
+              }}
+            >
+              Add Mob Spawner Here
             </button>
           ) : (
             <div className="rounded-lg px-3 py-2 text-left text-sm text-white/45">
@@ -10097,8 +10182,20 @@ export default function SystemMapViewer() {
           <div className="min-w-0">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xl font-semibold text-white">{mobSpawnForm.mode === "create" ? "Add Mob Spawn" : "Edit Mob Spawn"}</div>
-                <div className="mt-1 text-sm text-white/55">Choose the mob, spawn count, local position, level band, loot tables, rank, spawn shape, and respawn cooldown.</div>
+                <div className="text-xl font-semibold text-white">
+                  {mobSpawnForm.mode === "create"
+                    ? mobSpawnForm.placementKind === "single"
+                      ? "Place Single Mob"
+                      : "Add Mob Spawner"
+                    : mobSpawnForm.placementKind === "single"
+                      ? "Edit Single Mob Placement"
+                      : "Edit Mob Spawner"}
+                </div>
+                <div className="mt-1 text-sm text-white/55">
+                  {mobSpawnForm.placementKind === "single"
+                    ? "Choose one authored mob for this exact location. This saves as a zone mob row with count 1, radius 0, and respawn 0."
+                    : "Choose the mob, spawn count, local position, level band, loot tables, rank, spawn shape, and respawn cooldown."}
+                </div>
               </div>
               <button
                 type="button"
@@ -10116,6 +10213,11 @@ export default function SystemMapViewer() {
               {activeMobSpawnZone && !activeMobSpawnZone.active ? (
                 <div className="mb-3 rounded-xl border border-yellow-300/25 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-100">
                   This zone is inactive. The game skips inactive zones, so saved mob spawns here will not appear until the zone is marked Active.
+                </div>
+              ) : null}
+              {mobSpawnForm.placementKind === "single" ? (
+                <div className="mb-3 rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100">
+                  Single mob placement uses the same Zones.json mobs array as spawners, but it is anchored at this point and will not respawn unless you raise Respawn Cooldown above 0.
                 </div>
               ) : null}
               <label className="text-sm text-white/65">
@@ -10333,7 +10435,11 @@ export default function SystemMapViewer() {
                 Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveMobSpawnForm}>
-                {mobSpawnForm.mode === "create" ? "Add Spawn To Zone" : "Apply Spawn Changes"}
+                {mobSpawnForm.mode === "create"
+                  ? mobSpawnForm.placementKind === "single"
+                    ? "Place Mob In Zone"
+                    : "Add Spawner To Zone"
+                  : "Apply Placement Changes"}
               </button>
             </div>
           </div>
