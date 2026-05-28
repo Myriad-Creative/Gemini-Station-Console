@@ -69,6 +69,7 @@ type BulkCreateState = {
   levelRequirement: string;
   durability: string;
   sellPrice: string;
+  buyPrice: string;
   classRestriction: string;
   stats: ModStatDraft[];
   abilities: ModAbilityDraft[];
@@ -115,6 +116,7 @@ const EMPTY_BULK_CREATE_STATE: BulkCreateState = {
   levelRequirement: "",
   durability: "",
   sellPrice: "",
+  buyPrice: "",
   classRestriction: "None",
   stats: [],
   abilities: [],
@@ -832,6 +834,7 @@ export default function ModWorkshop({
       rarity: bulkCreate.rarity,
       durability: bulkCreate.durability,
       sellPrice: bulkCreate.sellPrice,
+      buyPrice: bulkCreate.buyPrice,
       stats: bulkCreate.stats
         .filter((stat) => stat.key.trim() || stat.value.trim())
         .map((stat) => ({ ...stat })),
@@ -1796,6 +1799,14 @@ export default function ModWorkshop({
                     readOnly
                     helpText="Auto-calculated as ceil(required level × rarity), with common using 0.5x."
                     onChange={() => {}}
+                  />
+                  <Field
+                    label="Vendor Buy Price Override"
+                    value={selectedSyncedMod.buyPrice}
+                    inputMode="numeric"
+                    step={1}
+                    helpText="Optional buy_price override for vendor purchases. Leave blank to use the runtime calculation."
+                    onChange={(value) => updateSelected((draft) => ({ ...draft, buyPrice: value }))}
                   />
                   <SelectField
                     label="Class Restriction"

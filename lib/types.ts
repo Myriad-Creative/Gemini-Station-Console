@@ -14,6 +14,7 @@ export interface Mod {
   rarity: number;
   durability?: number;
   sellPrice?: number;
+  buyPrice?: number;
   stats: StatMap;
   abilities: (number | string)[];
   icon?: string;

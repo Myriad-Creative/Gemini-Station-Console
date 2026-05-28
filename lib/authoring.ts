@@ -119,6 +119,7 @@ export interface ModDraft {
   rarity: string;
   durability: string;
   sellPrice: string;
+  buyPrice: string;
   stats: ModStatDraft[];
   abilities: ModAbilityDraft[];
   icon: string;
@@ -134,6 +135,7 @@ export interface BulkModTemplateDraft {
   rarity: string;
   durability: string;
   sellPrice: string;
+  buyPrice: string;
   stats: ModStatDraft[];
   abilities: ModAbilityDraft[];
   icon: string;
@@ -548,6 +550,7 @@ export function syncDerivedModFields(mod: ModDraft): ModDraft {
     levelRequirement: normalizedLevelRequirement,
     itemLevel: budget.itemLevel === undefined ? "" : String(budget.itemLevel),
     sellPrice: derivedSellPrice === undefined ? "" : String(derivedSellPrice),
+    buyPrice: String(mod.buyPrice ?? "").trim(),
     icon: normalizeModIconPath(mod.icon),
     extraJson: normalizeStoredExtraJson(mod.extraJson),
   };
@@ -709,6 +712,7 @@ export function createModDraft(existingIds: string[] = [], previousId?: string):
     rarity: "0",
     durability: "",
     sellPrice: "",
+    buyPrice: "",
     stats: [],
     abilities: [],
     icon: "",
@@ -764,6 +768,7 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
     rarity: numberString(source.rarity ?? 0),
     durability: numberString(source.durability),
     sellPrice: numberString(source.sellPrice ?? source.sell_price),
+    buyPrice: numberString(source.buyPrice ?? source.buy_price),
     stats,
     abilities,
     icon: String(source.icon ?? ""),
@@ -834,6 +839,7 @@ export function createBulkModDrafts(
       rarity: template.rarity.trim(),
       durability: template.durability.trim(),
       sellPrice: "",
+      buyPrice: template.buyPrice.trim(),
       stats: template.stats.map((stat) => ({ ...stat })),
       abilities: template.abilities.map((ability) => ({ ...ability })),
       icon: template.icon.trim(),
@@ -1011,6 +1017,8 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     "durability",
     "sell_price",
     "sellPrice",
+    "buy_price",
+    "buyPrice",
     "stats",
     "abilities",
     "icon",
@@ -1035,6 +1043,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     rarity: numberString(source.rarity ?? 0),
     durability: numberString(source.durability),
     sellPrice: numberString(source.sell_price ?? source.sellPrice),
+    buyPrice: numberString(source.buy_price ?? source.buyPrice),
     stats: statsSource,
     abilities: abilitiesSource,
     icon: String(source.icon ?? ""),
@@ -1154,6 +1163,7 @@ export function exportModDraft(mod: ModDraft) {
     rarity: parseNumber(syncedMod.rarity) ?? 0,
     durability: parseNumber(syncedMod.durability),
     sell_price: parseNumber(syncedMod.sellPrice),
+    buy_price: parseNumber(syncedMod.buyPrice),
     stats,
     abilities: syncedMod.abilities
       .map((entry) => parseScalarString(entry.id))

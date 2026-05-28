@@ -42,6 +42,7 @@ type ExistingModRow = {
   rarity?: number;
   durability?: number;
   sellPrice?: number;
+  buyPrice?: number;
   stats?: Record<string, number>;
   abilities?: Array<number | string>;
   icon?: string;

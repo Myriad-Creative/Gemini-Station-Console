@@ -38,6 +38,7 @@ function normalizeMods(data: RawMods | null): Mod[] {
       rarity: Number(m.rarity ?? 0),
       durability: m.durability ? Number(m.durability) : undefined,
       sellPrice: m.sell_price ? Number(m.sell_price) : undefined,
+      buyPrice: m.buy_price ? Number(m.buy_price) : undefined,
       stats,
       abilities,
       icon: m.icon,
