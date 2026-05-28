@@ -9,8 +9,31 @@ import { parseMissionJsonText } from "@lib/mission-lab/parse";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function stringifyMissionJson(mission: MissionDraft) {
-  return `${JSON.stringify(exportMissionDraft(mission), null, 2)}\n`;
+type SavedRewardSummary = {
+  credits: number | null;
+  xp: number | null;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function readRewardNumber(rewards: Record<string, unknown>, key: string) {
+  const value = rewards[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function readRewardSummary(mission: unknown): SavedRewardSummary {
+  const rewards = asRecord(asRecord(mission).rewards);
+  return {
+    credits: readRewardNumber(rewards, "credits"),
+    xp: readRewardNumber(rewards, "xp"),
+  };
 }
 
 function toPortableRelativePath(rootPath: string, targetPath: string) {
@@ -115,8 +138,25 @@ export async function POST(req: NextRequest) {
       sourceRelativePath: savedRelativePath,
     };
 
+    const exportedMission = exportMissionDraft(savedMission);
+    const expectedRewards = readRewardSummary(exportedMission);
     await fsp.mkdir(path.dirname(targetPath), { recursive: true });
-    await fsp.writeFile(targetPath, stringifyMissionJson(savedMission), "utf-8");
+    await fsp.writeFile(targetPath, `${JSON.stringify(exportedMission, null, 2)}\n`, "utf-8");
+
+    const savedParseResult = parseMissionJsonText(await fsp.readFile(targetPath, "utf-8"));
+    if (!savedParseResult.value || typeof savedParseResult.value !== "object" || Array.isArray(savedParseResult.value)) {
+      return NextResponse.json({ ok: false, error: "Mission was written, but the saved file could not be read back as a JSON object." }, { status: 500 });
+    }
+    const savedRewards = readRewardSummary(savedParseResult.value);
+    if (savedRewards.credits !== expectedRewards.credits) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Mission was written, but rewards.credits did not match the exported mission.",
+        },
+        { status: 500 },
+      );
+    }
     await loadAll();
 
     return NextResponse.json({
