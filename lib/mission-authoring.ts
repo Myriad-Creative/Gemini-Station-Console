@@ -10,6 +10,7 @@ export const MISSION_OBJECTIVE_TYPES = [
   "collect",
   "acquire",
   "deliver",
+  "escort",
   "kill",
   "mine",
   "sell",
@@ -71,6 +72,19 @@ export interface MissionConversationDraft {
   beats: MissionConversationBeatDraft[];
 }
 
+export interface MissionEscortAmbushDraft {
+  key: string;
+  mobId: string;
+  count: string;
+  progress: string;
+  spawnDistance: string;
+  angleDeg: string;
+  level: string;
+  rank: string;
+  initialThreat: string;
+  extraJson: string;
+}
+
 export interface MissionObjectiveDraft {
   key: string;
   type: string;
@@ -86,6 +100,12 @@ export interface MissionObjectiveDraft {
   contactId: string;
   conversationId: string;
   fullRepair: boolean;
+  escortMobId: string;
+  targetZoneId: string;
+  destinationRadius: string;
+  escortSpeed: string;
+  arrivalMessage: string;
+  ambushes: MissionEscortAmbushDraft[];
   description: string;
   objective: string;
   progressLabel: string;
@@ -330,9 +350,44 @@ const MISSION_OBJECTIVE_KNOWN_KEYS = [
   "contact_id",
   "conversation_id",
   "full",
+  "escort_mob_id",
+  "escortMobId",
+  "mob_id",
+  "target_zone_id",
+  "targetZoneId",
+  "destination_zone_id",
+  "destinationZoneId",
+  "destination_radius",
+  "destinationRadius",
+  "arrival_radius",
+  "arrivalRadius",
+  "speed",
+  "escortSpeed",
+  "arrival_message",
+  "arrivalMessage",
+  "ambushes",
   "description",
   "objective",
   "progress_label",
+] as const;
+
+const MISSION_ESCORT_AMBUSH_KNOWN_KEYS = [
+  "mob_id",
+  "mobId",
+  "id",
+  "count",
+  "progress",
+  "at_progress",
+  "atProgress",
+  "spawn_distance",
+  "spawnDistance",
+  "radius",
+  "angle_deg",
+  "angleDeg",
+  "level",
+  "rank",
+  "initial_threat",
+  "initialThreat",
 ] as const;
 
 function stripKnownKeys(source: JsonObject, knownKeys: readonly string[]) {
@@ -417,6 +472,21 @@ export function createMissionConversationDraft(id = ""): MissionConversationDraf
   };
 }
 
+export function createMissionEscortAmbushDraft(): MissionEscortAmbushDraft {
+  return {
+    key: uid("ambush"),
+    mobId: "",
+    count: "1",
+    progress: "0.5",
+    spawnDistance: "2500",
+    angleDeg: "-35",
+    level: "",
+    rank: "normal",
+    initialThreat: "50",
+    extraJson: "",
+  };
+}
+
 export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk"): MissionObjectiveDraft {
   return {
     key: uid("objective"),
@@ -443,6 +513,12 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     contactId: "",
     conversationId: "",
     fullRepair: true,
+    escortMobId: "",
+    targetZoneId: "",
+    destinationRadius: type === "escort" ? "900" : "",
+    escortSpeed: type === "escort" ? "240" : "",
+    arrivalMessage: "",
+    ambushes: [],
     description: "",
     objective: "",
     progressLabel: "",
@@ -535,6 +611,10 @@ export function duplicateMissionObjectiveDraft(objective: MissionObjectiveDraft)
     key: uid("objective"),
     targetIds: [...objective.targetIds],
     targetTags: [...objective.targetTags],
+    ambushes: objective.ambushes.map((ambush) => ({
+      ...ambush,
+      key: uid("ambush"),
+    })),
   };
 }
 
@@ -617,6 +697,22 @@ function normalizeImportedConversation(raw: unknown, fallbackId: string): Missio
   };
 }
 
+function normalizeImportedEscortAmbush(raw: unknown): MissionEscortAmbushDraft {
+  const source = asObject(raw);
+  return {
+    key: uid("ambush"),
+    mobId: String(source.mob_id ?? source.mobId ?? source.id ?? ""),
+    count: numberString(source.count ?? 1) || "1",
+    progress: numberString(source.progress ?? source.at_progress ?? source.atProgress ?? 0.5),
+    spawnDistance: numberString(source.spawn_distance ?? source.spawnDistance ?? source.radius ?? 2500),
+    angleDeg: numberString(source.angle_deg ?? source.angleDeg ?? -35),
+    level: numberString(source.level),
+    rank: String(source.rank ?? "normal"),
+    initialThreat: numberString(source.initial_threat ?? source.initialThreat ?? 50),
+    extraJson: formatJsonBlock(stripKnownKeys(source, MISSION_ESCORT_AMBUSH_KNOWN_KEYS)),
+  };
+}
+
 function inferDialogParticipants(
   conversations: MissionConversationDraft[],
   steps: MissionStepDraft[],
@@ -652,6 +748,12 @@ function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
     contactId: String(source.contact_id ?? ""),
     conversationId: String(source.conversation_id ?? ""),
     fullRepair: parseBooleanFlag(source.full ?? true),
+    escortMobId: String(source.escort_mob_id ?? source.escortMobId ?? source.mob_id ?? ""),
+    targetZoneId: String(source.target_zone_id ?? source.targetZoneId ?? source.destination_zone_id ?? source.destinationZoneId ?? ""),
+    destinationRadius: numberString(source.destination_radius ?? source.destinationRadius ?? source.arrival_radius ?? source.arrivalRadius),
+    escortSpeed: numberString(source.speed ?? source.escortSpeed),
+    arrivalMessage: String(source.arrival_message ?? source.arrivalMessage ?? ""),
+    ambushes: Array.isArray(source.ambushes) ? (source.ambushes as unknown[]).map((entry) => normalizeImportedEscortAmbush(entry)) : [],
     description: String(source.description ?? ""),
     objective: String(source.objective ?? ""),
     progressLabel: String(source.progress_label ?? ""),
@@ -836,6 +938,23 @@ function serializeObjectiveWithExtra(draft: MissionObjectiveDraft, known: JsonOb
   return mergeExtraJson(known, draft.extraJson, "Objective Extra JSON", MISSION_OBJECTIVE_KNOWN_KEYS);
 }
 
+function serializeEscortAmbushWithExtra(draft: MissionEscortAmbushDraft, known: JsonObject) {
+  return mergeExtraJson(known, draft.extraJson, "Escort Ambush Extra JSON", MISSION_ESCORT_AMBUSH_KNOWN_KEYS);
+}
+
+function serializeEscortAmbush(draft: MissionEscortAmbushDraft) {
+  return serializeEscortAmbushWithExtra(draft, {
+    mob_id: draft.mobId.trim(),
+    count: parsePositiveInteger(draft.count),
+    progress: parseNumber(draft.progress) ?? 0,
+    spawn_distance: parseNumber(draft.spawnDistance) ?? 2500,
+    angle_deg: parseNumber(draft.angleDeg) ?? -35,
+    ...(draft.level.trim() ? { level: parseNumber(draft.level) ?? parseScalar(draft.level) } : {}),
+    ...(draft.rank.trim() ? { rank: draft.rank.trim() } : {}),
+    ...(draft.initialThreat.trim() ? { initial_threat: parseNumber(draft.initialThreat) ?? 50 } : {}),
+  });
+}
+
 function serializeObjective(draft: MissionObjectiveDraft) {
   const targetIds = draft.targetIds.map((entry) => entry.trim()).filter(Boolean);
   const type = normalizeObjectiveType(draft.type);
@@ -889,6 +1008,19 @@ function serializeObjective(draft: MissionObjectiveDraft) {
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
+      });
+    case "escort":
+      return serializeObjectiveWithExtra(draft, {
+        type,
+        escort_mob_id: draft.escortMobId.trim(),
+        ...(draft.targetZoneId.trim() ? { target_zone_id: draft.targetZoneId.trim() } : {}),
+        ...(draft.destinationRadius.trim() ? { destination_radius: parseNumber(draft.destinationRadius) ?? 900 } : {}),
+        ...(draft.escortSpeed.trim() ? { speed: parseNumber(draft.escortSpeed) ?? 240 } : {}),
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+        ...(draft.arrivalMessage.trim() ? { arrival_message: draft.arrivalMessage.trim() } : {}),
+        ...(draft.ambushes.length ? { ambushes: draft.ambushes.map((ambush) => serializeEscortAmbush(ambush)) } : {}),
       });
     case "kill":
       return serializeObjectiveWithExtra(draft, {
@@ -1342,6 +1474,89 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
             itemId: id || undefined,
             message: `${prefix} requires an item_id.`,
           });
+        }
+
+        if (type === "escort") {
+          if (!objective.escortMobId.trim()) {
+            messages.push({
+              level: "error",
+              scope: "missions",
+              draftIndex,
+              itemId: id || undefined,
+              message: `${prefix} requires an escort_mob_id.`,
+            });
+          }
+          if (!objective.targetZoneId.trim()) {
+            messages.push({
+              level: "warning",
+              scope: "missions",
+              draftIndex,
+              itemId: id || undefined,
+              message: `${prefix} should include a target_zone_id so the escort has a destination.`,
+            });
+          }
+          if (objective.destinationRadius.trim() && parseNumber(objective.destinationRadius) === undefined) {
+            messages.push({
+              level: "error",
+              scope: "missions",
+              draftIndex,
+              itemId: id || undefined,
+              message: `${prefix} requires a numeric destination_radius.`,
+            });
+          }
+          if (objective.escortSpeed.trim() && parseNumber(objective.escortSpeed) === undefined) {
+            messages.push({
+              level: "error",
+              scope: "missions",
+              draftIndex,
+              itemId: id || undefined,
+              message: `${prefix} requires a numeric speed.`,
+            });
+          }
+
+          for (const [ambushIndex, ambush] of objective.ambushes.entries()) {
+            const ambushPrefix = `${prefix} ambush ${ambushIndex + 1}`;
+            if (!ambush.mobId.trim()) {
+              messages.push({
+                level: "error",
+                scope: "missions",
+                draftIndex,
+                itemId: id || undefined,
+                message: `${ambushPrefix} requires a mob_id.`,
+              });
+            }
+            for (const [field, value] of [
+              ["count", ambush.count],
+              ["progress", ambush.progress],
+              ["spawn_distance", ambush.spawnDistance],
+              ["angle_deg", ambush.angleDeg],
+              ["level", ambush.level],
+              ["initial_threat", ambush.initialThreat],
+            ] as const) {
+              if (value.trim() && parseNumber(value) === undefined) {
+                messages.push({
+                  level: "error",
+                  scope: "missions",
+                  draftIndex,
+                  itemId: id || undefined,
+                  message: `${ambushPrefix} requires a numeric ${field}.`,
+                });
+              }
+            }
+            if (ambush.extraJson.trim()) {
+              try {
+                parseExtraJson(ambush.extraJson, `${ambushPrefix} Extra JSON`);
+              } catch (error) {
+                messages.push({
+                  level: "error",
+                  scope: "missions",
+                  draftIndex,
+                  itemId: id || undefined,
+                  message: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+          }
         }
 
         if (type === "collect" && objective.dropChance.trim() && parseNumber(objective.dropChance) === undefined) {

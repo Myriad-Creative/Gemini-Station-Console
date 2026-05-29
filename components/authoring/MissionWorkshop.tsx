@@ -22,6 +22,7 @@ import {
   MissionConversationDraft,
   MissionConversationResponseDraft,
   MissionDraft,
+  MissionEscortAmbushDraft,
   MissionObjectiveDraft,
   MissionPrerequisiteDraft,
   MissionRewardItemDraft,
@@ -30,6 +31,7 @@ import {
   createMissionConversationDraft,
   createMissionConversationResponseDraft,
   createMissionDraft,
+  createMissionEscortAmbushDraft,
   createMissionObjectiveDraft,
   createMissionStepDraft,
   duplicateMissionConversationDraft,
@@ -57,6 +59,7 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   collect: "Collect",
   acquire: "Acquire",
   deliver: "Deliver",
+  escort: "Escort",
   kill: "Kill",
   mine: "Mine",
   sell: "Sell",
@@ -109,6 +112,7 @@ export default function MissionWorkshop({
   const [mobs, setMobs] = useState<Mob[]>([]);
   const [commsOptions, setCommsOptions] = useState<LookupOption[]>([]);
   const [mineableAsteroidOptions, setMineableAsteroidOptions] = useState<LookupOption[]>([]);
+  const [zoneOptions, setZoneOptions] = useState<LookupOption[]>([]);
   const [factionCatalogOptions, setFactionCatalogOptions] = useState<string[]>([]);
   const [classCatalogOptions, setClassCatalogOptions] = useState<string[]>([]);
   const [missionHeaderOptions, setMissionHeaderOptions] = useState<MissionHeaderImageOption[]>([]);
@@ -135,12 +139,13 @@ export default function MissionWorkshop({
 
     async function loadCatalogs() {
       try {
-        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse, taxonomyResponse, missionHeaderResponse] = await Promise.all([
+        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse, zonesResponse, taxonomyResponse, missionHeaderResponse] = await Promise.all([
           fetch("/api/items"),
           fetch("/api/mods"),
           fetch("/api/mobs"),
           fetch("/api/settings/data/source?kind=comms"),
           fetch("/api/settings/data/source?kind=environmentalElements"),
+          fetch("/api/settings/data/source?kind=zones"),
           fetch("/api/taxonomy"),
           fetch("/api/mission-header-images"),
         ]);
@@ -150,6 +155,7 @@ export default function MissionWorkshop({
         const mobsJson = await mobsResponse.json().catch(() => ({ data: [] }));
         const commsJson = await commsResponse.json().catch(() => ({ ok: false, text: "" }));
         const environmentalElementsJson = await environmentalElementsResponse.json().catch(() => ({ ok: false, text: "" }));
+        const zonesJson = await zonesResponse.json().catch(() => ({ ok: false, text: "" }));
         const taxonomyJson = await taxonomyResponse.json().catch(() => ({ ok: false, factions: [], classes: [] }));
         const missionHeaderJson = await missionHeaderResponse.json().catch(() => ({ ok: false, data: [] }));
         if (cancelled) return;
@@ -163,6 +169,7 @@ export default function MissionWorkshop({
             ? parseMineableAsteroidLookupOptions(environmentalElementsJson.text)
             : [],
         );
+        setZoneOptions(zonesJson.ok && typeof zonesJson.text === "string" ? parseZoneLookupOptions(zonesJson.text) : []);
         setFactionCatalogOptions(
           taxonomyJson.ok && Array.isArray(taxonomyJson.factions)
             ? taxonomyJson.factions.map((entry: { name?: unknown }) => String(entry.name ?? "").trim()).filter(Boolean)
@@ -177,6 +184,7 @@ export default function MissionWorkshop({
         setMobs([]);
         setCommsOptions([]);
         setMineableAsteroidOptions([]);
+        setZoneOptions([]);
         setFactionCatalogOptions([]);
         setClassCatalogOptions([]);
         setMissionHeaderOptions([]);
@@ -989,6 +997,7 @@ export default function MissionWorkshop({
                   itemOptions={itemOptions}
                   mobOptions={mobOptions}
                   mineableAsteroidOptions={mineableAsteroidOptions}
+                  zoneOptions={zoneOptions}
                   conversationOptions={conversationIdOptions}
                   collapsedObjectiveKeys={collapsedObjectiveKeys}
                   onChange={(nextStep) => updateStep(stepIndex, () => nextStep)}
@@ -1317,6 +1326,7 @@ function MissionStepEditor({
   itemOptions,
   mobOptions,
   mineableAsteroidOptions,
+  zoneOptions,
   conversationOptions,
   collapsedObjectiveKeys,
   onChange,
@@ -1338,6 +1348,7 @@ function MissionStepEditor({
   itemOptions: LookupOption[];
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
+  zoneOptions: LookupOption[];
   conversationOptions: string[];
   collapsedObjectiveKeys: Set<string>;
   onChange: (next: MissionStepDraft) => void;
@@ -1420,6 +1431,7 @@ function MissionStepEditor({
             itemOptions={itemOptions}
             mobOptions={mobOptions}
             mineableAsteroidOptions={mineableAsteroidOptions}
+            zoneOptions={zoneOptions}
             conversationOptions={conversationOptions}
             collapsed={collapsedObjectiveKeys.has(objective.key)}
             onChange={(next) => onUpdateObjective(objectiveIndex, () => next)}
@@ -1443,6 +1455,7 @@ function MissionObjectiveEditor({
   itemOptions,
   mobOptions,
   mineableAsteroidOptions,
+  zoneOptions,
   conversationOptions,
   collapsed,
   onChange,
@@ -1459,6 +1472,7 @@ function MissionObjectiveEditor({
   itemOptions: LookupOption[];
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
+  zoneOptions: LookupOption[];
   conversationOptions: string[];
   collapsed: boolean;
   onChange: (next: MissionObjectiveDraft) => void;
@@ -1597,6 +1611,47 @@ function MissionObjectiveEditor({
           </>
         ) : null}
 
+        {type === "escort" ? (
+          <>
+            <LookupIdField
+              label="Escort Mob ID"
+              value={objective.escortMobId}
+              onChange={(value) => onChange({ ...objective, escortMobId: value })}
+              options={mobOptions}
+              placeholder="Search escort mob name or id"
+            />
+            <LookupIdField
+              label="Destination Zone ID"
+              value={objective.targetZoneId}
+              onChange={(value) => onChange({ ...objective, targetZoneId: value })}
+              options={zoneOptions}
+              placeholder="Search destination zone name or id"
+            />
+            <Field
+              label="Destination Radius"
+              value={objective.destinationRadius}
+              inputMode="numeric"
+              onChange={(value) => onChange({ ...objective, destinationRadius: value })}
+              placeholder="900"
+            />
+            <Field
+              label="Escort Speed"
+              value={objective.escortSpeed}
+              inputMode="numeric"
+              onChange={(value) => onChange({ ...objective, escortSpeed: value })}
+              placeholder="240"
+            />
+            <div className="md:col-span-2">
+              <Field
+                label="Arrival Message"
+                value={objective.arrivalMessage}
+                onChange={(value) => onChange({ ...objective, arrivalMessage: value })}
+                placeholder="The escort has reached the destination."
+              />
+            </div>
+          </>
+        ) : null}
+
         {(type === "scan" ||
           type === "collect" ||
           type === "acquire" ||
@@ -1659,6 +1714,16 @@ function MissionObjectiveEditor({
         </div>
       ) : null}
 
+      {type === "escort" ? (
+        <div className="mt-4">
+          <EscortAmbushEditor
+            ambushes={objective.ambushes}
+            mobOptions={mobOptions}
+            onChange={(ambushes) => onChange({ ...objective, ambushes })}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-4 space-y-4">
         {mode === "all" ? null : (
           <TextAreaField
@@ -1683,6 +1748,127 @@ function MissionObjectiveEditor({
         />
       </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function EscortAmbushEditor({
+  ambushes,
+  mobOptions,
+  onChange,
+}: {
+  ambushes: MissionEscortAmbushDraft[];
+  mobOptions: LookupOption[];
+  onChange: (next: MissionEscortAmbushDraft[]) => void;
+}) {
+  function updateAt(index: number, next: MissionEscortAmbushDraft) {
+    onChange(ambushes.map((ambush, currentIndex) => (currentIndex === index ? next : ambush)));
+  }
+
+  return (
+    <div className="space-y-3 rounded border border-white/10 bg-black/20 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="label">Escort Ambushes</div>
+          <div className="mt-1 text-xs text-white/50">Optional mobs spawned against the escort as route progress reaches each threshold.</div>
+        </div>
+        <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => onChange([...ambushes, createMissionEscortAmbushDraft()])}>
+          Add Ambush
+        </button>
+      </div>
+
+      {ambushes.length ? (
+        <div className="space-y-3">
+          {ambushes.map((ambush, index) => (
+            <div key={ambush.key} className="space-y-3 rounded border border-white/10 bg-white/5 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-semibold">Ambush {index + 1}</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
+                    onClick={() =>
+                      onChange([
+                        ...ambushes.slice(0, index + 1),
+                        { ...ambush, key: `ambush_${Date.now()}_${index}` },
+                        ...ambushes.slice(index + 1),
+                      ])
+                    }
+                  >
+                    Duplicate
+                  </button>
+                  <button className="rounded bg-red-500/20 px-2 py-1 text-xs hover:bg-red-500/30" onClick={() => onChange(ambushes.filter((_, currentIndex) => currentIndex !== index))}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="md:col-span-2">
+                  <LookupIdField
+                    label="Ambush Mob ID"
+                    value={ambush.mobId}
+                    options={mobOptions}
+                    placeholder="Search ambush mob name or id"
+                    onChange={(value) => updateAt(index, { ...ambush, mobId: value })}
+                  />
+                </div>
+                <Field
+                  label="Count"
+                  value={ambush.count}
+                  inputMode="numeric"
+                  onChange={(value) => updateAt(index, { ...ambush, count: value })}
+                  placeholder="1"
+                />
+                <Field
+                  label="Progress"
+                  value={ambush.progress}
+                  inputMode="decimal"
+                  onChange={(value) => updateAt(index, { ...ambush, progress: value })}
+                  placeholder="0.5"
+                />
+                <Field
+                  label="Spawn Distance"
+                  value={ambush.spawnDistance}
+                  inputMode="numeric"
+                  onChange={(value) => updateAt(index, { ...ambush, spawnDistance: value })}
+                  placeholder="2500"
+                />
+                <Field
+                  label="Angle Deg"
+                  value={ambush.angleDeg}
+                  inputMode="decimal"
+                  onChange={(value) => updateAt(index, { ...ambush, angleDeg: value })}
+                  placeholder="-35"
+                />
+                <Field
+                  label="Level"
+                  value={ambush.level}
+                  inputMode="numeric"
+                  onChange={(value) => updateAt(index, { ...ambush, level: value })}
+                  placeholder="5"
+                />
+                <Field
+                  label="Rank"
+                  value={ambush.rank}
+                  onChange={(value) => updateAt(index, { ...ambush, rank: value })}
+                  placeholder="normal"
+                />
+                <Field
+                  label="Initial Threat"
+                  value={ambush.initialThreat}
+                  inputMode="numeric"
+                  onChange={(value) => updateAt(index, { ...ambush, initialThreat: value })}
+                  placeholder="50"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded border border-dashed border-white/10 px-4 py-6 text-center text-sm text-white/50">
+          No escort ambushes configured.
+        </div>
       )}
     </div>
   );
@@ -2453,6 +2639,29 @@ function parseMineableAsteroidLookupOptions(text: string): LookupOption[] {
       });
     }
     return options.sort((left, right) => left.label.localeCompare(right.label));
+  } catch {
+    return [];
+  }
+}
+
+function parseZoneLookupOptions(text: string): LookupOption[] {
+  try {
+    const parsed = parseLooseJson<Record<string, unknown>>(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+
+    return Object.entries(parsed)
+      .map(([id, rawZone]) => {
+        const zone = rawZone && typeof rawZone === "object" && !Array.isArray(rawZone) ? (rawZone as Record<string, unknown>) : {};
+        const name = String(zone.name ?? zone.poi_label ?? id).trim() || id;
+        const sector = Array.isArray(zone.sector_id) ? zone.sector_id.map((value) => String(value)).join(",") : "";
+        const archetype = String(zone.archetype ?? "").trim();
+        return {
+          id,
+          label: name,
+          meta: [sector ? `Sector ${sector}` : "", archetype].filter(Boolean).join(" · "),
+        } satisfies LookupOption;
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
   } catch {
     return [];
   }

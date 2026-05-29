@@ -44,6 +44,12 @@ export interface MissionObjective {
   target_ids?: string[];
   count?: number;
   description?: string;
+  escort_mob_id?: string;
+  target_zone_id?: string;
+  destination_radius?: number;
+  speed?: number;
+  arrival_message?: string;
+  ambushes?: Record<string, unknown>[];
 }
 
 export interface Mission {

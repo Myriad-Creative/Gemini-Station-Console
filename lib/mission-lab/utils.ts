@@ -145,6 +145,8 @@ export function summarizeObjectiveSource(raw: Record<string, unknown>, type: str
       return fallbackSubject
         ? `Deliver ${count ?? 1} ${fallbackSubject}.`
         : `Deliver ${count ?? 1} item${count === 1 ? "" : "s"}.`;
+    case "escort":
+      return fallbackSubject ? `Escort ${fallbackSubject}.` : "Escort the target to its destination.";
     case "buy":
       return fallbackSubject
         ? `Buy ${count ?? 1} ${fallbackSubject}.`
@@ -175,6 +177,9 @@ export function extractTargetIds(raw: Record<string, unknown>) {
     Array.isArray(raw.target_id) ? null : raw.target_id,
     raw.npc_id,
     raw.mob_id,
+    raw.escort_mob_id,
+    raw.target_zone_id,
+    raw.destination_zone_id,
     raw.item_id,
     raw.location_id,
     raw.destination_id,
