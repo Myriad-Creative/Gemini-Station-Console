@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL, formatStatLabel } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
@@ -127,7 +127,7 @@ function formatCooldown(ability: LootTableAbility) {
 }
 
 function statLabel(value: string) {
-  return value.replace(/_/g, " ");
+  return formatStatLabel(value);
 }
 
 function statValue(value: number) {

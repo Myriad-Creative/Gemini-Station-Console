@@ -9,6 +9,7 @@ import {
   getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
   isSignedModStat,
+  isSpecialModStat,
 } from "@lib/mod-budget";
 
 export type ValidationLevel = "error" | "warning";
@@ -148,6 +149,21 @@ export const MISSION_STORAGE_KEY = "gemini.console.authoring.missions.v1";
 export const MISSION_WORKSPACE_SEED_KEY = `${MISSION_STORAGE_KEY}.workspace-seed`;
 export const MOD_STORAGE_KEY = "gemini.console.authoring.mods.v1";
 export const MISSION_CREATOR_CLEARED_EVENT = "gemini:mission-creator-workspace-cleared";
+
+const MOD_CARGO_STAT_KEY = "cargo_slots";
+const MOD_CARGO_SLOT_KEYS = ["cargo_slots", "cargo_space", "cargo_capacity_slots"] as const;
+
+function readModCargoSlotValue(source: JsonObject) {
+  for (const key of MOD_CARGO_SLOT_KEYS) {
+    const value = source[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function stripModCargoSlotKeys(source: JsonObject) {
+  return stripKeys(source, [...MOD_CARGO_SLOT_KEYS]);
+}
 
 export function clearMissionCreatorWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -735,6 +751,8 @@ export function hydrateStoredMissionDraft(raw: unknown): MissionDraft {
 export function hydrateStoredModDraft(raw: unknown): ModDraft {
   const source = asObject(raw);
 
+  const extraJsonSource = extractExtraJsonObject(source.extraJson) ?? {};
+  const cargoSlotValue = readModCargoSlotValue(source) ?? readModCargoSlotValue(extraJsonSource);
   const stats = Array.isArray(source.stats)
     ? (source.stats as unknown[]).map((entry) => {
         const stat = asObject(entry);
@@ -744,6 +762,9 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
         };
       })
     : [];
+  if (cargoSlotValue !== undefined && !stats.some((entry) => entry.key === MOD_CARGO_STAT_KEY)) {
+    stats.push({ key: MOD_CARGO_STAT_KEY, value: numberString(cargoSlotValue) });
+  }
 
   const abilities = Array.isArray(source.abilities)
     ? (source.abilities as unknown[]).map((entry) => {
@@ -773,7 +794,7 @@ export function hydrateStoredModDraft(raw: unknown): ModDraft {
     abilities,
     icon: String(source.icon ?? ""),
     description: String(source.description ?? ""),
-    extraJson: normalizeStoredExtraJson(source.extraJson),
+    extraJson: prettyExtraJson(stripModCargoSlotKeys(extraJsonSource)),
     generatorMeta: normalizeGeneratorMetadata(source.generatorMeta),
   });
 }
@@ -978,6 +999,11 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
             value: numberString(value as string | number | null | undefined),
           }))
         : [];
+  const cargoSlotValue = readModCargoSlotValue(source);
+  const normalizedStatsSource = [...statsSource];
+  if (cargoSlotValue !== undefined && !normalizedStatsSource.some((entry) => entry.key === MOD_CARGO_STAT_KEY)) {
+    normalizedStatsSource.push({ key: MOD_CARGO_STAT_KEY, value: numberString(cargoSlotValue) });
+  }
 
   const abilitiesSource = Array.isArray(source.abilities)
     ? (source.abilities as unknown[]).map((entry) => {
@@ -1020,6 +1046,9 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     "buy_price",
     "buyPrice",
     "stats",
+    "cargo_slots",
+    "cargo_space",
+    "cargo_capacity_slots",
     "abilities",
     "icon",
     "description",
@@ -1044,7 +1073,7 @@ export function normalizeImportedMod(raw: unknown): ModDraft {
     durability: numberString(source.durability),
     sellPrice: numberString(source.sell_price ?? source.sellPrice),
     buyPrice: numberString(source.buy_price ?? source.buyPrice),
-    stats: statsSource,
+    stats: normalizedStatsSource,
     abilities: abilitiesSource,
     icon: String(source.icon ?? ""),
     description: String(source.description ?? source.desc ?? ""),
@@ -1137,10 +1166,15 @@ export function exportModDraft(mod: ModDraft) {
   const syncedMod = syncDerivedModFields(mod);
   const extra = safeExtraJson(mod.extraJson);
   const stats: Record<string, number> = {};
+  let cargoSlots: number | undefined;
   for (const entry of syncedMod.stats) {
     const key = entry.key.trim();
     const value = parseNumber(entry.value);
     if (!key || value === undefined) continue;
+    if (key === MOD_CARGO_STAT_KEY) {
+      cargoSlots = value;
+      continue;
+    }
     stats[key] = value;
   }
 
@@ -1165,6 +1199,7 @@ export function exportModDraft(mod: ModDraft) {
     sell_price: parseNumber(syncedMod.sellPrice),
     buy_price: parseNumber(syncedMod.buyPrice),
     stats,
+    cargo_slots: cargoSlots,
     abilities: syncedMod.abilities
       .map((entry) => parseScalarString(entry.id))
       .filter((entry): entry is string | number => entry !== undefined),
@@ -1526,7 +1561,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
 
     const statKeys = new Set<string>();
     let activeValidationStatIndex = 0;
-    if (syncedMod.stats.length > MOD_MAX_STATS) {
+    if (activeStatCount > MOD_MAX_STATS) {
       messages.push({
         level: "error",
         scope: "mods",
@@ -1563,7 +1598,8 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
       }
 
       const currentSlotIndex = activeValidationStatIndex;
-      activeValidationStatIndex += 1;
+      const isSpecialStat = isSpecialModStat(key);
+      if (!isSpecialStat) activeValidationStatIndex += 1;
 
       if (!value) {
         messages.push({
@@ -1600,7 +1636,7 @@ export function validateModDrafts(mods: ModDraft[]): ValidationMessage[] {
 
       if (!syncedMod.statsCapOverride && levelRequirement !== undefined) {
         const numericValue = parseNumber(value);
-        const effectiveBudgetStat = budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
+        const effectiveBudgetStat = isSpecialStat ? undefined : budget.stats.find((entry) => entry.slotIndex === currentSlotIndex);
         const effectiveMaxValue = effectiveBudgetStat?.currentMaxValue ?? effectiveBudgetStat?.effectiveMaxValue;
         const maxAtLevel = effectiveMaxValue ?? getModStatMaxAtRequiredLevel(key, levelRequirement);
         const effectiveMagnitude = numericValue !== undefined && isSignedModStat(key) ? Math.abs(numericValue) : numericValue;

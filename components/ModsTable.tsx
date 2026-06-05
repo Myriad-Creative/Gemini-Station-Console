@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { RARITY_COLOR } from "@lib/constants";
+import { RARITY_COLOR, formatStatLabel } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
@@ -21,7 +21,7 @@ function HoverCard({ row }: { row: Row }) {
       {statEntries.length ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
           {statEntries.map(([k,v]) => (
-            <div key={k} className="flex justify-between gap-6"><span className="text-white/70">{k.replace(/_/g," ")}</span><span>{String(v)}</span></div>
+            <div key={k} className="flex justify-between gap-6"><span className="text-white/70">{formatStatLabel(k)}</span><span>{String(v)}</span></div>
           ))}
         </div>
       ) : <div className="text-white/60 text-sm">No stats</div>}

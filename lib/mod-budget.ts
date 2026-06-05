@@ -77,6 +77,7 @@ export const MOD_BASE_ABILITY_SLOT_COST = 0.5;
 export const MOD_INCLUDED_ABILITY_COUNT = 1;
 export const MOD_BASE_ABILITY_BUDGET_COST = MOD_BASE_ABILITY_SLOT_COST;
 export const MOD_ABILITY_BUDGET_COST_OVERRIDES: Record<string, number> = {};
+export const MOD_SPECIAL_STAT_KEYS = ["cargo_slots"] as const;
 export const MOD_RARITY_ITEM_LEVEL_BASE: Record<number, number> = {
   0: 0,
   1: 100,
@@ -116,6 +117,7 @@ export const MOD_STAT_BUDGET_CONFIG: Record<string, ModStatBudgetConfig> = {
   targeting: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
   hacking: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
   sensors: { family: "general", level1Max: 5, level100Max: 100, roundStep: 1 },
+  cargo_slots: { family: "general", level1Max: 5, level100Max: 100, roundStep: 1 },
   salvage_bonus: { family: "general", level1Max: 1, level100Max: 100, roundStep: 1 },
   speed: { family: "general", level1Max: 10, level100Max: 100, roundStep: 1 },
   energy_regen_rate: { family: "exotic", level1Max: 1, level100Max: 100, roundStep: 1 },
@@ -207,6 +209,10 @@ export function isSignedModStat(key: string) {
   return !!getModStatBudgetConfig(key)?.signed;
 }
 
+export function isSpecialModStat(key: string) {
+  return MOD_SPECIAL_STAT_KEYS.includes(key.trim() as (typeof MOD_SPECIAL_STAT_KEYS)[number]);
+}
+
 export function getModStatMaxAtRequiredLevel(key: string, requiredLevel?: number) {
   const config = getModStatBudgetConfig(key);
   if (!config || requiredLevel === undefined || !Number.isFinite(requiredLevel)) return undefined;
@@ -233,7 +239,9 @@ export function calculateModBudgetSummary(input: {
   const baseStatMax = getModBaseStatMaxAtRequiredLevel(requiredLevel);
   const supportedStatCounts = getModSupportedStatCounts(input.rarity);
   const rarityCapacityMultiplier = getModRarityCapacityMultiplier(input.rarity);
-  const statRows = input.stats.map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }));
+  const statRows = input.stats
+    .map((entry, index) => ({ key: entry.key.trim(), value: entry.value, index }))
+    .filter((entry) => entry.key && !isSpecialModStat(entry.key));
   const activeStatCount = statRows.length;
   const slotProfile = getModSlotProfile(input.rarity, activeStatCount);
   const slotProfileLabel = slotProfile ? formatProfile(slotProfile) : undefined;

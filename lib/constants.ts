@@ -35,3 +35,11 @@ export const CLASS_RESTRICTION_OPTIONS = [
 ] as const;
 
 export const ALL_STATS: string[] = Object.keys(MOD_STAT_BUDGET_CONFIG);
+
+export const STAT_LABELS: Record<string, string> = {
+  cargo_slots: "Cargo",
+};
+
+export function formatStatLabel(value: string) {
+  return STAT_LABELS[value] ?? value.replace(/_/g, " ");
+}

@@ -3,7 +3,7 @@
 import { HTMLAttributes, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { SummaryCard } from "@components/ability-manager/common";
-import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL } from "@lib/constants";
+import { ALL_STATS, CLASS_RESTRICTION_OPTIONS, MOD_SLOT_OPTIONS, RARITY_COLOR, RARITY_LABEL, formatStatLabel } from "@lib/constants";
 import { buildIconSrc } from "@lib/icon-src";
 import {
   autoBalanceModDraft,
@@ -35,6 +35,7 @@ import {
   calculateModBudgetSummary,
   getModStatBudgetConfig,
   getModStatMaxAtRequiredLevel,
+  isSpecialModStat,
 } from "@lib/mod-budget";
 import { useSharedDataWorkspaceVersion } from "@lib/shared-upload-client";
 
@@ -618,6 +619,10 @@ export default function ModWorkshop({
   const selectedMaxStats = useMemo(
     () => (selectedBudget?.supportedStatCounts.length ? Math.max(...selectedBudget.supportedStatCounts) : MOD_MAX_STATS),
     [selectedBudget],
+  );
+  const selectedBudgetedStatCount = useMemo(
+    () => (selectedSyncedMod ? countBudgetedStats(selectedSyncedMod.stats) : 0),
+    [selectedSyncedMod],
   );
   const hasActiveFilters = Boolean(
     issueFilter !== "all" || abilityLinkFilter !== "all" || abilityUsageFilter || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter,
@@ -1912,7 +1917,7 @@ export default function ModWorkshop({
               <div className="md:justify-self-end">
                 <button
                   className="whitespace-nowrap rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-                  disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
+                  disabled={selectedBudgetedStatCount >= selectedMaxStats}
                   onClick={() =>
                     updateSelected((draft) => ({
                       ...draft,
@@ -2131,7 +2136,7 @@ export default function ModWorkshop({
               <div className="md:justify-self-end">
                 <button
                   className="whitespace-nowrap rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:cursor-default disabled:opacity-40"
-                  disabled={selectedSyncedMod.stats.length >= selectedMaxStats}
+                  disabled={selectedBudgetedStatCount >= selectedMaxStats}
                   onClick={() =>
                     updateSelected((draft) => ({
                       ...draft,
@@ -2947,14 +2952,18 @@ function RarityField({
 function buildStatOptions(currentKey: string) {
   const options = ALL_STATS.map((stat) => ({
     value: stat,
-    label: stat,
+    label: formatStatLabel(stat),
   }));
 
   if (currentKey.trim() && !options.some((option) => option.value === currentKey)) {
-    options.unshift({ value: currentKey, label: `${currentKey} (custom)` });
+    options.unshift({ value: currentKey, label: `${formatStatLabel(currentKey)} (custom)` });
   }
 
   return [{ value: "", label: "Select stat" }, ...options];
+}
+
+function countBudgetedStats(stats: ModStatDraft[]) {
+  return stats.filter((stat) => stat.key.trim() && !isSpecialModStat(stat.key)).length;
 }
 
 function formatBudget(value: number | undefined) {
