@@ -65,6 +65,10 @@ export async function POST(req: NextRequest) {
       description: mobId ? `Created from Mob Lab for ${mobId}.` : "Created from Mob Lab.",
       items: [],
       mods: [],
+      priceAdjustments: {
+        items: {},
+        mods: {},
+      },
       extra_json: "",
     };
     const workspace = insertMerchantProfileAfter(result.workspace, null, profile);

@@ -41,6 +41,9 @@ type PreviewProduct = {
   rarity?: number;
   levelRequirement?: number;
   metaLabel: string;
+  basePrice?: number;
+  adjustedPrice?: number;
+  priceAdjustment: string;
   missing?: boolean;
 };
 
@@ -85,6 +88,157 @@ async function copyToClipboard(value: string) {
   } finally {
     document.body.removeChild(textarea);
   }
+}
+
+function numberOrUndefined(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function positiveInt(value: unknown) {
+  const numeric = numberOrUndefined(value);
+  if (numeric === undefined) return -1;
+  return Math.max(-1, Math.round(numeric));
+}
+
+function intValue(value: unknown) {
+  const numeric = numberOrUndefined(value);
+  if (numeric === undefined) return 0;
+  return Math.trunc(numeric);
+}
+
+function roundToNearest(value: number, nearest: number) {
+  const step = Math.max(1, nearest);
+  return Math.round(value / step) * step;
+}
+
+function normalizedTypeName(type?: string) {
+  return String(type ?? "").trim().toLowerCase();
+}
+
+function getItemTypeBase(itemType: string) {
+  switch (itemType) {
+    case "component":
+      return 20;
+    case "fuel":
+      return 8;
+    case "hazardous":
+      return 24;
+    case "raw material":
+      return 8;
+    case "refined material":
+      return 16;
+    case "special":
+      return 5;
+    case "supply":
+      return 12;
+    case "trade good":
+      return 10;
+    default:
+      return 10;
+  }
+}
+
+function getItemRarityMultiplier(rarity: number) {
+  switch (rarity) {
+    case 0:
+      return 0;
+    case 1:
+      return 1;
+    case 2:
+      return 1.6;
+    case 3:
+      return 2.6;
+    case 4:
+      return 4;
+    case 5:
+      return 6;
+    default:
+      return 1 + Math.max(0, rarity - 1) * 0.75;
+  }
+}
+
+function getModRarityMultiplier(rarity: number) {
+  switch (rarity) {
+    case 0:
+      return 1;
+    case 1:
+      return 1.35;
+    case 2:
+      return 1.9;
+    case 3:
+      return 2.7;
+    case 4:
+      return 4;
+    case 5:
+      return 6;
+    default:
+      return 1 + Math.max(0, rarity) * 0.75;
+  }
+}
+
+function getItemBasePrice(item?: Item) {
+  if (!item) return undefined;
+  const itemType = normalizedTypeName(item.type);
+  if (itemType === "key") return 0;
+  if (item.buyPrice !== undefined && item.sellPrice !== undefined && intValue(item.buyPrice) === 0 && intValue(item.sellPrice) === 0) return 0;
+
+  const explicitBase = positiveInt(item.baseValue ?? item.basePrice);
+  if (explicitBase > 0) return explicitBase;
+
+  const legacyBuy = positiveInt(item.buyPrice);
+  if (legacyBuy > 1) return legacyBuy;
+
+  const legacyValue = positiveInt(item.value);
+  if (legacyValue > 1) return legacyValue;
+
+  const rarity = Math.max(0, Math.trunc(numberOrUndefined(item.rarity) ?? 1));
+  return Math.max(1, Math.round(getItemTypeBase(itemType) * getItemRarityMultiplier(rarity)));
+}
+
+function getModBasePrice(mod?: Mod) {
+  if (!mod) return undefined;
+
+  const explicitBase = positiveInt(mod.baseValue ?? mod.basePrice);
+  if (explicitBase > 0) return explicitBase;
+
+  const explicitBuy = positiveInt(mod.buyPrice);
+  if (explicitBuy > 0) return explicitBuy;
+
+  const levelRequirement = Math.max(1, Math.trunc(numberOrUndefined(mod.levelRequirement) ?? 1));
+  const rarity = Math.max(0, Math.trunc(numberOrUndefined(mod.rarity) ?? 0));
+  const composite = Math.max(0, numberOrUndefined(mod.composite) ?? 0);
+  const statsCount = mod.stats && typeof mod.stats === "object" ? Object.keys(mod.stats).length : 0;
+  const abilitiesCount = Array.isArray(mod.abilities) ? mod.abilities.length : 0;
+  let raw = 22;
+  raw += levelRequirement * 5;
+  raw += Math.min(composite, 80) * 0.18;
+  raw += statsCount * 2;
+  raw += abilitiesCount * 4;
+  raw *= getModRarityMultiplier(rarity);
+  return Math.max(1, roundToNearest(Math.round(raw), 5));
+}
+
+function multiplierFromAdjustment(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return 1;
+  const percent = Number(trimmed);
+  if (!Number.isFinite(percent)) return undefined;
+  return Math.max(0, 1 + percent / 100);
+}
+
+function getAdjustedPrice(basePrice: number | undefined, adjustment: string) {
+  if (basePrice === undefined) return undefined;
+  if (basePrice <= 0) return 0;
+  const multiplier = multiplierFromAdjustment(adjustment);
+  if (multiplier === undefined) return undefined;
+  return Math.max(1, Math.round(basePrice * multiplier));
+}
+
+function formatCredits(value: number | undefined) {
+  if (value === undefined) return "Not available";
+  return `${value.toLocaleString()} cr`;
 }
 
 function SummaryCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
@@ -145,13 +299,16 @@ function CatalogThumb({
 function PreviewCard({
   product,
   onRemove,
+  onPriceAdjustmentChange,
   version,
 }: {
   product: PreviewProduct;
   onRemove: () => void;
+  onPriceAdjustmentChange: (value: string) => void;
   version?: string;
 }) {
   const titleColor = product.rarity === 4 ? "#F97316" : product.rarity === 3 ? "#8B5CF6" : RARITY_COLOR[product.rarity ?? 0] || "#FFFFFF";
+  const hasInvalidAdjustment = product.priceAdjustment.trim() !== "" && multiplierFromAdjustment(product.priceAdjustment) === undefined;
 
   return (
     <div
@@ -179,6 +336,31 @@ function PreviewCard({
         </div>
         <div className="mt-2 text-sm text-white/55">{product.metaLabel}</div>
         {product.missing ? <div className="mt-2 text-xs text-red-100">Missing from the current console catalog.</div> : null}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35">Base</div>
+            <div className="mt-1 text-sm font-semibold text-white/80">{formatCredits(product.basePrice)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35">New</div>
+            <div className={`mt-1 text-sm font-semibold ${hasInvalidAdjustment ? "text-red-100" : "text-cyan-100"}`}>
+              {hasInvalidAdjustment ? "Invalid" : formatCredits(product.adjustedPrice)}
+            </div>
+          </div>
+        </div>
+        <label className="mt-3 block">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">Price Adjustment %</span>
+          <input
+            className={`input mt-1 h-9 text-sm ${hasInvalidAdjustment ? "border-red-300/45" : ""}`}
+            inputMode="decimal"
+            placeholder="0"
+            value={product.priceAdjustment}
+            onChange={(event) => onPriceAdjustmentChange(event.target.value)}
+          />
+        </label>
       </div>
     </div>
   );
@@ -406,15 +588,21 @@ export default function MerchantLabApp() {
   const selectedItemProducts = useMemo(() => {
     if (!selectedProfile) return [];
     return selectedProfile.items.map((id) => {
-      const item = itemById.get(id.trim());
+      const trimmedId = id.trim();
+      const item = itemById.get(trimmedId);
+      const priceAdjustment = selectedProfile.priceAdjustments?.items?.[trimmedId] ?? "";
+      const basePrice = getItemBasePrice(item);
       return {
         kind: "item" as const,
-        id: id.trim(),
+        id: trimmedId,
         name: item?.name ?? `Missing Item ${id}`,
         icon: item?.icon,
         rarity: item?.rarity,
         levelRequirement: item?.levelRequirement,
         metaLabel: item ? `Level ${item.levelRequirement} · Rarity ${item.rarity}${item.type ? ` · ${labelize(item.type)}` : ""}` : "Unresolved item reference",
+        basePrice,
+        adjustedPrice: getAdjustedPrice(basePrice, priceAdjustment),
+        priceAdjustment,
         missing: !item,
       };
     });
@@ -423,10 +611,13 @@ export default function MerchantLabApp() {
   const selectedModProducts = useMemo(() => {
     if (!selectedProfile) return [];
     return selectedProfile.mods.map((id) => {
-      const mod = modById.get(id.trim());
+      const trimmedId = id.trim();
+      const mod = modById.get(trimmedId);
+      const priceAdjustment = selectedProfile.priceAdjustments?.mods?.[trimmedId] ?? "";
+      const basePrice = getModBasePrice(mod);
       return {
         kind: "mod" as const,
-        id: id.trim(),
+        id: trimmedId,
         name: mod?.name ?? `Missing Mod ${id}`,
         icon: mod?.icon,
         rarity: mod?.rarity,
@@ -434,6 +625,9 @@ export default function MerchantLabApp() {
         metaLabel: mod
           ? `Level ${mod.levelRequirement} · Rarity ${mod.rarity}${mod.slot ? ` · ${labelize(mod.slot)}` : ""}`
           : "Unresolved mod reference",
+        basePrice,
+        adjustedPrice: getAdjustedPrice(basePrice, priceAdjustment),
+        priceAdjustment,
         missing: !mod,
       };
     });
@@ -442,6 +636,26 @@ export default function MerchantLabApp() {
   function updateSelectedProfile(updater: (current: MerchantProfileDraft) => MerchantProfileDraft) {
     if (!workspace || !selectedProfile) return;
     setWorkspace(updateMerchantProfileAt(workspace, selectedProfile.key, updater));
+  }
+
+  function updatePriceAdjustment(kind: MerchantCatalogMode, id: string, value: string) {
+    const trimmedId = id.trim();
+    if (!trimmedId) return;
+
+    updateSelectedProfile((current) => {
+      const currentAdjustments = current.priceAdjustments ?? { items: {}, mods: {} };
+      const nextCollection = { ...(currentAdjustments[kind] ?? {}) };
+      if (value.trim()) nextCollection[trimmedId] = value;
+      else delete nextCollection[trimmedId];
+
+      return {
+        ...current,
+        priceAdjustments: {
+          items: kind === "items" ? nextCollection : { ...(currentAdjustments.items ?? {}) },
+          mods: kind === "mods" ? nextCollection : { ...(currentAdjustments.mods ?? {}) },
+        },
+      };
+    });
   }
 
   function importText(text: string, sourceLabel: string | null, sourceType: "uploaded" | "pasted") {
@@ -640,10 +854,21 @@ export default function MerchantLabApp() {
   }
 
   function removeCatalogEntry(kind: MerchantCatalogMode, index: number) {
-    updateSelectedProfile((current) => ({
-      ...current,
-      [kind]: current[kind].filter((_, currentIndex) => currentIndex !== index),
-    }));
+    updateSelectedProfile((current) => {
+      const removedId = current[kind][index]?.trim();
+      const currentAdjustments = current.priceAdjustments ?? { items: {}, mods: {} };
+      const nextCollection = { ...(currentAdjustments[kind] ?? {}) };
+      if (removedId) delete nextCollection[removedId];
+
+      return {
+        ...current,
+        [kind]: current[kind].filter((_, currentIndex) => currentIndex !== index),
+        priceAdjustments: {
+          items: kind === "items" ? nextCollection : { ...(currentAdjustments.items ?? {}) },
+          mods: kind === "mods" ? nextCollection : { ...(currentAdjustments.mods ?? {}) },
+        },
+      };
+    });
   }
 
   const hasWorkspaceErrors = validation.some((issue) => issue.level === "error");
@@ -1067,7 +1292,7 @@ export default function MerchantLabApp() {
 
                 <Section
                   title="Storefront Preview"
-                  description="This shows the current item and mod offerings attached to the selected merchant profile."
+                  description="This shows the current item and mod offerings attached to the selected merchant profile, including per-profile price adjustments."
                 >
                   <div className="overflow-hidden rounded-[28px] border border-cyan-300/15 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_42%),linear-gradient(180deg,_rgba(5,16,26,0.98),_rgba(9,19,31,0.92))] p-5 shadow-[0_12px_60px_rgba(0,0,0,0.35)]">
                     <div className="border-b border-white/10 pb-4">
@@ -1088,13 +1313,14 @@ export default function MerchantLabApp() {
                           <div className="text-sm text-white/45">{selectedItemProducts.length} attached</div>
                         </div>
                         {selectedItemProducts.length ? (
-                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                             {selectedItemProducts.map((product, index) => (
                               <PreviewCard
                                 key={`preview-item-${product.id}-${index}`}
                                 product={product}
                                 version={sharedDataVersion}
                                 onRemove={() => removeCatalogEntry("items", index)}
+                                onPriceAdjustmentChange={(value) => updatePriceAdjustment("items", product.id, value)}
                               />
                             ))}
                           </div>
@@ -1111,13 +1337,14 @@ export default function MerchantLabApp() {
                           <div className="text-sm text-white/45">{selectedModProducts.length} attached</div>
                         </div>
                         {selectedModProducts.length ? (
-                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                             {selectedModProducts.map((product, index) => (
                               <PreviewCard
                                 key={`preview-mod-${product.id}-${index}`}
                                 product={product}
                                 version={sharedDataVersion}
                                 onRemove={() => removeCatalogEntry("mods", index)}
+                                onPriceAdjustmentChange={(value) => updatePriceAdjustment("mods", product.id, value)}
                               />
                             ))}
                           </div>

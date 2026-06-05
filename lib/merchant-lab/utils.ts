@@ -6,6 +6,7 @@ import type {
   MerchantLabSourceType,
   MerchantLabSummary,
   MerchantLabWorkspace,
+  MerchantPriceAdjustments,
   MerchantProfileDraft,
   MerchantProfileValidationIssue,
 } from "@lib/merchant-lab/types";
@@ -37,6 +38,13 @@ function stripKeys(source: JsonObject, keys: readonly string[]) {
 
 function formatJsonBlock(source: JsonObject) {
   return Object.keys(source).length ? JSON.stringify(source, null, 2) : "";
+}
+
+function clonePriceAdjustments(source: MerchantPriceAdjustments | undefined): MerchantPriceAdjustments {
+  return {
+    items: { ...(source?.items ?? {}) },
+    mods: { ...(source?.mods ?? {}) },
+  };
 }
 
 function parseObjectTextarea(value: string, label: string) {
@@ -85,6 +93,126 @@ function toExportReferenceId(value: string) {
   return trimmed;
 }
 
+function toFiniteNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value.trim());
+    return Number.isFinite(numeric) ? numeric : undefined;
+  }
+  return undefined;
+}
+
+function formatPercentFromMultiplier(multiplier: number) {
+  const percent = (multiplier - 1) * 100;
+  const rounded = Math.round(percent * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function readSellToPlayerMultiplier(entry: unknown) {
+  const scalar = toFiniteNumber(entry);
+  if (scalar !== undefined) return scalar;
+
+  const source = asObject(entry);
+  return toFiniteNumber(source.sell_to_player ?? source.multiplier);
+}
+
+function extractPriceAdjustmentMap(value: unknown) {
+  const source = asObject(value);
+  const next: Record<string, string> = {};
+  for (const [rawId, entry] of Object.entries(source)) {
+    const id = rawId.trim();
+    const multiplier = readSellToPlayerMultiplier(entry);
+    if (!id || multiplier === undefined) continue;
+    next[id] = formatPercentFromMultiplier(multiplier);
+  }
+  return next;
+}
+
+function extractPriceAdjustments(source: JsonObject): MerchantPriceAdjustments {
+  const market = asObject(source.market ?? source.pricing);
+  return {
+    items: extractPriceAdjustmentMap(market.items),
+    mods: extractPriceAdjustmentMap(market.mods),
+  };
+}
+
+function stripStructuredPriceAdjustmentMap(value: unknown) {
+  const source = asObject(value);
+  const next: JsonObject = {};
+  for (const [id, entry] of Object.entries(source)) {
+    const scalar = toFiniteNumber(entry);
+    if (scalar !== undefined) {
+      next[id] = { multiplier: scalar };
+      continue;
+    }
+
+    const entryObject = asObject(entry);
+    const rest = stripKeys(entryObject, ["sell_to_player"]);
+    if (Object.keys(rest).length) next[id] = rest;
+  }
+  return next;
+}
+
+function stripStructuredPriceAdjustments(source: JsonObject) {
+  const next: JsonObject = { ...source };
+  const marketSource = asObject(next.market ?? next.pricing);
+  delete next.market;
+  delete next.pricing;
+
+  const market: JsonObject = { ...marketSource };
+  const items = stripStructuredPriceAdjustmentMap(market.items);
+  const mods = stripStructuredPriceAdjustmentMap(market.mods);
+  delete market.items;
+  delete market.mods;
+  if (Object.keys(items).length) market.items = items;
+  if (Object.keys(mods).length) market.mods = mods;
+  if (Object.keys(market).length) next.market = market;
+  return next;
+}
+
+function multiplierFromPercentText(value: string) {
+  const percent = Number(value.trim());
+  if (!Number.isFinite(percent)) return undefined;
+  return Math.max(0, Math.round((1 + percent / 100) * 10000) / 10000);
+}
+
+function writePriceAdjustmentMap(target: JsonObject, adjustments: Record<string, string>) {
+  for (const [rawId, percentText] of Object.entries(adjustments)) {
+    const id = rawId.trim();
+    const multiplier = multiplierFromPercentText(percentText);
+    if (!id || multiplier === undefined) continue;
+
+    const existing = target[id];
+    const scalar = toFiniteNumber(existing);
+    const existingObject = scalar === undefined ? asObject(existing) : { multiplier: scalar };
+    target[id] = {
+      ...existingObject,
+      sell_to_player: multiplier,
+    };
+  }
+}
+
+function mergePriceAdjustments(extra: JsonObject, adjustments: MerchantPriceAdjustments | undefined) {
+  const priceAdjustments = clonePriceAdjustments(adjustments);
+  const next: JsonObject = { ...extra };
+  const market: JsonObject = { ...asObject(next.market ?? next.pricing) };
+  delete next.market;
+  delete next.pricing;
+
+  const itemMarket: JsonObject = { ...asObject(market.items) };
+  const modMarket: JsonObject = { ...asObject(market.mods) };
+  delete market.items;
+  delete market.mods;
+
+  writePriceAdjustmentMap(itemMarket, priceAdjustments.items);
+  writePriceAdjustmentMap(modMarket, priceAdjustments.mods);
+
+  if (Object.keys(itemMarket).length) market.items = itemMarket;
+  if (Object.keys(modMarket).length) market.mods = modMarket;
+  if (Object.keys(market).length) next.market = market;
+  return next;
+}
+
 function incrementTrailingNumber(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "merchant_profile_001";
@@ -99,6 +227,7 @@ function incrementTrailingNumber(value: string) {
 }
 
 function normalizeImportedProfile(source: JsonObject, sourceIndex: number): MerchantProfileDraft {
+  const extraSource = stripStructuredPriceAdjustments(stripKeys(source, MERCHANT_PROFILE_RESERVED_KEYS));
   return {
     key: createDraftKey(),
     sourceIndex,
@@ -107,7 +236,8 @@ function normalizeImportedProfile(source: JsonObject, sourceIndex: number): Merc
     description: String(source.description ?? "").trim(),
     items: normalizeIdList(source.items),
     mods: normalizeIdList(source.mods),
-    extra_json: formatJsonBlock(stripKeys(source, MERCHANT_PROFILE_RESERVED_KEYS)),
+    priceAdjustments: extractPriceAdjustments(source),
+    extra_json: formatJsonBlock(extraSource),
   };
 }
 
@@ -149,6 +279,7 @@ export function createBlankMerchantProfile(existingIds: string[] = []): Merchant
     description: "",
     items: [],
     mods: [],
+    priceAdjustments: clonePriceAdjustments(undefined),
     extra_json: "",
   };
 }
@@ -172,6 +303,7 @@ export function cloneMerchantProfile(source: MerchantProfileDraft, existingIds: 
     id: nextGeneratedMerchantProfileId(existingIds, source.id || "merchant_profile_000"),
     items: [...source.items],
     mods: [...source.mods],
+    priceAdjustments: clonePriceAdjustments(source.priceAdjustments),
   } satisfies MerchantProfileDraft;
 }
 
@@ -248,6 +380,33 @@ export function validateMerchantProfiles(profiles: MerchantProfileDraft[]): Merc
           field: "extra_json",
           message: error instanceof Error ? error.message : String(error),
         });
+      }
+    }
+
+    const priceAdjustmentEntries = [
+      ["items", clonePriceAdjustments(profile.priceAdjustments).items],
+      ["mods", clonePriceAdjustments(profile.priceAdjustments).mods],
+    ] as const;
+    for (const [collection, adjustments] of priceAdjustmentEntries) {
+      for (const [id, percentText] of Object.entries(adjustments)) {
+        const trimmed = percentText.trim();
+        if (!trimmed) continue;
+        const percent = Number(trimmed);
+        if (!Number.isFinite(percent)) {
+          issues.push({
+            level: "error",
+            profileKey: profile.key,
+            field: "priceAdjustments",
+            message: `${collection === "items" ? "Item" : "Mod"} ${id} price adjustment must be a number.`,
+          });
+        } else if (percent < -100) {
+          issues.push({
+            level: "error",
+            profileKey: profile.key,
+            field: "priceAdjustments",
+            message: `${collection === "items" ? "Item" : "Mod"} ${id} price adjustment cannot be below -100%.`,
+          });
+        }
       }
     }
 
@@ -330,6 +489,7 @@ export function summarizeMerchantWorkspace(
 
 export function serializeMerchantProfile(profile: MerchantProfileDraft) {
   const extra = parseObjectTextarea(profile.extra_json, "Extra JSON");
+  const mergedExtra = mergePriceAdjustments(extra, profile.priceAdjustments);
   const known = cleanObject({
     id: profile.id.trim(),
     name: profile.name.trim(),
@@ -339,7 +499,7 @@ export function serializeMerchantProfile(profile: MerchantProfileDraft) {
   });
 
   const next = { ...known } as JsonObject;
-  for (const [key, value] of Object.entries(extra)) {
+  for (const [key, value] of Object.entries(mergedExtra)) {
     if (MERCHANT_PROFILE_RESERVED_KEYS.includes(key as (typeof MERCHANT_PROFILE_RESERVED_KEYS)[number])) continue;
     next[key] = value;
   }

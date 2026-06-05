@@ -8,6 +8,12 @@ type RawMods = {
 
 const CARGO_SLOT_KEYS = ["cargo_slots", "cargo_space", "cargo_capacity_slots"];
 
+function numberOrUndefined(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function readCargoSlotValue(mod: any) {
   for (const key of CARGO_SLOT_KEYS) {
     const value = mod?.[key];
@@ -49,11 +55,15 @@ function normalizeMods(data: RawMods | null): Mod[] {
       isDungeonDrop: Boolean(m.is_dungeon_drop ?? m.isDungeonDrop),
       isBossDrop: Boolean(m.is_boss_drop ?? m.isBossDrop),
       levelRequirement: Number(m.level_requirement ?? m.levelRequirement ?? 0),
-      itemLevel: m.item_level ? Number(m.item_level) : undefined,
+      itemLevel: numberOrUndefined(m.item_level ?? m.itemLevel),
       rarity: Number(m.rarity ?? 0),
-      durability: m.durability ? Number(m.durability) : undefined,
-      sellPrice: m.sell_price ? Number(m.sell_price) : undefined,
-      buyPrice: m.buy_price ? Number(m.buy_price) : undefined,
+      durability: numberOrUndefined(m.durability),
+      sellPrice: numberOrUndefined(m.sell_price ?? m.sellPrice),
+      buyPrice: numberOrUndefined(m.buy_price ?? m.buyPrice),
+      basePrice: numberOrUndefined(m.base_price ?? m.basePrice),
+      baseValue: numberOrUndefined(m.base_value ?? m.baseValue),
+      value: numberOrUndefined(m.value),
+      composite: numberOrUndefined(m.composite),
       stats,
       abilities,
       icon: m.icon,

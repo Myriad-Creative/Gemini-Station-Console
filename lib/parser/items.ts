@@ -4,6 +4,12 @@ import { Item } from "@lib/types";
 
 type RawItems = Record<string, any> | any[] | null;
 
+function numberOrUndefined(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function normalizeItems(data: RawItems): Item[] {
   if (!data) return [];
   const arr: any[] = Array.isArray(data) ? data : Object.values(data);
@@ -15,6 +21,12 @@ function normalizeItems(data: RawItems): Item[] {
     icon: it.icon ?? it.icon_path ?? undefined,
     type: it.type ?? it.category ?? undefined,
     description: typeof it.description === "string" ? it.description : undefined,
+    sellPrice: numberOrUndefined(it.sell_price ?? it.sellPrice),
+    buyPrice: numberOrUndefined(it.buy_price ?? it.buyPrice),
+    basePrice: numberOrUndefined(it.base_price ?? it.basePrice),
+    baseValue: numberOrUndefined(it.base_value ?? it.baseValue),
+    value: numberOrUndefined(it.value),
+    size: numberOrUndefined(it.size),
     stats: typeof it.stats === "object" ? it.stats : {}
   }));
 }

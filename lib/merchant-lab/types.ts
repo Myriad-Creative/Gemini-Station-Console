@@ -4,6 +4,11 @@ export type MerchantLabParseStrategy = "strict" | "loose";
 export type MerchantCatalogMode = "items" | "mods";
 export type ValidationLevel = "error" | "warning";
 
+export interface MerchantPriceAdjustments {
+  items: Record<string, string>;
+  mods: Record<string, string>;
+}
+
 export interface MerchantProfileDraft {
   key: string;
   sourceIndex: number;
@@ -12,6 +17,7 @@ export interface MerchantProfileDraft {
   description: string;
   items: string[];
   mods: string[];
+  priceAdjustments: MerchantPriceAdjustments;
   extra_json: string;
 }
 

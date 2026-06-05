@@ -15,6 +15,10 @@ export interface Mod {
   durability?: number;
   sellPrice?: number;
   buyPrice?: number;
+  basePrice?: number;
+  baseValue?: number;
+  value?: number;
+  composite?: number;
   stats: StatMap;
   abilities: (number | string)[];
   icon?: string;
@@ -75,6 +79,12 @@ export interface Item {
   icon?: string;
   type?: string;
   description?: string;
+  sellPrice?: number;
+  buyPrice?: number;
+  basePrice?: number;
+  baseValue?: number;
+  value?: number;
+  size?: number;
   stats?: Record<string, number>;
 }
 
