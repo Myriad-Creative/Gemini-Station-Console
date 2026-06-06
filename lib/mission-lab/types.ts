@@ -40,6 +40,7 @@ export interface MissionRewardEntrySummary {
   name: string | null;
   icon: string | null;
   count?: number | null;
+  hidden?: boolean;
 }
 
 export interface MissionRewardSummary {
@@ -238,6 +239,7 @@ export interface MissionRewardLookupResult {
   name: string | null;
   icon: string | null;
   count?: number | null;
+  hidden?: boolean;
 }
 
 export interface MissionUploadFile {

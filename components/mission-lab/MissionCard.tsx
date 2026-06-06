@@ -36,15 +36,18 @@ function RewardPill({ label, value }: { label: string; value: number }) {
 
 function RewardIcon({ reward }: { reward: MissionRewardEntrySummary }) {
   const sharedDataVersion = useSharedDataWorkspaceVersion();
+  const icon = reward.hidden ? "res://assets/items/loot_box_question.png" : reward.icon || "icon_lootbox.png";
+  const label = reward.hidden ? "Hidden Reward" : reward.name ?? reward.id;
   return (
     <div className="relative flex h-20 w-20 items-center justify-center rounded-lg border border-cyan-400/20 bg-white/5 p-1">
       <img
-        src={buildIconSrc(reward.icon || "icon_lootbox.png", reward.id, reward.name ?? reward.id, sharedDataVersion)}
-        alt={reward.name ?? reward.id}
+        src={buildIconSrc(icon, reward.id, label, sharedDataVersion)}
+        alt={label}
         width={72}
         height={72}
         className="h-[72px] w-[72px] rounded-md object-cover"
       />
+      {reward.hidden ? <div className="absolute left-1 top-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-100">Hidden</div> : null}
       {reward.kind === "item" && reward.count && reward.count > 1 ? (
         <div className="absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">x{reward.count}</div>
       ) : null}

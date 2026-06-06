@@ -26,6 +26,7 @@ import {
   MissionObjectiveDraft,
   MissionPrerequisiteDraft,
   MissionRewardItemDraft,
+  MissionRewardModDraft,
   MissionStepDraft,
   createMissionConversationBeatDraft,
   createMissionConversationDraft,
@@ -874,7 +875,7 @@ export default function MissionWorkshop({
               <div>
                 <h3 className="text-lg font-semibold">Rewards</h3>
                 <div className="text-sm text-white/60">
-                  Search items and mods by name or id, then attach them to the mission rewards. Item rewards can include a quantity.
+                  Search items and mods by name or id, then attach them to the mission rewards. Item rewards can include a quantity and each item or mod can hide its reward icon.
                 </div>
               </div>
 
@@ -903,6 +904,29 @@ export default function MissionWorkshop({
                 />
               </div>
 
+              <div className="grid gap-3 rounded border border-white/10 bg-white/5 p-3 md:grid-cols-2">
+                <CheckboxField
+                  label="Hide all item reward icons"
+                  checked={selectedMission.rewards.hideItemRewards}
+                  onChange={(checked) =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      rewards: { ...draft.rewards, hideItemRewards: checked },
+                    }))
+                  }
+                />
+                <CheckboxField
+                  label="Hide all mod reward icons"
+                  checked={selectedMission.rewards.hideModRewards}
+                  onChange={(checked) =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      rewards: { ...draft.rewards, hideModRewards: checked },
+                    }))
+                  }
+                />
+              </div>
+
               <RewardItemListEditor
                 label="Reward Items"
                 values={selectedMission.rewards.itemRewards}
@@ -917,16 +941,16 @@ export default function MissionWorkshop({
                 }
               />
 
-              <LookupIdListEditor
+              <RewardModListEditor
                 label="Reward Mods"
-                values={selectedMission.rewards.modIds}
+                values={selectedMission.rewards.modRewards}
                 options={modOptions}
                 placeholder="Search mod name or id"
                 emptyText="No reward mods attached."
                 onChange={(next) =>
                   updateSelected((draft) => ({
                     ...draft,
-                    rewards: { ...draft.rewards, modIds: next },
+                    rewards: { ...draft.rewards, modRewards: next },
                   }))
                 }
               />
@@ -2170,7 +2194,7 @@ function RewardItemListEditor({
           {values.map((value) => {
             const option = options.find((entry) => entry.id === value.itemId);
             return (
-              <div key={value.key} className="grid gap-3 rounded border border-white/10 bg-white/5 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_96px_auto] sm:items-center">
+              <div key={value.key} className="grid gap-3 rounded border border-white/10 bg-white/5 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_96px_auto_auto_auto] sm:items-center">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{option?.label ?? value.itemId}</div>
                   <div className="truncate text-xs text-white/50">
@@ -2187,6 +2211,14 @@ function RewardItemListEditor({
                     onChange={(event) => onChange(values.map((entry) => (entry.key === value.key ? { ...entry, count: event.target.value } : entry)))}
                     onFocus={(event) => event.currentTarget.select()}
                   />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={value.hidden}
+                    onChange={(event) => onChange(values.map((entry) => (entry.key === value.key ? { ...entry, hidden: event.target.checked } : entry)))}
+                  />
+                  Hidden
                 </label>
                 <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={() => onChange(values.filter((entry) => entry.key !== value.key))}>
                   Remove
@@ -2222,7 +2254,102 @@ function RewardItemListEditor({
         </button>
       </div>
 
-      <div className="text-xs text-white/50">Exports to rewards.items as objects with id and count.</div>
+      <div className="text-xs text-white/50">Exports to rewards.items as objects with id, count, and optional hidden state.</div>
+
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option.id} value={option.id} label={option.meta ? `${option.label} · ${option.meta}` : option.label} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+function RewardModListEditor({
+  label,
+  values,
+  options,
+  placeholder,
+  emptyText,
+  onChange,
+}: {
+  label: string;
+  values: MissionRewardModDraft[];
+  options: LookupOption[];
+  placeholder: string;
+  emptyText: string;
+  onChange: (next: MissionRewardModDraft[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const listId = useId();
+
+  function commit(raw: string) {
+    const nextModId = resolveLookupValue(raw, options);
+    if (!nextModId || values.some((value) => value.modId === nextModId)) {
+      setDraft("");
+      return;
+    }
+    onChange([...values, createRewardModDraft(nextModId)]);
+    setDraft("");
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commit(draft);
+  }
+
+  return (
+    <div className="space-y-3 rounded border border-white/10 bg-black/20 p-3">
+      <div className="label">{label}</div>
+
+      {values.length ? (
+        <div className="space-y-2">
+          {values.map((value) => {
+            const option = options.find((entry) => entry.id === value.modId);
+            return (
+              <div key={value.key} className="grid gap-3 rounded border border-white/10 bg-white/5 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{option?.label ?? value.modId}</div>
+                  <div className="truncate text-xs text-white/50">
+                    {value.modId}
+                    {option?.meta ? ` · ${option.meta}` : ""}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={value.hidden}
+                    onChange={(event) => onChange(values.map((entry) => (entry.key === value.key ? { ...entry, hidden: event.target.checked } : entry)))}
+                  />
+                  Hidden
+                </label>
+                <button className="rounded bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={() => onChange(values.filter((entry) => entry.key !== value.key))}>
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-sm text-white/50">{emptyText}</div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <input
+          className="input"
+          list={listId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+        />
+        <button className="rounded bg-white/5 px-3 py-2 text-sm hover:bg-white/10" onClick={() => commit(draft)}>
+          Add
+        </button>
+      </div>
+
+      <div className="text-xs text-white/50">Visible mods export as ids. Hidden mods export as objects with id and hidden state.</div>
 
       <datalist id={listId}>
         {options.map((option) => (
@@ -2589,6 +2716,15 @@ function createRewardItemDraft(itemId: string, count = "1"): MissionRewardItemDr
     key: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? `reward_item_${crypto.randomUUID().slice(0, 8)}` : `reward_item_${Math.random().toString(36).slice(2, 10)}`,
     itemId,
     count,
+    hidden: false,
+  };
+}
+
+function createRewardModDraft(modId: string): MissionRewardModDraft {
+  return {
+    key: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? `reward_mod_${crypto.randomUUID().slice(0, 8)}` : `reward_mod_${Math.random().toString(36).slice(2, 10)}`,
+    modId,
+    hidden: false,
   };
 }
 

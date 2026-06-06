@@ -37,8 +37,10 @@ export interface MissionMetaDraft {
 export interface MissionRewardDraft {
   credits: string;
   xp: string;
+  hideItemRewards: boolean;
+  hideModRewards: boolean;
   itemRewards: MissionRewardItemDraft[];
-  modIds: string[];
+  modRewards: MissionRewardModDraft[];
   reputationEntries: string[];
 }
 
@@ -46,6 +48,13 @@ export interface MissionRewardItemDraft {
   key: string;
   itemId: string;
   count: string;
+  hidden: boolean;
+}
+
+export interface MissionRewardModDraft {
+  key: string;
+  modId: string;
+  hidden: boolean;
 }
 
 export interface MissionPrerequisiteDraft {
@@ -168,11 +177,19 @@ function parseBooleanFlag(value: unknown) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (normalized === "true") return true;
-    if (normalized === "false") return false;
+    if (["true", "yes", "y", "1", "on"].includes(normalized)) return true;
+    if (["false", "no", "n", "0", "off"].includes(normalized)) return false;
   }
   if (typeof value === "number") return value !== 0;
   return false;
+}
+
+const ITEM_REWARD_CATEGORY_HIDDEN_KEYS = ["hide_item_rewards", "item_rewards_hidden", "items_hidden", "hide_items"] as const;
+const MOD_REWARD_CATEGORY_HIDDEN_KEYS = ["hide_mod_rewards", "mod_rewards_hidden", "mods_hidden", "hide_mods"] as const;
+const REWARD_ENTRY_HIDDEN_KEYS = ["hidden", "hide_reward", "reward_hidden", "hide_icon"] as const;
+
+function readAnyBooleanFlag(source: JsonObject, keys: readonly string[]) {
+  return keys.some((key) => parseBooleanFlag(source[key]));
 }
 
 function numberString(input: unknown) {
@@ -566,8 +583,10 @@ export function createMissionDraft(): MissionDraft {
     rewards: {
       credits: "0",
       xp: "0",
+      hideItemRewards: false,
+      hideModRewards: false,
       itemRewards: [],
-      modIds: [],
+      modRewards: [],
       reputationEntries: [],
     },
     steps: [createMissionStepDraft("single")],
@@ -653,12 +672,19 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
     rewards: {
       credits: draft.rewards.credits,
       xp: draft.rewards.xp,
+      hideItemRewards: draft.rewards.hideItemRewards,
+      hideModRewards: draft.rewards.hideModRewards,
       itemRewards: draft.rewards.itemRewards.map((reward) => ({
         key: uid("reward_item"),
         itemId: reward.itemId,
         count: reward.count,
+        hidden: reward.hidden,
       })),
-      modIds: [...draft.rewards.modIds],
+      modRewards: draft.rewards.modRewards.map((reward) => ({
+        key: uid("reward_mod"),
+        modId: reward.modId,
+        hidden: reward.hidden,
+      })),
       reputationEntries: [...draft.rewards.reputationEntries],
     },
     steps: draft.steps.map((step) => duplicateMissionStepDraft(step)),
@@ -804,6 +830,7 @@ function normalizeImportedRewardItem(raw: unknown): MissionRewardItemDraft | nul
       key: uid("reward_item"),
       itemId,
       count: numberString(source.count ?? source.qty ?? source.quantity ?? source.amount ?? 1) || "1",
+      hidden: readAnyBooleanFlag(source, REWARD_ENTRY_HIDDEN_KEYS),
     };
   }
 
@@ -813,6 +840,7 @@ function normalizeImportedRewardItem(raw: unknown): MissionRewardItemDraft | nul
     key: uid("reward_item"),
     itemId,
     count: "1",
+    hidden: false,
   };
 }
 
@@ -821,13 +849,51 @@ function normalizeImportedRewardItems(source: JsonObject) {
   return rawItems.map((entry) => normalizeImportedRewardItem(entry)).filter((entry): entry is MissionRewardItemDraft => !!entry);
 }
 
+function normalizeImportedRewardMod(raw: unknown): MissionRewardModDraft | null {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const source = asObject(raw);
+    const modId = numberString(source.mod_id ?? source.modId ?? source.id);
+    if (!modId.trim()) return null;
+    return {
+      key: uid("reward_mod"),
+      modId,
+      hidden: readAnyBooleanFlag(source, REWARD_ENTRY_HIDDEN_KEYS),
+    };
+  }
+
+  const modId = String(raw ?? "").trim();
+  if (!modId) return null;
+  return {
+    key: uid("reward_mod"),
+    modId,
+    hidden: false,
+  };
+}
+
+function normalizeImportedRewardMods(source: JsonObject) {
+  const rawMods = Array.isArray(source.mods)
+    ? source.mods
+    : Array.isArray(source.modIds)
+      ? source.modIds
+      : Array.isArray(source.modRewards)
+        ? source.modRewards
+        : Array.isArray(source.mod_ids)
+          ? source.mod_ids
+          : Array.isArray(source.reward_mod_ids)
+            ? source.reward_mod_ids
+            : [];
+  return rawMods.map((entry) => normalizeImportedRewardMod(entry)).filter((entry): entry is MissionRewardModDraft => !!entry);
+}
+
 function normalizeImportedRewards(raw: unknown): MissionRewardDraft {
   const source = asObject(raw);
   return {
     credits: numberString(source.credits ?? 0),
     xp: numberString(source.xp ?? 0),
+    hideItemRewards: readAnyBooleanFlag(source, ITEM_REWARD_CATEGORY_HIDDEN_KEYS),
+    hideModRewards: readAnyBooleanFlag(source, MOD_REWARD_CATEGORY_HIDDEN_KEYS),
     itemRewards: normalizeImportedRewardItems(source),
-    modIds: normalizeTargetIds(source.mods),
+    modRewards: normalizeImportedRewardMods(source),
     reputationEntries: Array.isArray(source.reputation)
       ? (source.reputation as unknown[]).map((entry) => (typeof entry === "object" ? JSON.stringify(entry) : String(entry))).filter(Boolean)
       : [],
@@ -1108,6 +1174,23 @@ function serializeReputationEntries(entries: string[]) {
   return parseLooseObjectList(entries);
 }
 
+function serializeRewardItem(entry: MissionRewardItemDraft): JsonObject | null {
+  const id = parseScalar(entry.itemId) ?? entry.itemId;
+  if (id === undefined || !String(id).trim()) return null;
+
+  return {
+    id,
+    count: parsePositiveInteger(entry.count),
+    ...(entry.hidden ? { hidden: true } : {}),
+  };
+}
+
+function serializeRewardMod(entry: MissionRewardModDraft): unknown | null {
+  const id = parseScalar(entry.modId) ?? entry.modId;
+  if (id === undefined || !String(id).trim()) return null;
+  return entry.hidden ? { id, hidden: true } : id;
+}
+
 export function exportMissionDraft(draft: MissionDraft) {
   const conversations = Object.fromEntries(
     draft.conversations
@@ -1155,14 +1238,11 @@ export function exportMissionDraft(draft: MissionDraft) {
       : {}),
     rewards: {
       credits: parseNumber(draft.rewards.credits) ?? 0,
-      items: draft.rewards.itemRewards
-        .map((entry) => ({
-          id: parseScalar(entry.itemId) ?? entry.itemId,
-          count: parsePositiveInteger(entry.count),
-        }))
-        .filter((entry) => entry.id !== undefined && String(entry.id).trim()),
+      ...(draft.rewards.hideItemRewards ? { hide_item_rewards: true } : {}),
+      items: draft.rewards.itemRewards.map((entry) => serializeRewardItem(entry)).filter((entry): entry is JsonObject => !!entry),
       reputation: serializeReputationEntries(draft.rewards.reputationEntries),
-      mods: draft.rewards.modIds.map((entry) => parseScalar(entry) ?? entry).filter((entry) => entry !== undefined),
+      ...(draft.rewards.hideModRewards ? { hide_mod_rewards: true } : {}),
+      mods: draft.rewards.modRewards.map((entry) => serializeRewardMod(entry)).filter((entry): entry is Exclude<typeof entry, null> => entry !== null),
       xp: parseNumber(draft.rewards.xp) ?? 0,
     },
     steps: draft.steps.map((step) => serializeStep(step)),
