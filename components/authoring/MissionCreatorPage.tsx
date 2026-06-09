@@ -26,7 +26,7 @@ function loadDrafts<T>(key: string, fallback: T): T {
 
 export default function MissionCreatorPage() {
   const sessionId = useMissionLabSessionId();
-  const [missions, setMissions] = useState<MissionDraft[]>([createMissionDraft()]);
+  const [missions, setMissions] = useState<MissionDraft[]>([]);
   const [referenceMissions, setReferenceMissions] = useState<NormalizedMission[]>([]);
   const [workspaceSummary, setWorkspaceSummary] = useState<MissionImportSummary | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState("");

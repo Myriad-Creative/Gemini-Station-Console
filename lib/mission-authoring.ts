@@ -66,6 +66,14 @@ export interface MissionPrerequisiteDraft {
 export interface MissionConversationResponseDraft {
   key: string;
   text: string;
+  missionAction: string;
+  missionActionKey: "mission_action" | "missionAction" | "mission_response_action";
+  completeOnResponse: MissionResponseBooleanState;
+  completeObjective: MissionResponseBooleanState;
+  advanceObjective: MissionResponseBooleanState;
+  deferCompletion: MissionResponseBooleanState;
+  deferObjectiveCompletion: MissionResponseBooleanState;
+  extraJson: string;
 }
 
 export interface MissionConversationBeatDraft {
@@ -108,6 +116,7 @@ export interface MissionObjectiveDraft {
   region: string;
   contactId: string;
   conversationId: string;
+  completeOnResponse: boolean;
   fullRepair: boolean;
   escortMobId: string;
   targetZoneId: string;
@@ -120,6 +129,8 @@ export interface MissionObjectiveDraft {
   progressLabel: string;
   extraJson: string;
 }
+
+export type MissionResponseBooleanState = "unset" | "true" | "false";
 
 export interface MissionStepDraft {
   key: string;
@@ -366,6 +377,8 @@ const MISSION_OBJECTIVE_KNOWN_KEYS = [
   "region",
   "contact_id",
   "conversation_id",
+  "complete_on_response",
+  "completeOnResponse",
   "full",
   "escort_mob_id",
   "escortMobId",
@@ -386,6 +399,18 @@ const MISSION_OBJECTIVE_KNOWN_KEYS = [
   "description",
   "objective",
   "progress_label",
+] as const;
+
+const MISSION_CONVERSATION_RESPONSE_ACTION_KEYS = ["mission_action", "missionAction", "mission_response_action"] as const;
+
+const MISSION_CONVERSATION_RESPONSE_KNOWN_KEYS = [
+  "text",
+  ...MISSION_CONVERSATION_RESPONSE_ACTION_KEYS,
+  "complete_on_response",
+  "complete_objective",
+  "advance_objective",
+  "defer_completion",
+  "defer_objective_completion",
 ] as const;
 
 const MISSION_ESCORT_AMBUSH_KNOWN_KEYS = [
@@ -418,6 +443,64 @@ function stripKnownKeys(source: JsonObject, knownKeys: readonly string[]) {
 
 function formatJsonBlock(source: JsonObject) {
   return Object.keys(source).length ? JSON.stringify(source, null, 2) : "";
+}
+
+function hasOwnKey(source: JsonObject, key: string) {
+  return Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function normalizeResponseBooleanState(source: JsonObject, key: string): MissionResponseBooleanState {
+  if (!hasOwnKey(source, key)) return "unset";
+  return parseBooleanFlag(source[key]) ? "true" : "false";
+}
+
+function responseBooleanValue(state: MissionResponseBooleanState) {
+  if (state === "true") return true;
+  if (state === "false") return false;
+  return undefined;
+}
+
+function assignResponseBooleanState(fields: JsonObject, key: string, state: MissionResponseBooleanState) {
+  const value = responseBooleanValue(state);
+  if (value !== undefined) fields[key] = value;
+}
+
+function normalizeResponseMissionAction(source: JsonObject) {
+  for (const key of MISSION_CONVERSATION_RESPONSE_ACTION_KEYS) {
+    if (!hasOwnKey(source, key)) continue;
+    const value = source[key];
+    if (typeof value === "string" || typeof value === "number") {
+      return {
+        key,
+        value: String(value).trim(),
+      };
+    }
+    return {
+      key,
+      value: "",
+    };
+  }
+  return {
+    key: "mission_action" as const,
+    value: "",
+  };
+}
+
+function conversationResponseExtraJson(source: JsonObject) {
+  const extra = stripKnownKeys(source, MISSION_CONVERSATION_RESPONSE_KNOWN_KEYS);
+  for (const key of MISSION_CONVERSATION_RESPONSE_ACTION_KEYS) {
+    if (!hasOwnKey(source, key)) continue;
+    const value = source[key];
+    if (value !== null && value !== undefined && typeof value !== "string" && typeof value !== "number") {
+      extra[key] = value;
+    }
+  }
+  return formatJsonBlock(extra);
+}
+
+function mergeConversationResponseExtraJson(known: JsonObject, extraJson: string) {
+  const extra = parseExtraJson(extraJson, "Conversation Response Extra JSON");
+  return { ...extra, ...known };
 }
 
 function parseExtraJson(value: string, label: string) {
@@ -469,6 +552,14 @@ export function createMissionConversationResponseDraft(text = ""): MissionConver
   return {
     key: uid("response"),
     text,
+    missionAction: "",
+    missionActionKey: "mission_action",
+    completeOnResponse: "unset",
+    completeObjective: "unset",
+    advanceObjective: "unset",
+    deferCompletion: "unset",
+    deferObjectiveCompletion: "unset",
+    extraJson: "",
   };
 }
 
@@ -529,6 +620,7 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     region: "",
     contactId: "",
     conversationId: "",
+    completeOnResponse: false,
     fullRepair: true,
     escortMobId: "",
     targetZoneId: "",
@@ -619,6 +711,14 @@ export function duplicateMissionConversationDraft(
       responses: beat.responses.map((response) => ({
         key: uid("response"),
         text: response.text,
+        missionAction: response.missionAction,
+        missionActionKey: response.missionActionKey,
+        completeOnResponse: response.completeOnResponse,
+        completeObjective: response.completeObjective,
+        advanceObjective: response.advanceObjective,
+        deferCompletion: response.deferCompletion,
+        deferObjectiveCompletion: response.deferObjectiveCompletion,
+        extraJson: response.extraJson,
       })),
     })),
   };
@@ -698,8 +798,23 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
 }
 
 function normalizeImportedConversationResponse(raw: unknown): MissionConversationResponseDraft {
+  if (typeof raw === "string" || typeof raw === "number") {
+    return createMissionConversationResponseDraft(String(raw));
+  }
   const source = asObject(raw);
-  return createMissionConversationResponseDraft(String(source.text ?? ""));
+  const action = normalizeResponseMissionAction(source);
+  return {
+    key: uid("response"),
+    text: String(source.text ?? ""),
+    missionAction: action.value,
+    missionActionKey: action.key,
+    completeOnResponse: normalizeResponseBooleanState(source, "complete_on_response"),
+    completeObjective: normalizeResponseBooleanState(source, "complete_objective"),
+    advanceObjective: normalizeResponseBooleanState(source, "advance_objective"),
+    deferCompletion: normalizeResponseBooleanState(source, "defer_completion"),
+    deferObjectiveCompletion: normalizeResponseBooleanState(source, "defer_objective_completion"),
+    extraJson: conversationResponseExtraJson(source),
+  };
 }
 
 function normalizeImportedConversationBeat(raw: unknown): MissionConversationBeatDraft {
@@ -773,6 +888,7 @@ function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
     region: String(source.region ?? ""),
     contactId: String(source.contact_id ?? ""),
     conversationId: String(source.conversation_id ?? ""),
+    completeOnResponse: parseBooleanFlag(source.complete_on_response ?? source.completeOnResponse),
     fullRepair: parseBooleanFlag(source.full ?? true),
     escortMobId: String(source.escort_mob_id ?? source.escortMobId ?? source.mob_id ?? ""),
     targetZoneId: String(source.target_zone_id ?? source.targetZoneId ?? source.destination_zone_id ?? source.destinationZoneId ?? ""),
@@ -970,9 +1086,18 @@ export function normalizeImportedMissionCollection(raw: unknown): MissionDraft[]
 }
 
 function serializeConversationResponse(response: MissionConversationResponseDraft) {
-  return {
+  const fields: JsonObject = {
     text: response.text,
   };
+  if (response.missionAction.trim()) {
+    fields[response.missionActionKey || "mission_action"] = response.missionAction.trim();
+  }
+  assignResponseBooleanState(fields, "complete_on_response", response.completeOnResponse);
+  assignResponseBooleanState(fields, "complete_objective", response.completeObjective);
+  assignResponseBooleanState(fields, "advance_objective", response.advanceObjective);
+  assignResponseBooleanState(fields, "defer_completion", response.deferCompletion);
+  assignResponseBooleanState(fields, "defer_objective_completion", response.deferObjectiveCompletion);
+  return mergeConversationResponseExtraJson(fields, response.extraJson);
 }
 
 function serializeConversationBeat(beat: MissionConversationBeatDraft) {
@@ -1032,6 +1157,7 @@ function serializeObjective(draft: MissionObjectiveDraft) {
         ...serializeObjectiveTargetFilters(draft, targetIds),
         contact_id: draft.contactId,
         conversation_id: draft.conversationId,
+        ...(draft.completeOnResponse ? { complete_on_response: true } : {}),
         description: draft.description,
         objective: draft.objective,
         progress_label: draft.progressLabel,
@@ -1289,6 +1415,50 @@ function conversationIdsFromDraft(draft: MissionDraft) {
   return new Set(draft.conversations.map((conversation) => conversation.id.trim()).filter(Boolean));
 }
 
+const TALK_COMPLETION_RESPONSE_ACTIONS = new Set(["complete", "complete_talk", "talk_complete", "advance_objective", "start_escort"]);
+
+function normalizeMissionActionValue(value: unknown) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const source = value as JsonObject;
+    return String(source.type ?? source.action ?? "").trim().toLowerCase();
+  }
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function extraResponseField(response: MissionConversationResponseDraft, keys: readonly string[]) {
+  if (!response.extraJson.trim()) return undefined;
+  try {
+    const extra = parseExtraJson(response.extraJson, "Conversation Response Extra JSON");
+    for (const key of keys) {
+      if (hasOwnKey(extra, key)) return extra[key];
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function conversationResponseMissionAction(response: MissionConversationResponseDraft) {
+  const structured = normalizeMissionActionValue(response.missionAction);
+  if (structured) return structured;
+  return normalizeMissionActionValue(extraResponseField(response, MISSION_CONVERSATION_RESPONSE_ACTION_KEYS));
+}
+
+function responseStateRequestsCompletion(state: MissionResponseBooleanState, response: MissionConversationResponseDraft, key: string) {
+  if (state === "true") return true;
+  if (state === "false") return false;
+  return parseBooleanFlag(extraResponseField(response, [key]));
+}
+
+function conversationResponseCompletesTalk(response: MissionConversationResponseDraft) {
+  return (
+    responseStateRequestsCompletion(response.completeOnResponse, response, "complete_on_response") ||
+    responseStateRequestsCompletion(response.completeObjective, response, "complete_objective") ||
+    responseStateRequestsCompletion(response.advanceObjective, response, "advance_objective") ||
+    TALK_COMPLETION_RESPONSE_ACTIONS.has(conversationResponseMissionAction(response))
+  );
+}
+
 export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds: string[] = []): ValidationMessage[] {
   const messages: ValidationMessage[] = [];
   const knownIds = new Set(knownMissionIds.map((entry) => entry.trim()).filter(Boolean));
@@ -1353,6 +1523,7 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
     }
 
     const conversationIds = conversationIdsFromDraft(mission);
+    const conversationsById = new Map(mission.conversations.map((conversation) => [conversation.id.trim(), conversation]));
     const conversationIdCounts = new Map<string, number>();
     for (const conversation of mission.conversations) {
       const conversationId = conversation.id.trim();
@@ -1404,6 +1575,19 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
               itemId: id || undefined,
               message: `A response in conversation "${conversationId}" is blank.`,
             });
+          }
+          if (response.extraJson.trim()) {
+            try {
+              parseExtraJson(response.extraJson, "Conversation Response Extra JSON");
+            } catch (error) {
+              messages.push({
+                level: "error",
+                scope: "missions",
+                draftIndex,
+                itemId: id || undefined,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
       }
@@ -1706,6 +1890,20 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
               itemId: id || undefined,
               message: `${prefix} references missing conversation "${objective.conversationId.trim()}".`,
             });
+          } else if (objective.completeOnResponse) {
+            const conversation = conversationsById.get(objective.conversationId.trim());
+            const hasCompletingResponse = Boolean(
+              conversation?.beats.some((beat) => beat.responses.some((response) => conversationResponseCompletesTalk(response))),
+            );
+            if (!hasCompletingResponse) {
+              messages.push({
+                level: "warning",
+                scope: "missions",
+                draftIndex,
+                itemId: id || undefined,
+                message: `${prefix} waits for response completion, but conversation "${objective.conversationId.trim()}" has no response with a completion flag or completing mission_action.`,
+              });
+            }
           }
         }
 

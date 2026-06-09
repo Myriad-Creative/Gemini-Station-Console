@@ -14,6 +14,7 @@ import {
   type MissionConversationResponseDraft,
   type MissionDraft,
   type MissionObjectiveDraft,
+  type MissionResponseBooleanState,
 } from "@lib/mission-authoring";
 import { buildMissionLabSessionHeaders, useMissionLabSessionId } from "@lib/mission-lab/client-session";
 import type { MissionImportSummary, NormalizedMission } from "@lib/mission-lab/types";
@@ -491,27 +492,97 @@ export default function MissionDialoguePage() {
                                   {beat.responses.length ? (
                                     <div className="space-y-2">
                                       {beat.responses.map((response, responseIndex) => (
-                                        <div key={response.key} className="flex gap-2">
-                                          <input
-                                            ref={(node) => {
-                                              responseRefs.current[response.key] = node;
-                                            }}
-                                            className="input"
-                                            value={response.text}
-                                            onChange={(event) => updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({ ...current, text: event.target.value }))}
-                                            placeholder="Player response text"
-                                          />
-                                          <button
-                                            className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
-                                            onClick={() =>
-                                              updateBeat(conversationIndex, beatIndex, (current) => ({
-                                                ...current,
-                                                responses: current.responses.filter((_, index) => index !== responseIndex),
-                                              }))
-                                            }
-                                          >
-                                            Remove
-                                          </button>
+                                        <div key={response.key} className="space-y-3 rounded-lg border border-white/10 bg-black/15 p-3">
+                                          <div className="flex gap-2">
+                                            <input
+                                              ref={(node) => {
+                                                responseRefs.current[response.key] = node;
+                                              }}
+                                              className="input"
+                                              value={response.text}
+                                              onChange={(event) => updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({ ...current, text: event.target.value }))}
+                                              placeholder="Player response text"
+                                            />
+                                            <button
+                                              className="rounded bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30"
+                                              onClick={() =>
+                                                updateBeat(conversationIndex, beatIndex, (current) => ({
+                                                  ...current,
+                                                  responses: current.responses.filter((_, index) => index !== responseIndex),
+                                                }))
+                                              }
+                                            >
+                                              Remove
+                                            </button>
+                                          </div>
+
+                                          <div className="grid gap-3 md:grid-cols-3">
+                                            <label className="space-y-2">
+                                              <div className="label">Mission Action</div>
+                                              <input
+                                                className="input"
+                                                value={response.missionAction}
+                                                onChange={(event) =>
+                                                  updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                    ...current,
+                                                    missionAction: event.target.value,
+                                                    missionActionKey: current.missionActionKey || "mission_action",
+                                                  }))
+                                                }
+                                                placeholder="start_escort"
+                                              />
+                                            </label>
+                                            <ResponseBooleanStateField
+                                              label="Complete On Response"
+                                              value={response.completeOnResponse}
+                                              onChange={(value) =>
+                                                updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                  ...current,
+                                                  completeOnResponse: value,
+                                                }))
+                                              }
+                                            />
+                                            <ResponseBooleanStateField
+                                              label="Complete Objective"
+                                              value={response.completeObjective}
+                                              onChange={(value) =>
+                                                updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                  ...current,
+                                                  completeObjective: value,
+                                                }))
+                                              }
+                                            />
+                                            <ResponseBooleanStateField
+                                              label="Advance Objective"
+                                              value={response.advanceObjective}
+                                              onChange={(value) =>
+                                                updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                  ...current,
+                                                  advanceObjective: value,
+                                                }))
+                                              }
+                                            />
+                                            <ResponseBooleanStateField
+                                              label="Defer Completion"
+                                              value={response.deferCompletion}
+                                              onChange={(value) =>
+                                                updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                  ...current,
+                                                  deferCompletion: value,
+                                                }))
+                                              }
+                                            />
+                                            <ResponseBooleanStateField
+                                              label="Defer Objective Completion"
+                                              value={response.deferObjectiveCompletion}
+                                              onChange={(value) =>
+                                                updateResponse(conversationIndex, beatIndex, responseIndex, (current) => ({
+                                                  ...current,
+                                                  deferObjectiveCompletion: value,
+                                                }))
+                                              }
+                                            />
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -535,5 +606,26 @@ export default function MissionDialoguePage() {
         </main>
       </div>
     </div>
+  );
+}
+
+function ResponseBooleanStateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: MissionResponseBooleanState;
+  onChange: (next: MissionResponseBooleanState) => void;
+}) {
+  return (
+    <label className="space-y-2">
+      <div className="label">{label}</div>
+      <select className="input" value={value} onChange={(event) => onChange(event.target.value as MissionResponseBooleanState)}>
+        <option value="unset">Unset</option>
+        <option value="true">True</option>
+        <option value="false">False</option>
+      </select>
+    </label>
   );
 }
