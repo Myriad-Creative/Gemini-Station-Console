@@ -72,7 +72,10 @@ const SETTINGS_SECTION_LINKS: NavLink[] = [
   { href: "/settings/classes", label: "Class Manager" },
 ];
 
-const COMMS_SECTION_LINKS: NavLink[] = [{ href: "/comms", label: "Comms" }];
+const COMMS_SECTION_LINKS: NavLink[] = [
+  { href: "/comms", label: "Manager" },
+  { href: "/comms/characters", label: "Characters" },
+];
 
 const REPORT_SECTION_LINKS: NavLink[] = [
   { href: "/reports/holes", label: "Holes" },
@@ -120,7 +123,7 @@ export function getActiveSection(pathname: string | null | undefined): SectionKe
     return "settings";
   }
 
-  if (pathname === "/comms") {
+  if (pathname === "/comms" || pathname.startsWith("/comms/")) {
     return "comms";
   }
 
