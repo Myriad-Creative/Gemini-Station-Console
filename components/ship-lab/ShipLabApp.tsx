@@ -2,20 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { StatusBanner, SummaryCard } from "@components/data-tools/shared";
+import ShipPlacementEditor, { type SpriteScale } from "@components/ship-lab/ShipPlacementEditor";
 import { buildIconSrc } from "@lib/icon-src";
-import type { ShipJsonObject, ShipJsonValue, ShipProfile, ShipProfilesResponse } from "@lib/ship-lab/types";
+import type { ShipJsonObject, ShipJsonValue, ShipProfile, ShipProfilesResponse, ShipThrusterDraft, ShipWeaponChargePointDraft } from "@lib/ship-lab/types";
 import {
   DEFAULT_MOD_SLOT_KEYS,
   DEFAULT_SHIP_STATS,
+  SHIP_KNOWN_TOP_LEVEL_FIELDS,
   cloneJson,
   createBlankShipData,
   createShipDataFromProfile,
   extraJsonFromProfile,
   fileNameForShipId,
   labelize,
+  normalizeShipThrusterDrafts,
+  normalizeShipWeaponChargePointDrafts,
   numberOrStringFromInput,
   parseJsonArrayText,
   parseJsonObjectText,
+  serializeShipThrusters,
+  serializeShipWeaponChargePoints,
 } from "@lib/ship-lab/utils";
 
 type StatusState = { tone: "neutral" | "success" | "error"; message: string } | null;
@@ -30,6 +36,10 @@ type EditableShip = {
   extraJson: string;
   abilitiesJson: string;
   tagsText: string;
+  spriteScaleX: string;
+  spriteScaleY: string;
+  thrusters: ShipThrusterDraft[];
+  weaponChargePoints: ShipWeaponChargePointDraft[];
 };
 
 const EMPTY_RESPONSE: ShipProfilesResponse = {
@@ -67,8 +77,54 @@ function splitTags(value: string) {
     .filter(Boolean);
 }
 
+function numberLikeText(value: ShipJsonValue | undefined) {
+  if (typeof value === "number" || typeof value === "string") return String(value).trim();
+  return "";
+}
+
+function spriteScaleDraftFromValue(value: ShipJsonValue | undefined) {
+  if (typeof value === "number" || typeof value === "string") {
+    const scalar = numberLikeText(value);
+    return { x: scalar, y: scalar };
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    return { x: numberLikeText(value[0]), y: numberLikeText(value[1]) };
+  }
+  if (value && typeof value === "object") {
+    const record = value as ShipJsonObject;
+    return { x: numberLikeText(record.x), y: numberLikeText(record.y) };
+  }
+  return { x: "", y: "" };
+}
+
+function parseSpriteScaleDraft(xValue: string, yValue: string) {
+  const xTrimmed = xValue.trim();
+  const yTrimmed = yValue.trim();
+  if (!xTrimmed && !yTrimmed) return undefined;
+
+  const xSource = xTrimmed || yTrimmed;
+  const ySource = yTrimmed || xTrimmed;
+  const x = Number(xSource);
+  const y = Number(ySource);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("sprite_scale must use numeric X and Y values.");
+  }
+  return [x, y];
+}
+
+function resolveSpriteScaleForEditor(ship: EditableShip): SpriteScale | null {
+  const xValue = ship.spriteScaleX.trim();
+  const yValue = ship.spriteScaleY.trim();
+  if (!xValue && !yValue) return null;
+  const x = Number(xValue || yValue);
+  const y = Number(yValue || xValue);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
 function editableFromProfile(profile: ShipProfile): EditableShip {
   const data = cloneJson(profile.data ?? {});
+  const spriteScale = spriteScaleDraftFromValue(data.sprite_scale);
   return {
     key: profile.key,
     sourceFileName: profile.fileName,
@@ -79,11 +135,16 @@ function editableFromProfile(profile: ShipProfile): EditableShip {
     extraJson: extraJsonFromProfile(data),
     abilitiesJson: JSON.stringify(profile.abilities ?? [], null, 2),
     tagsText: (profile.tags ?? []).join(", "),
+    spriteScaleX: spriteScale.x,
+    spriteScaleY: spriteScale.y,
+    thrusters: profile.thrusters.map((thruster) => ({ ...thruster })),
+    weaponChargePoints: profile.weaponChargePoints.map((point) => ({ ...point })),
   };
 }
 
 function editableFromData(data: ShipJsonObject, sourceFileName: string | null, isNew: boolean): EditableShip {
   const cloned = cloneJson(data);
+  const spriteScale = spriteScaleDraftFromValue(cloned.sprite_scale);
   return {
     key: `${String(cloned.id ?? "ship")}-${Date.now()}`,
     sourceFileName,
@@ -94,6 +155,10 @@ function editableFromData(data: ShipJsonObject, sourceFileName: string | null, i
     extraJson: extraJsonFromProfile(cloned),
     abilitiesJson: JSON.stringify(Array.isArray(cloned.abilities) ? cloned.abilities : [], null, 2),
     tagsText: Array.isArray(cloned.tags) ? cloned.tags.map((entry) => String(entry)).join(", ") : "",
+    spriteScaleX: spriteScale.x,
+    spriteScaleY: spriteScale.y,
+    thrusters: normalizeShipThrusterDrafts(cloned.thrusters),
+    weaponChargePoints: normalizeShipWeaponChargePointDrafts(cloned),
   };
 }
 
@@ -101,18 +166,24 @@ function serializeEditableShip(ship: EditableShip) {
   const extra = parseJsonObjectText(ship.extraJson, "Extra JSON");
   const abilities = parseJsonArrayText(ship.abilitiesJson, "Abilities JSON");
   const base = cloneJson(ship.data);
-  const next: ShipJsonObject = {
+  const spriteScale = parseSpriteScaleDraft(ship.spriteScaleX, ship.spriteScaleY);
+  const thrusters = serializeShipThrusters(ship.thrusters);
+  const weaponChargePoints = serializeShipWeaponChargePoints(ship.weaponChargePoints);
+  const next: Record<string, ShipJsonValue | undefined> = {
     ...extra,
     id: String(base.id ?? "").trim(),
     display_name: String(base.display_name ?? "").trim(),
     description: String(base.description ?? "").trim(),
     scene: String(base.scene ?? "").trim(),
     sprite: String(base.sprite ?? "").trim(),
+    sprite_scale: spriteScale,
     starter: base.starter === true,
     purchase: asObject(base.purchase),
     stats: asObject(base.stats),
     mod_slots: asObject(base.mod_slots),
     cargo: asObject(base.cargo),
+    thrusters: thrusters as ShipJsonValue[],
+    weapon_charge_points: weaponChargePoints as ShipJsonValue[],
   };
 
   const inherits = String(base.inherits ?? "").trim();
@@ -122,7 +193,7 @@ function serializeEditableShip(ship: EditableShip) {
   if (abilities.length) next.abilities = abilities;
 
   for (const [key, value] of Object.entries(base)) {
-    if (key in next || key === "tags" || key === "abilities" || key === "inherits") continue;
+    if (key in next || key === "tags" || key === "abilities" || key === "inherits" || SHIP_KNOWN_TOP_LEVEL_FIELDS.includes(key as (typeof SHIP_KNOWN_TOP_LEVEL_FIELDS)[number])) continue;
     next[key] = value;
   }
 
@@ -257,6 +328,13 @@ export default function ShipLabApp() {
     });
   }
 
+  function setSpriteScaleField(axis: "x" | "y", value: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      return axis === "x" ? { ...current, spriteScaleX: value } : { ...current, spriteScaleY: value };
+    });
+  }
+
   function addObjectKey(section: "stats" | "mod_slots", key: string, clear: () => void) {
     const normalized = key.trim().replace(/\s+/g, "_");
     if (!normalized) return;
@@ -332,6 +410,11 @@ export default function ShipLabApp() {
   const currentSlots = asObject(draft?.data.mod_slots);
   const currentPurchase = asObject(draft?.data.purchase);
   const currentCargo = asObject(draft?.data.cargo);
+  const draftSpritePreviewSrc = draft
+    ? buildIconSrc(stringValue(draft.data.sprite), stringValue(draft.data.id) || "ship", stringValue(draft.data.display_name) || "Ship", "0")
+    : null;
+  const draftSpriteScale = draft ? resolveSpriteScaleForEditor(draft) : null;
+  const draftSpriteScaleSource = draftSpriteScale ? "ship JSON sprite_scale" : "default scene scale";
   const previewJson = useMemo(() => {
     if (!draft) return "";
     try {
@@ -444,8 +527,8 @@ export default function ShipLabApp() {
             <div className="card">
               <div className="grid gap-4 lg:grid-cols-[180px,minmax(0,1fr)]">
                 <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#06101b]">
-                  {stringValue(draft.data.sprite) ? (
-                    <img src={buildIconSrc(stringValue(draft.data.sprite), stringValue(draft.data.id), stringValue(draft.data.display_name), "0")} alt={stringValue(draft.data.display_name) || "Ship sprite"} className="h-full w-full object-contain" />
+                  {draftSpritePreviewSrc ? (
+                    <img src={draftSpritePreviewSrc} alt={stringValue(draft.data.display_name) || "Ship sprite"} className="h-full w-full object-contain" />
                   ) : (
                     <span className="text-xs uppercase tracking-[0.12em] text-white/30">No Sprite</span>
                   )}
@@ -461,6 +544,8 @@ export default function ShipLabApp() {
                   />
                   <InputField label="Scene" value={stringValue(draft.data.scene)} onChange={(next) => setTopLevelField("scene", next)} />
                   <InputField label="Sprite" value={stringValue(draft.data.sprite)} onChange={(next) => setTopLevelField("sprite", next)} />
+                  <InputField label="Sprite Scale X" value={draft.spriteScaleX} onChange={(next) => setSpriteScaleField("x", next)} placeholder="scene default" />
+                  <InputField label="Sprite Scale Y" value={draft.spriteScaleY} onChange={(next) => setSpriteScaleField("y", next)} placeholder="scene default" />
                   <InputField label="Inherits" value={stringValue(draft.data.inherits)} onChange={(next) => setTopLevelField("inherits", next)} placeholder="Optional parent ship ID" />
                   <ToggleField label="Starter Ship" checked={booleanValue(draft.data.starter)} onChange={(next) => setTopLevelField("starter", next)} />
                   <div className="md:col-span-2">
@@ -476,6 +561,28 @@ export default function ShipLabApp() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="card space-y-4">
+              <div>
+                <div className="text-lg font-semibold text-white">Thruster and Weapon Charge Placement</div>
+                <div className="mt-1 text-sm text-white/55">
+                  Manage programmatic thrusters and weapon charge VFX points exported to the player ship JSON. The canvas uses the ship sprite center as 0,0, matching the mob placement format.
+                </div>
+              </div>
+              <ShipPlacementEditor
+                entity={{
+                  id: stringValue(draft.data.id) || "ship",
+                  displayName: stringValue(draft.data.display_name) || stringValue(draft.data.id) || "Ship",
+                  spriteScale: draftSpriteScale,
+                  spriteScaleSource: draftSpriteScaleSource,
+                }}
+                spriteSrc={draftSpritePreviewSrc}
+                thrusters={draft.thrusters}
+                weaponChargePoints={draft.weaponChargePoints}
+                onThrustersChange={(next) => setDraft((current) => (current ? { ...current, thrusters: next } : current))}
+                onWeaponChargePointsChange={(next) => setDraft((current) => (current ? { ...current, weaponChargePoints: next } : current))}
+              />
             </div>
 
             <div className="card space-y-4">

@@ -62,6 +62,7 @@ export const MOB_KNOWN_TOP_LEVEL_FIELDS = [
   "bank",
   "bank_enabled",
   "can_attack",
+  "can_set_home_port",
   "comms_directory",
   "hail_can_hail_target",
   "hail_greeting",

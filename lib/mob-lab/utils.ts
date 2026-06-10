@@ -21,7 +21,12 @@ import type {
 
 type JsonObject = Record<string, unknown>;
 const SCAN_RESERVED_KEYS = ["Faction", "Class", "Notes", "tiers"] as const;
+const VENDOR_SERVICE_IDS = new Set(["trade"]);
+const BANK_SERVICE_IDS = new Set(["bank"]);
+const SMELTER_SERVICE_IDS = new Set(["smelter", "refinery"]);
+const SORTER_SERVICE_IDS = new Set(["sorter", "sorting"]);
 const HANGAR_BAY_SERVICE_IDS = new Set(["hangar_bay", "hangar"]);
+const HOME_PORT_SERVICE_IDS = new Set(["home_port", "dockmaster"]);
 
 let draftCounter = 0;
 
@@ -163,13 +168,19 @@ function normalizedServiceId(value: string) {
   return value.trim().toLowerCase();
 }
 
-function hasHangarBayService(services: string[]) {
-  return services.some((service) => HANGAR_BAY_SERVICE_IDS.has(normalizedServiceId(service)));
+function hasRuntimeService(services: string[], serviceIds: ReadonlySet<string>) {
+  return services.some((service) => serviceIds.has(normalizedServiceId(service)));
 }
 
-function syncHangarBayService(services: string[], enabled: boolean) {
-  const filtered = services.filter((service) => !HANGAR_BAY_SERVICE_IDS.has(normalizedServiceId(service)));
-  return enabled ? [...filtered, "hangar_bay"] : filtered;
+function syncRuntimeService(
+  services: string[],
+  serviceIds: ReadonlySet<string>,
+  enabled: boolean,
+  canonicalService?: string,
+) {
+  const hasAlias = hasRuntimeService(services, serviceIds);
+  if (enabled) return hasAlias || !canonicalService ? services : [...services, canonicalService];
+  return services.filter((service) => !serviceIds.has(normalizedServiceId(service)));
 }
 
 function stripKeys(source: JsonObject, keys: readonly string[]) {
@@ -374,19 +385,19 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     ai_type: stringOrEmpty(source.ai_type).trim(),
     abilities: stringListFromUnknown(source.abilities),
     stats,
-    bank_enabled: booleanFromUnknown(source.bank_enabled ?? source.bank),
+    bank_enabled: booleanFromUnknown(source.bank_enabled) || booleanFromUnknown(source.bank) || hasRuntimeService(services, BANK_SERVICE_IDS),
     can_attack: booleanFromUnknown(source.can_attack),
     comms_directory: stringListFromUnknown(source.comms_directory),
     hail_can_hail_target: booleanFromUnknown(source.hail_can_hail_target),
-    hangar_bay: booleanFromUnknown(source.hangar_bay ?? source.is_hangar_bay) || hasHangarBayService(services),
-    home_port_enabled: booleanFromUnknown(source.home_port_enabled),
+    hangar_bay: booleanFromUnknown(source.hangar_bay) || booleanFromUnknown(source.is_hangar_bay) || hasRuntimeService(services, HANGAR_BAY_SERVICE_IDS),
+    home_port_enabled: booleanFromUnknown(source.home_port_enabled) || booleanFromUnknown(source.can_set_home_port) || hasRuntimeService(services, HOME_PORT_SERVICE_IDS),
     hail_greeting: stringOrEmpty(source.hail_greeting).trim(),
     hail_image: stringOrEmpty(source.hail_image).trim(),
     hail_name: stringOrEmpty(source.hail_name).trim(),
     hail_portrait: stringOrEmpty(source.hail_portrait).trim(),
-    is_smelter: booleanFromUnknown(source.is_smelter),
-    is_sorter: booleanFromUnknown(source.is_sorter),
-    is_vendor: booleanFromUnknown(source.is_vendor),
+    is_smelter: booleanFromUnknown(source.is_smelter) || hasRuntimeService(services, SMELTER_SERVICE_IDS),
+    is_sorter: booleanFromUnknown(source.is_sorter) || hasRuntimeService(services, SORTER_SERVICE_IDS),
+    is_vendor: booleanFromUnknown(source.is_vendor) || hasRuntimeService(services, VENDOR_SERVICE_IDS),
     item_drop_chance: formatDraftNumber(source.item_drop_chance),
     item_loot_table: stringOrEmpty(source.item_loot_table).trim(),
     item_no_duplicates: booleanFromUnknown(source.item_no_duplicates),
@@ -813,9 +824,18 @@ export function serializeMobDraft(mob: MobDraft) {
   }, {});
 
   const abilities = mob.abilities.map((entry) => entry.trim()).filter(Boolean).map((entry) => parseScalar(entry));
-  const services = syncHangarBayService(
-    mob.services.map((entry) => entry.trim()).filter(Boolean),
-    mob.hangar_bay,
+  const baseServices = mob.services.map((entry) => entry.trim()).filter(Boolean);
+  const services = [
+    [VENDOR_SERVICE_IDS, mob.is_vendor],
+    [BANK_SERVICE_IDS, mob.bank_enabled],
+    [SMELTER_SERVICE_IDS, mob.is_smelter],
+    [SORTER_SERVICE_IDS, mob.is_sorter],
+    [HANGAR_BAY_SERVICE_IDS, mob.hangar_bay, "hangar_bay"],
+    [HOME_PORT_SERVICE_IDS, mob.home_port_enabled],
+  ].reduce<string[]>(
+    (currentServices, [serviceIds, enabled, canonicalService]) =>
+      syncRuntimeService(currentServices, serviceIds as ReadonlySet<string>, Boolean(enabled), canonicalService as string | undefined),
+    baseServices,
   );
   const commsDirectory = mob.comms_directory.map((entry) => entry.trim()).filter(Boolean);
   const spriteScale = parseVector2Draft(mob.sprite_scale_x, mob.sprite_scale_y, "sprite_scale");

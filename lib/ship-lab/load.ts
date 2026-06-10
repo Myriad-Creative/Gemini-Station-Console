@@ -4,6 +4,7 @@ import path from "path";
 import JSON5 from "json5";
 import { getLocalGameSourceState } from "@lib/local-game-source";
 import type { ShipJsonObject, ShipJsonValue, ShipProfile, ShipProfilesResponse } from "@lib/ship-lab/types";
+import { normalizeShipThrusterDrafts, normalizeShipWeaponChargePointDrafts } from "@lib/ship-lab/utils";
 
 const SHIPS_DIRECTORY = path.join("data", "ships");
 
@@ -73,6 +74,8 @@ function buildProfile(fileName: string, rawText: string, entry: unknown, profile
     purchase: toJsonValue(asObject(data.purchase)) as ShipJsonObject,
     tags: stringListFromUnknown(data.tags),
     abilities: jsonArrayFromUnknown(data.abilities),
+    thrusters: normalizeShipThrusterDrafts(data.thrusters),
+    weaponChargePoints: normalizeShipWeaponChargePointDrafts(data),
     parseError: null,
     rawJson: JSON.stringify(data, null, 2),
     data,
@@ -98,6 +101,8 @@ function buildParseErrorProfile(fileName: string, rawText: string, error: unknow
     purchase: {},
     tags: [],
     abilities: [],
+    thrusters: [],
+    weaponChargePoints: [],
     parseError: error instanceof Error ? error.message : String(error),
     rawJson: rawText,
     data: null,
