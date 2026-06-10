@@ -21,6 +21,7 @@ import type {
 
 type JsonObject = Record<string, unknown>;
 const SCAN_RESERVED_KEYS = ["Faction", "Class", "Notes", "tiers"] as const;
+const HANGAR_BAY_SERVICE_IDS = new Set(["hangar_bay", "hangar"]);
 
 let draftCounter = 0;
 
@@ -156,6 +157,19 @@ function booleanFromUnknown(value: unknown) {
     if (normalized === "false" || normalized === "no" || normalized === "0") return false;
   }
   return false;
+}
+
+function normalizedServiceId(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function hasHangarBayService(services: string[]) {
+  return services.some((service) => HANGAR_BAY_SERVICE_IDS.has(normalizedServiceId(service)));
+}
+
+function syncHangarBayService(services: string[], enabled: boolean) {
+  const filtered = services.filter((service) => !HANGAR_BAY_SERVICE_IDS.has(normalizedServiceId(service)));
+  return enabled ? [...filtered, "hangar_bay"] : filtered;
 }
 
 function stripKeys(source: JsonObject, keys: readonly string[]) {
@@ -338,6 +352,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
   const stats: Record<string, string> = {};
   const scanDraft = normalizeScanDraft(source.scan);
   const spriteScale = normalizeVector2Draft(source.sprite_scale);
+  const services = stringListFromUnknown(source.services);
 
   for (const key of Object.keys(statsSource)) {
     stats[key] = formatDraftNumber(statsSource[key]);
@@ -363,6 +378,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     can_attack: booleanFromUnknown(source.can_attack),
     comms_directory: stringListFromUnknown(source.comms_directory),
     hail_can_hail_target: booleanFromUnknown(source.hail_can_hail_target),
+    hangar_bay: booleanFromUnknown(source.hangar_bay ?? source.is_hangar_bay) || hasHangarBayService(services),
     home_port_enabled: booleanFromUnknown(source.home_port_enabled),
     hail_greeting: stringOrEmpty(source.hail_greeting).trim(),
     hail_image: stringOrEmpty(source.hail_image).trim(),
@@ -392,7 +408,7 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     scan_notes: scanDraft.scan_notes,
     scan_tiers: scanDraft.scan_tiers,
     scan_extra_json: scanDraft.scan_extra_json,
-    services: stringListFromUnknown(source.services),
+    services,
     sorting_profile: stringOrEmpty(source.sorting_profile ?? source.sorter_profile ?? source.sorter).trim(),
     thrusters: normalizeThrusterDrafts(source.thrusters),
     weapon_charge_points: normalizeWeaponChargePointDrafts(source),
@@ -456,6 +472,7 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     can_attack: true,
     comms_directory: [],
     hail_can_hail_target: false,
+    hangar_bay: false,
     home_port_enabled: false,
     hail_greeting: "",
     hail_image: "",
@@ -796,7 +813,10 @@ export function serializeMobDraft(mob: MobDraft) {
   }, {});
 
   const abilities = mob.abilities.map((entry) => entry.trim()).filter(Boolean).map((entry) => parseScalar(entry));
-  const services = mob.services.map((entry) => entry.trim()).filter(Boolean);
+  const services = syncHangarBayService(
+    mob.services.map((entry) => entry.trim()).filter(Boolean),
+    mob.hangar_bay,
+  );
   const commsDirectory = mob.comms_directory.map((entry) => entry.trim()).filter(Boolean);
   const spriteScale = parseVector2Draft(mob.sprite_scale_x, mob.sprite_scale_y, "sprite_scale");
   const thrusters = mob.thrusters.map((thruster, index) =>
@@ -839,6 +859,7 @@ export function serializeMobDraft(mob: MobDraft) {
     services,
     comms_directory: commsDirectory,
     hail_can_hail_target: mob.hail_can_hail_target,
+    hangar_bay: mob.hangar_bay,
     home_port_enabled: mob.home_port_enabled,
     hail_name: mob.hail_name.trim(),
     hail_greeting: mob.hail_greeting.trim(),

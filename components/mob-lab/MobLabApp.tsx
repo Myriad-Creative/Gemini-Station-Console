@@ -1720,6 +1720,7 @@ export default function MobLabApp() {
           mob.bank_enabled ? "cargo transport bank" : "",
           mob.is_smelter ? "smelter smelting refinery" : "",
           mob.is_sorter ? "sorter sorting" : "",
+          mob.hangar_bay ? "hangar bay shipyard" : "",
           mob.smelter_profile,
           mob.sorting_profile,
           mob.thrusters.length ? "thruster thrusters plume engine" : "",
@@ -2927,7 +2928,7 @@ export default function MobLabApp() {
                   />
                 </Section>
 
-                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, home port, location containers, POIs, and repairs.">
+                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, smelting, hangar bays, home port, location containers, POIs, and repairs.">
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <ToggleField label="Can Attack" checked={selectedMob.can_attack} onChange={(next) => updateSelectedMob((current) => ({ ...current, can_attack: next }))} />
                     <ToggleField label="Vendor" checked={selectedMob.is_vendor} onChange={(next) => updateSelectedMob((current) => ({ ...current, is_vendor: next }))} />
@@ -2945,6 +2946,11 @@ export default function MobLabApp() {
                       label="Smelter"
                       checked={selectedMob.is_smelter}
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, is_smelter: next }))}
+                    />
+                    <ToggleField
+                      label="Hangar Bay"
+                      checked={selectedMob.hangar_bay}
+                      onChange={(next) => updateSelectedMob((current) => ({ ...current, hangar_bay: next }))}
                     />
                     <ToggleField
                       label="Home Port"
