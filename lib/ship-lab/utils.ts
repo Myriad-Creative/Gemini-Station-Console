@@ -43,6 +43,41 @@ export const DEFAULT_SHIP_STATS = [
 
 export const DEFAULT_MOD_SLOT_KEYS = ["engine", "weapon", "armor", "shield", "sensor", "utility", "wildcard"] as const;
 
+export const DEFAULT_SHIP_STAT_VALUES = {
+  armor: 100.0,
+  shields: 10.0,
+  shield_regen: 1.0,
+  armor_regen: 0.0,
+  targeting: 5.0,
+  evasion: 4.0,
+  threat_generation: 0.0,
+  hacking: 1.0,
+  damage_reflect: 0.0,
+  damage_reduction: 0.0,
+  stealth: 0.0,
+  sensors: 5.0,
+  salvage_bonus: 0.0,
+  heat_resistance: 0.0,
+  speed: 500.0,
+  turn_rate: 2.5,
+  power: 20.0,
+  overclock: 0.0,
+  crit_chance: 5.0,
+  energy_regen_rate: 1.0,
+  energy: 100.0,
+  weapon_recharge_pct: 0.0,
+} satisfies Record<(typeof DEFAULT_SHIP_STATS)[number], number>;
+
+export const DEFAULT_SHIP_MOD_SLOT_VALUES = {
+  engine: 2,
+  weapon: 2,
+  armor: 2,
+  shield: 2,
+  sensor: 1,
+  utility: 4,
+  wildcard: 0,
+} satisfies Record<(typeof DEFAULT_MOD_SLOT_KEYS)[number], number>;
+
 export function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -114,20 +149,20 @@ export function createBlankShipData(existingIds: string[]) {
 
   return {
     id,
-    display_name: "",
-    description: "",
+    display_name: "New Ship",
+    description: "New player ship profile.",
     scene: "res://scenes/ships/PlayerShip.tscn",
-    sprite: "res://assets/ships/player_default.png",
+    sprite: "res://scenes/entities/npc/Trainer.png",
     starter: false,
     purchase: {
       buy_price: 0,
       sell_price: 0,
       available_from_start: false,
     },
-    stats: Object.fromEntries(DEFAULT_SHIP_STATS.map((key) => [key, 0])),
-    mod_slots: Object.fromEntries(DEFAULT_MOD_SLOT_KEYS.map((key) => [key, 0])),
+    stats: { ...DEFAULT_SHIP_STAT_VALUES },
+    mod_slots: { ...DEFAULT_SHIP_MOD_SLOT_VALUES },
     cargo: {
-      base_cargo_slots: 0,
+      base_cargo_slots: 20,
       cargo_compartment_limit: -1,
     },
   } satisfies ShipJsonObject;

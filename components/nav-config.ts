@@ -5,7 +5,7 @@ export type NavLink = {
   newTab?: boolean;
 };
 
-export type SectionKey = "dashboard" | "missions" | "combat" | "inventory" | "world" | "comms" | "reports" | "settings";
+export type SectionKey = "dashboard" | "missions" | "combat" | "ships" | "inventory" | "world" | "comms" | "reports" | "settings";
 
 export type MainNavLink = {
   section: SectionKey;
@@ -16,6 +16,7 @@ export const MAIN_NAV_LINKS: MainNavLink[] = [
   { section: "dashboard", label: "Dashboard" },
   { section: "missions", label: "Missions" },
   { section: "combat", label: "Combat" },
+  { section: "ships", label: "Ships" },
   { section: "inventory", label: "Inventory" },
   { section: "world", label: "World Data" },
   { section: "comms", label: "Comms" },
@@ -35,7 +36,6 @@ const MISSION_SECTION_LINKS: NavLink[] = [
 
 const COMBAT_SECTION_LINKS: NavLink[] = [
   { href: "/mob-lab", label: "Mob Lab" },
-  { href: "/ships", label: "Player Ships" },
   { href: "/data/ai", label: "AI JSON" },
   { href: "/abilities", label: "Abilities Dashboard" },
   { href: "/abilities/manager", label: "Abilities" },
@@ -43,6 +43,8 @@ const COMBAT_SECTION_LINKS: NavLink[] = [
   { href: "/abilities/status-effects", label: "Status Effects" },
   { href: "/abilities/talents", label: "Talents" },
 ];
+
+const SHIP_SECTION_LINKS: NavLink[] = [{ href: "/ships", label: "Player Ships" }];
 
 const INVENTORY_SECTION_LINKS: NavLink[] = [
   { href: "/items", label: "Items Dashboard" },
@@ -95,7 +97,11 @@ export function getActiveSection(pathname: string | null | undefined): SectionKe
     return "missions";
   }
 
-  if (pathname === "/mob-lab" || pathname === "/ships" || pathname.startsWith("/ships/") || pathname === "/data/ai" || pathname.startsWith("/data/ai/")) {
+  if (pathname === "/ships" || pathname.startsWith("/ships/")) {
+    return "ships";
+  }
+
+  if (pathname === "/mob-lab" || pathname === "/data/ai" || pathname.startsWith("/data/ai/")) {
     return "combat";
   }
 
@@ -138,6 +144,7 @@ export function getSectionLinksForSection(section: SectionKey | null | undefined
   if (section === "dashboard") return DASHBOARD_SECTION_LINKS;
   if (section === "missions") return MISSION_SECTION_LINKS;
   if (section === "combat") return COMBAT_SECTION_LINKS;
+  if (section === "ships") return SHIP_SECTION_LINKS;
   if (section === "inventory") return INVENTORY_SECTION_LINKS;
   if (section === "world") return WORLD_SECTION_LINKS;
   if (section === "settings") return SETTINGS_SECTION_LINKS;
