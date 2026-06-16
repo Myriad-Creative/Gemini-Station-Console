@@ -194,6 +194,16 @@ function modHasAbility(mod: Pick<ModDraft, "abilities">, abilityId: string) {
   return mod.abilities.some((ability) => normalizeAbilityId(ability.id) === normalizedId);
 }
 
+function modHasActiveStat(mod: Pick<ModDraft, "stats">, statKey: string) {
+  const normalizedKey = statKey.trim();
+  if (!normalizedKey) return false;
+  return mod.stats.some((stat) => {
+    if (stat.key.trim() !== normalizedKey) return false;
+    const value = parseNumber(stat.value);
+    return value !== undefined && value !== 0;
+  });
+}
+
 function buildAbilityLinkedModCountMap(mods: ModDraft[]) {
   const counts = new Map<string, number>();
   for (const mod of mods) {
@@ -402,6 +412,7 @@ export default function ModWorkshop({
   const [abilityUsageFilter, setAbilityUsageFilter] = useState("");
   const [rarityFilter, setRarityFilter] = useState("");
   const [slotFilter, setSlotFilter] = useState("");
+  const [statFilter, setStatFilter] = useState("");
   const [levelMinFilter, setLevelMinFilter] = useState("");
   const [levelMaxFilter, setLevelMaxFilter] = useState("");
   const [editorMode, setEditorMode] = useState<EditorMode>("editor");
@@ -515,6 +526,19 @@ export default function ModWorkshop({
       return name.includes(searchValue) || id.includes(searchValue);
     });
   }, [autoGenerate.abilitySearch, effectiveAbilityOptions]);
+  const statFilterOptions = useMemo(() => {
+    const keys = new Set<string>(ALL_STATS);
+    for (const mod of mods) {
+      for (const stat of mod.stats) {
+        const key = stat.key.trim();
+        if (key) keys.add(key);
+      }
+    }
+    return [...keys].sort((left, right) => {
+      const byLabel = formatStatLabel(left).localeCompare(formatStatLabel(right));
+      return byLabel !== 0 ? byLabel : left.localeCompare(right);
+    });
+  }, [mods]);
 
   const validation = useMemo(() => validateModDrafts(mods), [mods]);
   const issueFlagsByIndex = useMemo(() => {
@@ -542,6 +566,10 @@ export default function ModWorkshop({
       .filter(({ mod }) => {
         if (!slotFilter) return true;
         return mod.slot.trim() === slotFilter;
+      })
+      .filter(({ mod }) => {
+        if (!statFilter) return true;
+        return modHasActiveStat(mod, statFilter);
       })
       .filter(({ mod }) => {
         const levelRequirement = parseNumber(mod.levelRequirement);
@@ -574,7 +602,7 @@ export default function ModWorkshop({
         if (byLabel !== 0) return byLabel;
         return left.mod.id.trim().localeCompare(right.mod.id.trim(), undefined, { numeric: true, sensitivity: "base" });
       });
-  }, [abilityLinkFilter, abilityUsageFilter, deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter]);
+  }, [abilityLinkFilter, abilityUsageFilter, deferredSearch, issueFilter, issueFlagsByIndex, levelMaxFilter, levelMinFilter, mods, rarityFilter, slotFilter, statFilter]);
 
   const selectedValidation = useMemo(() => validation.filter((message) => message.draftIndex === clampedSelectedIndex), [clampedSelectedIndex, validation]);
   const selectedHasErrors = useMemo(
@@ -625,7 +653,15 @@ export default function ModWorkshop({
     [selectedSyncedMod],
   );
   const hasActiveFilters = Boolean(
-    issueFilter !== "all" || abilityLinkFilter !== "all" || abilityUsageFilter || search.trim() || rarityFilter || slotFilter || levelMinFilter || levelMaxFilter,
+    issueFilter !== "all" ||
+      abilityLinkFilter !== "all" ||
+      abilityUsageFilter ||
+      search.trim() ||
+      rarityFilter ||
+      slotFilter ||
+      statFilter ||
+      levelMinFilter ||
+      levelMaxFilter,
   );
 
   useEffect(() => {
@@ -645,6 +681,7 @@ export default function ModWorkshop({
     setSearch("");
     setRarityFilter("");
     setSlotFilter("");
+    setStatFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
     setIssueFilter(issue === "error" || issue === "warning" ? issue : "all");
@@ -668,6 +705,7 @@ export default function ModWorkshop({
     setSearch("");
     setRarityFilter("");
     setSlotFilter("");
+    setStatFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
   }
@@ -677,6 +715,7 @@ export default function ModWorkshop({
     setIssueFilter("all");
     setAbilityUsageFilter("");
     setRarityFilter("");
+    setStatFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
 
@@ -706,6 +745,7 @@ export default function ModWorkshop({
     setAbilityLinkFilter("all");
     setRarityFilter("");
     setSlotFilter("");
+    setStatFilter("");
     setLevelMinFilter("");
     setLevelMaxFilter("");
     setAbilityUsageFilter(normalizedId);
@@ -1136,6 +1176,17 @@ export default function ModWorkshop({
                 {MOD_SLOT_OPTIONS.map((slot) => (
                   <option key={`filter-slot-${slot}`} value={slot}>
                     {slot}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <div className="label mb-2">Contains Stat</div>
+              <select className="select w-full" value={statFilter} onChange={(event) => setStatFilter(event.target.value)}>
+                <option value="">All</option>
+                {statFilterOptions.map((stat) => (
+                  <option key={`filter-stat-${stat}`} value={stat}>
+                    {formatStatLabel(stat)}
                   </option>
                 ))}
               </select>
