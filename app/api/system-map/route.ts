@@ -454,6 +454,11 @@ function mobHasCargoTransport(mob: JsonRecord) {
   return boolValue(mob.bank_enabled ?? mob.bank) || services.includes("bank");
 }
 
+function mobHasIntelBroker(mob: JsonRecord) {
+  const services = asArray(mob.services).map((entry) => stringValue(entry).trim().toLowerCase());
+  return boolValue(mob.is_intel_broker) || services.includes("intel") || services.includes("intel_broker") || services.includes("intelligence");
+}
+
 function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
   return mobJsonEntries(mobsJson)
     .map((entry) => {
@@ -466,6 +471,7 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
         faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
         canAttack: boolValue(mob.can_attack),
         cargoTransport: mobHasCargoTransport(mob),
+        intelBroker: mobHasIntelBroker(mob),
         sprite: stringValue(mob.sprite, ""),
         spriteScale: nullableVecValue(mob.sprite_scale),
         scene: stringValue(mob.scene, ""),

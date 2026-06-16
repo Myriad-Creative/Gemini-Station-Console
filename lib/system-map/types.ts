@@ -262,6 +262,7 @@ export type SystemMapMobCatalogEntry = {
   faction: string;
   canAttack: boolean;
   cargoTransport: boolean;
+  intelBroker: boolean;
   sprite: string;
   spriteScale: SystemMapVec | null;
   scene: string;

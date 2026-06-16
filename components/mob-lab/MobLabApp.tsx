@@ -1641,6 +1641,9 @@ export default function MobLabApp() {
   const [smelterProfiles, setSmelterProfiles] = useState<ProcessingProfile[]>([]);
   const [smelterProfileSearch, setSmelterProfileSearch] = useState("");
   const [smelterProfileCatalogStatus, setSmelterProfileCatalogStatus] = useState("");
+  const [intelProfiles, setIntelProfiles] = useState<ProcessingProfile[]>([]);
+  const [intelProfileSearch, setIntelProfileSearch] = useState("");
+  const [intelProfileCatalogStatus, setIntelProfileCatalogStatus] = useState("");
   const [commsContacts, setCommsContacts] = useState<CommsContactDraft[]>([]);
   const [commsContactSearch, setCommsContactSearch] = useState("");
   const [commsCatalogStatus, setCommsCatalogStatus] = useState("");
@@ -1720,9 +1723,11 @@ export default function MobLabApp() {
           mob.bank_enabled ? "cargo transport bank" : "",
           mob.is_smelter ? "smelter smelting refinery" : "",
           mob.is_sorter ? "sorter sorting" : "",
+          mob.is_intel_broker ? "intel broker intelligence market" : "",
           mob.hangar_bay ? "hangar bay shipyard" : "",
           mob.smelter_profile,
           mob.sorting_profile,
+          mob.intel_profile,
           mob.thrusters.length ? "thruster thrusters plume engine" : "",
           mob.thrusters.map((thruster) => `${thruster.position_x},${thruster.position_y}`).join(" "),
           mob.weapon_charge_points.length ? "weapon charge ability vfx point points" : "",
@@ -1923,7 +1928,7 @@ export default function MobLabApp() {
     }
 
     async function loadProcessingProfiles(
-      kind: "sortingProfiles" | "smelterProfiles",
+      kind: "sortingProfiles" | "smelterProfiles" | "intelProfiles",
       setProfiles: (profiles: ProcessingProfile[]) => void,
       setCatalogStatus: (status: string) => void,
       missingMessage: string,
@@ -2029,6 +2034,7 @@ export default function MobLabApp() {
     void loadMerchantProfiles();
     void loadProcessingProfiles("sortingProfiles", setSortingProfiles, setSortingProfileCatalogStatus, "No sorting profile catalog was found under the active local game root.");
     void loadProcessingProfiles("smelterProfiles", setSmelterProfiles, setSmelterProfileCatalogStatus, "No smelter profile catalog was found under the active local game root.");
+    void loadProcessingProfiles("intelProfiles", setIntelProfiles, setIntelProfileCatalogStatus, "No intel profile catalog was found under the active local game root.");
     void loadCommsContacts();
     void loadHailImages();
     void loadLootTables();
@@ -2108,6 +2114,13 @@ export default function MobLabApp() {
       [profile.id, profile.name, profile.description, ...profile.recipes.map((recipe) => `${recipe.id} ${recipe.name}`)].join(" ").toLowerCase().includes(query),
     );
   }, [smelterProfileSearch, smelterProfiles]);
+  const filteredIntelProfiles = useMemo(() => {
+    const query = intelProfileSearch.trim().toLowerCase();
+    if (!query) return intelProfiles;
+    return intelProfiles.filter((profile) =>
+      [profile.id, profile.name, profile.description, ...profile.recipes.map((recipe) => `${recipe.id} ${recipe.name}`)].join(" ").toLowerCase().includes(query),
+    );
+  }, [intelProfileSearch, intelProfiles]);
   const selectedCommsContact = useMemo(() => {
     if (!selectedMob) return null;
     const commDirectoryIds = new Set(selectedMob.comms_directory.map((entry) => entry.trim()).filter(Boolean));
@@ -2684,6 +2697,7 @@ export default function MobLabApp() {
                             {mob.faction ? <span className="badge">{mob.faction}</span> : null}
                             {mob.ai_type ? <span className="badge">{mob.ai_type}</span> : null}
                             {mob.bank_enabled ? <span className="badge border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">Cargo Transport</span> : null}
+                            {mob.is_intel_broker ? <span className="badge border border-cyan-300/20 bg-cyan-300/10 text-cyan-100">Intel Broker</span> : null}
                             {mob.location_container ? <span className="badge border border-sky-300/20 bg-sky-300/10 text-sky-100">Location Container</span> : null}
                             {scaleLabel ? <span className="badge">Scale {scaleLabel}</span> : null}
                             {isDuplicate ? <span className="badge border border-yellow-300/20 bg-yellow-300/10 text-yellow-100">Duplicate ID</span> : null}
@@ -2928,7 +2942,7 @@ export default function MobLabApp() {
                   />
                 </Section>
 
-                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, smelting, hangar bays, home port, location containers, POIs, and repairs.">
+                <Section title="Flags and Runtime Controls" description="Common booleans and runtime references for attack, vendors, cargo transport, sorting, smelting, intel brokers, hangar bays, home port, location containers, POIs, and repairs.">
                   <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <ToggleField label="Can Attack" checked={selectedMob.can_attack} onChange={(next) => updateSelectedMob((current) => ({ ...current, can_attack: next }))} />
                     <ToggleField label="Vendor" checked={selectedMob.is_vendor} onChange={(next) => updateSelectedMob((current) => ({ ...current, is_vendor: next }))} />
@@ -2946,6 +2960,11 @@ export default function MobLabApp() {
                       label="Smelter"
                       checked={selectedMob.is_smelter}
                       onChange={(next) => updateSelectedMob((current) => ({ ...current, is_smelter: next }))}
+                    />
+                    <ToggleField
+                      label="Intel Broker"
+                      checked={selectedMob.is_intel_broker}
+                      onChange={(next) => updateSelectedMob((current) => ({ ...current, is_intel_broker: next }))}
                     />
                     <ToggleField
                       label="Hangar Bay"
@@ -3073,8 +3092,8 @@ export default function MobLabApp() {
                   </div>
                 </Section>
 
-                <Section title="Processing Profiles" description="Assign sorting and smelting profile IDs from the local game profile catalogs.">
-                  <div className="grid gap-4 lg:grid-cols-2">
+                <Section title="Processing Profiles" description="Assign sorting, smelting, and intel profile IDs from the local game profile catalogs.">
+                  <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                     <ProcessingProfilePicker
                       label="Sorting Profile"
                       value={selectedMob.sorting_profile}
@@ -3100,6 +3119,19 @@ export default function MobLabApp() {
                       onSearchChange={setSmelterProfileSearch}
                       onValueChange={(next) => updateSelectedMob((current) => ({ ...current, smelter_profile: next }))}
                       onSelectProfile={(profile) => updateSelectedMob((current) => ({ ...current, smelter_profile: profile.id, is_smelter: true }))}
+                    />
+                    <ProcessingProfilePicker
+                      label="Intel Profile"
+                      value={selectedMob.intel_profile}
+                      placeholder="starter_intel_broker"
+                      profiles={intelProfiles}
+                      filteredProfiles={filteredIntelProfiles}
+                      search={intelProfileSearch}
+                      status={intelProfileCatalogStatus}
+                      missingLabel="No intel profiles matched the current search."
+                      onSearchChange={setIntelProfileSearch}
+                      onValueChange={(next) => updateSelectedMob((current) => ({ ...current, intel_profile: next }))}
+                      onSelectProfile={(profile) => updateSelectedMob((current) => ({ ...current, intel_profile: profile.id, is_intel_broker: true }))}
                     />
                   </div>
                 </Section>

@@ -7693,7 +7693,7 @@ export default function SystemMapViewer() {
     if (!normalized) return catalog.slice(0, 40);
     return catalog
       .filter((mob) =>
-        [mob.id, mob.displayName, mob.level, mob.faction, mob.scene, mob.cargoTransport ? "cargo transport bank" : ""]
+        [mob.id, mob.displayName, mob.level, mob.faction, mob.scene, mob.cargoTransport ? "cargo transport bank" : "", mob.intelBroker ? "intel broker intelligence market" : ""]
           .join(" ")
           .toLowerCase()
           .includes(normalized),
@@ -10245,6 +10245,7 @@ export default function SystemMapViewer() {
                         <span className="block truncate text-xs text-white/50">{mob.id}</span>
                         <span className="block truncate text-xs text-white/40">{mob.faction || "No faction"} {mob.scene ? `· ${mob.scene}` : ""}</span>
                         {mob.cargoTransport ? <span className="mt-1 inline-flex rounded bg-emerald-300/10 px-2 py-0.5 text-xs text-emerald-100">Cargo Transport</span> : null}
+                        {mob.intelBroker ? <span className="mt-1 inline-flex rounded bg-cyan-300/10 px-2 py-0.5 text-xs text-cyan-100">Intel Broker</span> : null}
                         {mob.spriteScale ? <span className="block truncate text-xs text-cyan-100/70">Sprite scale {formatScale(mob.spriteScale)}</span> : null}
                       </span>
                       {selected ? <span className="rounded bg-cyan-300/15 px-2 py-1 text-xs text-cyan-100">Selected</span> : null}

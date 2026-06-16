@@ -25,6 +25,7 @@ const VENDOR_SERVICE_IDS = new Set(["trade"]);
 const BANK_SERVICE_IDS = new Set(["bank"]);
 const SMELTER_SERVICE_IDS = new Set(["smelter", "refinery"]);
 const SORTER_SERVICE_IDS = new Set(["sorter", "sorting"]);
+const INTEL_SERVICE_IDS = new Set(["intel", "intel_broker", "intelligence"]);
 const HANGAR_BAY_SERVICE_IDS = new Set(["hangar_bay", "hangar"]);
 const HOME_PORT_SERVICE_IDS = new Set(["home_port", "dockmaster"]);
 
@@ -395,9 +396,11 @@ function normalizeImportedMob(source: JsonObject, sourceIndex: number): MobDraft
     hail_image: stringOrEmpty(source.hail_image).trim(),
     hail_name: stringOrEmpty(source.hail_name).trim(),
     hail_portrait: stringOrEmpty(source.hail_portrait).trim(),
+    is_intel_broker: booleanFromUnknown(source.is_intel_broker) || hasRuntimeService(services, INTEL_SERVICE_IDS),
     is_smelter: booleanFromUnknown(source.is_smelter) || hasRuntimeService(services, SMELTER_SERVICE_IDS),
     is_sorter: booleanFromUnknown(source.is_sorter) || hasRuntimeService(services, SORTER_SERVICE_IDS),
     is_vendor: booleanFromUnknown(source.is_vendor) || hasRuntimeService(services, VENDOR_SERVICE_IDS),
+    intel_profile: stringOrEmpty(source.intel_profile ?? source.intel_broker_profile ?? source.intel_broker).trim(),
     item_drop_chance: formatDraftNumber(source.item_drop_chance),
     item_loot_table: stringOrEmpty(source.item_loot_table).trim(),
     item_no_duplicates: booleanFromUnknown(source.item_no_duplicates),
@@ -489,9 +492,11 @@ export function createBlankMobDraft(existingIds: string[] = []): MobDraft {
     hail_image: "",
     hail_name: "",
     hail_portrait: "",
+    is_intel_broker: false,
     is_smelter: false,
     is_sorter: false,
     is_vendor: false,
+    intel_profile: "",
     item_drop_chance: "",
     item_loot_table: "",
     item_no_duplicates: false,
@@ -830,6 +835,7 @@ export function serializeMobDraft(mob: MobDraft) {
     [BANK_SERVICE_IDS, mob.bank_enabled],
     [SMELTER_SERVICE_IDS, mob.is_smelter],
     [SORTER_SERVICE_IDS, mob.is_sorter],
+    [INTEL_SERVICE_IDS, mob.is_intel_broker],
     [HANGAR_BAY_SERVICE_IDS, mob.hangar_bay, "hangar_bay"],
     [HOME_PORT_SERVICE_IDS, mob.home_port_enabled],
   ].reduce<string[]>(
@@ -870,9 +876,11 @@ export function serializeMobDraft(mob: MobDraft) {
     ai_type: mob.ai_type.trim(),
     bank_enabled: mob.bank_enabled,
     can_attack: mob.can_attack,
+    is_intel_broker: mob.is_intel_broker,
     is_smelter: mob.is_smelter,
     is_sorter: mob.is_sorter,
     is_vendor: mob.is_vendor,
+    intel_profile: mob.intel_profile.trim(),
     merchant_profile: mob.merchant_profile.trim(),
     repair_cost: parseScalar(mob.repair_cost),
     smelter_profile: mob.smelter_profile.trim(),

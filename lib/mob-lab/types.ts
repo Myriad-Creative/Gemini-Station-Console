@@ -60,7 +60,9 @@ export interface MobDraft {
   hail_portrait: string;
   is_smelter: boolean;
   is_sorter: boolean;
+  is_intel_broker: boolean;
   is_vendor: boolean;
+  intel_profile: string;
   item_drop_chance: string;
   item_loot_table: string;
   item_no_duplicates: boolean;
