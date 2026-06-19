@@ -70,6 +70,8 @@ const OBJECTIVE_LABELS: Record<string, string> = {
   explore: "Explore",
   hail: "Hail",
   repair: "Repair",
+  status_applied: "Status Applied",
+  ability_success: "Ability Success",
 };
 
 type LookupOption = {
@@ -113,6 +115,8 @@ export default function MissionWorkshop({
   const [mods, setMods] = useState<Mod[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
   const [commsOptions, setCommsOptions] = useState<LookupOption[]>([]);
+  const [abilityOptions, setAbilityOptions] = useState<LookupOption[]>([]);
+  const [statusEffectOptions, setStatusEffectOptions] = useState<LookupOption[]>([]);
   const [mineableAsteroidOptions, setMineableAsteroidOptions] = useState<LookupOption[]>([]);
   const [zoneOptions, setZoneOptions] = useState<LookupOption[]>([]);
   const [factionCatalogOptions, setFactionCatalogOptions] = useState<string[]>([]);
@@ -141,7 +145,17 @@ export default function MissionWorkshop({
 
     async function loadCatalogs() {
       try {
-        const [itemsResponse, modsResponse, mobsResponse, commsResponse, environmentalElementsResponse, zonesResponse, taxonomyResponse, missionHeaderResponse] = await Promise.all([
+        const [
+          itemsResponse,
+          modsResponse,
+          mobsResponse,
+          commsResponse,
+          environmentalElementsResponse,
+          zonesResponse,
+          taxonomyResponse,
+          missionHeaderResponse,
+          abilityDatabaseResponse,
+        ] = await Promise.all([
           fetch("/api/items"),
           fetch("/api/mods"),
           fetch("/api/mobs"),
@@ -150,6 +164,7 @@ export default function MissionWorkshop({
           fetch("/api/settings/data/source?kind=zones"),
           fetch("/api/taxonomy"),
           fetch("/api/mission-header-images"),
+          fetch("/api/abilities/database"),
         ]);
 
         const itemsJson = await itemsResponse.json().catch(() => ({ data: [] }));
@@ -160,12 +175,15 @@ export default function MissionWorkshop({
         const zonesJson = await zonesResponse.json().catch(() => ({ ok: false, text: "" }));
         const taxonomyJson = await taxonomyResponse.json().catch(() => ({ ok: false, factions: [], classes: [] }));
         const missionHeaderJson = await missionHeaderResponse.json().catch(() => ({ ok: false, data: [] }));
+        const abilityDatabaseJson = await abilityDatabaseResponse.json().catch(() => ({ ok: false, database: null }));
         if (cancelled) return;
 
         setItems(Array.isArray(itemsJson.data) ? itemsJson.data : []);
         setMods(Array.isArray(modsJson.data) ? modsJson.data : []);
         setMobs(Array.isArray(mobsJson.data) ? mobsJson.data : []);
         setCommsOptions(commsJson.ok && typeof commsJson.text === "string" ? parseCommsLookupOptions(commsJson.text) : []);
+        setAbilityOptions(abilityDatabaseJson.ok ? parseAbilityLookupOptions(abilityDatabaseJson.database?.abilities) : []);
+        setStatusEffectOptions(abilityDatabaseJson.ok ? parseStatusEffectLookupOptions(abilityDatabaseJson.database?.statusEffects) : []);
         setMineableAsteroidOptions(
           environmentalElementsJson.ok && typeof environmentalElementsJson.text === "string"
             ? parseMineableAsteroidLookupOptions(environmentalElementsJson.text)
@@ -185,6 +203,8 @@ export default function MissionWorkshop({
         setMods([]);
         setMobs([]);
         setCommsOptions([]);
+        setAbilityOptions([]);
+        setStatusEffectOptions([]);
         setMineableAsteroidOptions([]);
         setZoneOptions([]);
         setFactionCatalogOptions([]);
@@ -917,12 +937,32 @@ export default function MissionWorkshop({
                   }
                 />
                 <CheckboxField
+                  label="Hide item reward icons until complete"
+                  checked={selectedMission.rewards.hideItemRewardsUntilComplete}
+                  onChange={(checked) =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      rewards: { ...draft.rewards, hideItemRewardsUntilComplete: checked },
+                    }))
+                  }
+                />
+                <CheckboxField
                   label="Hide all mod reward icons"
                   checked={selectedMission.rewards.hideModRewards}
                   onChange={(checked) =>
                     updateSelected((draft) => ({
                       ...draft,
                       rewards: { ...draft.rewards, hideModRewards: checked },
+                    }))
+                  }
+                />
+                <CheckboxField
+                  label="Hide mod reward icons until complete"
+                  checked={selectedMission.rewards.hideModRewardsUntilComplete}
+                  onChange={(checked) =>
+                    updateSelected((draft) => ({
+                      ...draft,
+                      rewards: { ...draft.rewards, hideModRewardsUntilComplete: checked },
                     }))
                   }
                 />
@@ -1020,6 +1060,8 @@ export default function MissionWorkshop({
                   stepIndex={stepIndex}
                   totalSteps={selectedMission.steps.length}
                   itemOptions={itemOptions}
+                  abilityOptions={abilityOptions}
+                  statusEffectOptions={statusEffectOptions}
                   mobOptions={mobOptions}
                   mineableAsteroidOptions={mineableAsteroidOptions}
                   zoneOptions={zoneOptions}
@@ -1416,6 +1458,8 @@ function MissionStepEditor({
   stepIndex,
   totalSteps,
   itemOptions,
+  abilityOptions,
+  statusEffectOptions,
   mobOptions,
   mineableAsteroidOptions,
   zoneOptions,
@@ -1438,6 +1482,8 @@ function MissionStepEditor({
   stepIndex: number;
   totalSteps: number;
   itemOptions: LookupOption[];
+  abilityOptions: LookupOption[];
+  statusEffectOptions: LookupOption[];
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
   zoneOptions: LookupOption[];
@@ -1521,6 +1567,8 @@ function MissionStepEditor({
             totalObjectives={step.objectives.length}
             mode={normalizedMode}
             itemOptions={itemOptions}
+            abilityOptions={abilityOptions}
+            statusEffectOptions={statusEffectOptions}
             mobOptions={mobOptions}
             mineableAsteroidOptions={mineableAsteroidOptions}
             zoneOptions={zoneOptions}
@@ -1545,6 +1593,8 @@ function MissionObjectiveEditor({
   totalObjectives,
   mode,
   itemOptions,
+  abilityOptions,
+  statusEffectOptions,
   mobOptions,
   mineableAsteroidOptions,
   zoneOptions,
@@ -1562,6 +1612,8 @@ function MissionObjectiveEditor({
   totalObjectives: number;
   mode: string;
   itemOptions: LookupOption[];
+  abilityOptions: LookupOption[];
+  statusEffectOptions: LookupOption[];
   mobOptions: LookupOption[];
   mineableAsteroidOptions: LookupOption[];
   zoneOptions: LookupOption[];
@@ -1586,9 +1638,12 @@ function MissionObjectiveEditor({
     type === "sell" ||
     type === "buy" ||
     type === "hail" ||
-    type === "repair";
+    type === "repair" ||
+    type === "status_applied" ||
+    type === "ability_success";
   const targetOptions = type === "mine" ? mineableAsteroidOptions : mobOptions;
   const targetPlaceholder = type === "mine" ? "Search mineable asteroid or id" : "Search mob name or id";
+  const targetTypePlaceholder = type === "mine" ? "mineable_asteroid" : "ship";
 
   return (
     <div className="rounded border border-white/10 bg-black/20 p-3">
@@ -1654,7 +1709,7 @@ function MissionObjectiveEditor({
           />
         ) : null}
 
-        {(type === "scan" || type === "mine") ? (
+        {(type === "scan" || type === "mine" || type === "status_applied" || type === "ability_success") ? (
           <div className="md:col-span-2">
             <TokenEditor
               label="Target Tags"
@@ -1667,13 +1722,76 @@ function MissionObjectiveEditor({
           </div>
         ) : null}
 
-        {(type === "scan" || type === "mine") ? (
+        {(type === "scan" || type === "mine" || type === "status_applied" || type === "ability_success") ? (
           <Field
             label="Target Type"
             value={objective.targetType}
             onChange={(value) => onChange({ ...objective, targetType: value })}
-            placeholder="mineable_asteroid"
+            placeholder={targetTypePlaceholder}
           />
+        ) : null}
+
+        {type === "scan" ? (
+          <>
+            <div className="md:col-span-2">
+              <LookupIdListEditor
+                label="Required Player Status Effects"
+                values={objective.requiredPlayerStatusEffectIds}
+                options={statusEffectOptions}
+                placeholder="Search status effect name or id"
+                emptyText="No player status effect required."
+                onChange={(next) => onChange({ ...objective, requiredPlayerStatusEffectIds: next })}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <LookupIdListEditor
+                label="Target Status Effects"
+                values={objective.statusEffectIds}
+                options={statusEffectOptions}
+                placeholder="Search status effect name or id"
+                emptyText="No target status effect filter attached."
+                onChange={(next) => onChange({ ...objective, statusEffectIds: next })}
+              />
+            </div>
+          </>
+        ) : null}
+
+        {type === "status_applied" ? (
+          <>
+            <div className="md:col-span-2">
+              <LookupIdListEditor
+                label="Status Effects"
+                values={objective.statusEffectIds}
+                options={statusEffectOptions}
+                placeholder="Search status effect name or id"
+                emptyText="No status effect selected."
+                onChange={(next) => onChange({ ...objective, statusEffectIds: next })}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <LookupIdListEditor
+                label="Ability Filters"
+                values={objective.abilityIds}
+                options={abilityOptions}
+                placeholder="Search ability name or id"
+                emptyText="No ability filter attached."
+                onChange={(next) => onChange({ ...objective, abilityIds: next })}
+              />
+            </div>
+          </>
+        ) : null}
+
+        {type === "ability_success" ? (
+          <div className="md:col-span-2">
+            <LookupIdListEditor
+              label="Abilities"
+              values={objective.abilityIds}
+              options={abilityOptions}
+              placeholder="Search ability name or id"
+              emptyText="No ability selected."
+              onChange={(next) => onChange({ ...objective, abilityIds: next })}
+            />
+          </div>
         ) : null}
 
         {type === "travel" ? (
@@ -1758,7 +1876,9 @@ function MissionObjectiveEditor({
           type === "kill" ||
           type === "mine" ||
           type === "buy" ||
-          type === "sell") ? (
+          type === "sell" ||
+          type === "status_applied" ||
+          type === "ability_success") ? (
           <Field
             label="Count"
             value={objective.count}
@@ -1809,6 +1929,16 @@ function MissionObjectiveEditor({
             label="Must Fully Repair Target"
             checked={objective.fullRepair}
             onChange={(checked) => onChange({ ...objective, fullRepair: checked })}
+          />
+        </div>
+      ) : null}
+
+      {(type === "status_applied" || type === "ability_success") ? (
+        <div className="mt-4">
+          <CheckboxField
+            label="Unique Targets"
+            checked={objective.uniqueTargets}
+            onChange={(checked) => onChange({ ...objective, uniqueTargets: checked })}
           />
         </div>
       ) : null}
@@ -2846,6 +2976,46 @@ function mobToLookupOption(mob: Mob): LookupOption {
     label: mob.displayName?.trim() || String(mob.id),
     meta: [mob.level != null ? `Level ${mob.level}` : "", mob.faction?.trim() || ""].filter(Boolean).join(" · "),
   };
+}
+
+function parseAbilityLookupOptions(value: unknown): LookupOption[] {
+  if (!Array.isArray(value)) return [];
+  const options = value
+    .map((entry): LookupOption | null => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const ability = entry as Record<string, unknown>;
+      const id = String(ability.id ?? "").trim();
+      if (!id) return null;
+      const name = String(ability.name ?? "").trim();
+      const deliveryType = String(ability.deliveryType ?? "").trim();
+      return {
+        id,
+        label: name || id,
+        ...(deliveryType ? { meta: deliveryType } : {}),
+      };
+    })
+    .filter((entry): entry is LookupOption => entry !== null);
+  return options.sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function parseStatusEffectLookupOptions(value: unknown): LookupOption[] {
+  if (!Array.isArray(value)) return [];
+  const options = value
+    .map((entry): LookupOption | null => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const effect = entry as Record<string, unknown>;
+      const id = String(effect.numericId ?? "").trim();
+      if (!id) return null;
+      const name = String(effect.name ?? "").trim();
+      const effectId = String(effect.effectId ?? "").trim();
+      return {
+        id,
+        label: name || effectId || id,
+        ...(effectId && effectId !== name ? { meta: effectId } : {}),
+      };
+    })
+    .filter((entry): entry is LookupOption => entry !== null);
+  return options.sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function parseMineableAsteroidLookupOptions(text: string): LookupOption[] {

@@ -19,6 +19,8 @@ export const MISSION_OBJECTIVE_TYPES = [
   "explore",
   "hail",
   "repair",
+  "status_applied",
+  "ability_success",
 ] as const;
 export const MISSION_PREREQUISITE_STATES = ["turned_in", "completed", "accepted"] as const;
 
@@ -38,7 +40,9 @@ export interface MissionRewardDraft {
   credits: string;
   xp: string;
   hideItemRewards: boolean;
+  hideItemRewardsUntilComplete: boolean;
   hideModRewards: boolean;
+  hideModRewardsUntilComplete: boolean;
   itemRewards: MissionRewardItemDraft[];
   modRewards: MissionRewardModDraft[];
   reputationEntries: string[];
@@ -117,6 +121,10 @@ export interface MissionObjectiveDraft {
   contactId: string;
   conversationId: string;
   completeOnResponse: boolean;
+  requiredPlayerStatusEffectIds: string[];
+  statusEffectIds: string[];
+  abilityIds: string[];
+  uniqueTargets: boolean;
   fullRepair: boolean;
   escortMobId: string;
   targetZoneId: string;
@@ -181,7 +189,18 @@ function stringList(value: unknown): string[] {
     return value.map((entry) => String(entry).trim()).filter(Boolean);
   }
   if (typeof value === "string" && value.trim()) return [value.trim()];
+  if (typeof value === "number" && Number.isFinite(value)) return [String(value)];
   return [];
+}
+
+function mergedStringList(...values: unknown[]) {
+  const out: string[] = [];
+  for (const value of values) {
+    for (const entry of stringList(value)) {
+      if (!out.includes(entry)) out.push(entry);
+    }
+  }
+  return out;
 }
 
 function parseBooleanFlag(value: unknown) {
@@ -197,6 +216,18 @@ function parseBooleanFlag(value: unknown) {
 
 const ITEM_REWARD_CATEGORY_HIDDEN_KEYS = ["hide_item_rewards", "item_rewards_hidden", "items_hidden", "hide_items"] as const;
 const MOD_REWARD_CATEGORY_HIDDEN_KEYS = ["hide_mod_rewards", "mod_rewards_hidden", "mods_hidden", "hide_mods"] as const;
+const ITEM_REWARD_CATEGORY_HIDDEN_UNTIL_COMPLETE_KEYS = [
+  "hide_item_rewards_until_complete",
+  "item_rewards_hidden_until_complete",
+  "items_hidden_until_complete",
+  "hide_items_until_complete",
+] as const;
+const MOD_REWARD_CATEGORY_HIDDEN_UNTIL_COMPLETE_KEYS = [
+  "hide_mod_rewards_until_complete",
+  "mod_rewards_hidden_until_complete",
+  "mods_hidden_until_complete",
+  "hide_mods_until_complete",
+] as const;
 const REWARD_ENTRY_HIDDEN_KEYS = ["hidden", "hide_reward", "reward_hidden", "hide_icon"] as const;
 
 function readAnyBooleanFlag(source: JsonObject, keys: readonly string[]) {
@@ -379,6 +410,18 @@ const MISSION_OBJECTIVE_KNOWN_KEYS = [
   "conversation_id",
   "complete_on_response",
   "completeOnResponse",
+  "required_scanner_status_effect_id",
+  "required_scanner_status_effect_ids",
+  "required_player_status_effect_id",
+  "required_player_status_effect_ids",
+  "status_effect_id",
+  "status_effect_ids",
+  "effect_id",
+  "effect_ids",
+  "ability_id",
+  "ability_ids",
+  "unique_targets",
+  "uniqueTargets",
   "full",
   "escort_mob_id",
   "escortMobId",
@@ -611,7 +654,9 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
       type === "mine" ||
       type === "scan" ||
       type === "buy" ||
-      type === "sell"
+      type === "sell" ||
+      type === "status_applied" ||
+      type === "ability_success"
         ? "1"
         : "",
     dropChance: type === "collect" ? "1.0" : "",
@@ -621,6 +666,10 @@ export function createMissionObjectiveDraft(type: MissionObjectiveType = "talk")
     contactId: "",
     conversationId: "",
     completeOnResponse: false,
+    requiredPlayerStatusEffectIds: [],
+    statusEffectIds: [],
+    abilityIds: [],
+    uniqueTargets: false,
     fullRepair: true,
     escortMobId: "",
     targetZoneId: "",
@@ -676,7 +725,9 @@ export function createMissionDraft(): MissionDraft {
       credits: "0",
       xp: "0",
       hideItemRewards: false,
+      hideItemRewardsUntilComplete: false,
       hideModRewards: false,
+      hideModRewardsUntilComplete: false,
       itemRewards: [],
       modRewards: [],
       reputationEntries: [],
@@ -730,6 +781,9 @@ export function duplicateMissionObjectiveDraft(objective: MissionObjectiveDraft)
     key: uid("objective"),
     targetIds: [...objective.targetIds],
     targetTags: [...objective.targetTags],
+    requiredPlayerStatusEffectIds: [...objective.requiredPlayerStatusEffectIds],
+    statusEffectIds: [...objective.statusEffectIds],
+    abilityIds: [...objective.abilityIds],
     ambushes: objective.ambushes.map((ambush) => ({
       ...ambush,
       key: uid("ambush"),
@@ -773,7 +827,9 @@ export function duplicateMissionDraft(draft: MissionDraft): MissionDraft {
       credits: draft.rewards.credits,
       xp: draft.rewards.xp,
       hideItemRewards: draft.rewards.hideItemRewards,
+      hideItemRewardsUntilComplete: draft.rewards.hideItemRewardsUntilComplete,
       hideModRewards: draft.rewards.hideModRewards,
+      hideModRewardsUntilComplete: draft.rewards.hideModRewardsUntilComplete,
       itemRewards: draft.rewards.itemRewards.map((reward) => ({
         key: uid("reward_item"),
         itemId: reward.itemId,
@@ -889,6 +945,15 @@ function normalizeImportedObjective(raw: unknown): MissionObjectiveDraft {
     contactId: String(source.contact_id ?? ""),
     conversationId: String(source.conversation_id ?? ""),
     completeOnResponse: parseBooleanFlag(source.complete_on_response ?? source.completeOnResponse),
+    requiredPlayerStatusEffectIds: mergedStringList(
+      source.required_player_status_effect_id,
+      source.required_player_status_effect_ids,
+      source.required_scanner_status_effect_id,
+      source.required_scanner_status_effect_ids,
+    ),
+    statusEffectIds: mergedStringList(source.status_effect_id, source.status_effect_ids, source.effect_id, source.effect_ids),
+    abilityIds: mergedStringList(source.ability_id, source.ability_ids),
+    uniqueTargets: parseBooleanFlag(source.unique_targets ?? source.uniqueTargets),
     fullRepair: parseBooleanFlag(source.full ?? true),
     escortMobId: String(source.escort_mob_id ?? source.escortMobId ?? source.mob_id ?? ""),
     targetZoneId: String(source.target_zone_id ?? source.targetZoneId ?? source.destination_zone_id ?? source.destinationZoneId ?? ""),
@@ -1007,7 +1072,9 @@ function normalizeImportedRewards(raw: unknown): MissionRewardDraft {
     credits: numberString(source.credits ?? 0),
     xp: numberString(source.xp ?? 0),
     hideItemRewards: readAnyBooleanFlag(source, ITEM_REWARD_CATEGORY_HIDDEN_KEYS),
+    hideItemRewardsUntilComplete: readAnyBooleanFlag(source, ITEM_REWARD_CATEGORY_HIDDEN_UNTIL_COMPLETE_KEYS),
     hideModRewards: readAnyBooleanFlag(source, MOD_REWARD_CATEGORY_HIDDEN_KEYS),
+    hideModRewardsUntilComplete: readAnyBooleanFlag(source, MOD_REWARD_CATEGORY_HIDDEN_UNTIL_COMPLETE_KEYS),
     itemRewards: normalizeImportedRewardItems(source),
     modRewards: normalizeImportedRewardMods(source),
     reputationEntries: Array.isArray(source.reputation)
@@ -1125,6 +1192,13 @@ function serializeObjectiveTargetFilters(draft: MissionObjectiveDraft, targetIds
   return fields;
 }
 
+function serializeIdFilterFields(values: string[], singularKey: string, pluralKey: string) {
+  const cleaned = values.map((entry) => entry.trim()).filter(Boolean);
+  if (!cleaned.length) return {};
+  const parsed = cleaned.map((entry) => parseScalar(entry) ?? entry);
+  return cleaned.length === 1 ? { [singularKey]: parsed[0] } : { [pluralKey]: parsed };
+}
+
 function serializeObjectiveWithExtra(draft: MissionObjectiveDraft, known: JsonObject) {
   return mergeExtraJson(known, draft.extraJson, "Objective Extra JSON", MISSION_OBJECTIVE_KNOWN_KEYS);
 }
@@ -1166,6 +1240,31 @@ function serializeObjective(draft: MissionObjectiveDraft) {
       return serializeObjectiveWithExtra(draft, {
         type,
         ...serializeObjectiveTargetFilters(draft, targetIds),
+        ...serializeIdFilterFields(draft.requiredPlayerStatusEffectIds, "required_player_status_effect_id", "required_player_status_effect_ids"),
+        ...serializeIdFilterFields(draft.statusEffectIds, "status_effect_id", "status_effect_ids"),
+        count: parseNumber(draft.count) ?? 1,
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+      });
+    case "status_applied":
+      return serializeObjectiveWithExtra(draft, {
+        type,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
+        ...serializeIdFilterFields(draft.statusEffectIds, "status_effect_id", "status_effect_ids"),
+        ...serializeIdFilterFields(draft.abilityIds, "ability_id", "ability_ids"),
+        ...(draft.uniqueTargets ? { unique_targets: true } : {}),
+        count: parseNumber(draft.count) ?? 1,
+        description: draft.description,
+        objective: draft.objective,
+        progress_label: draft.progressLabel,
+      });
+    case "ability_success":
+      return serializeObjectiveWithExtra(draft, {
+        type,
+        ...serializeObjectiveTargetFilters(draft, targetIds),
+        ...serializeIdFilterFields(draft.abilityIds, "ability_id", "ability_ids"),
+        ...(draft.uniqueTargets ? { unique_targets: true } : {}),
         count: parseNumber(draft.count) ?? 1,
         description: draft.description,
         objective: draft.objective,
@@ -1365,9 +1464,11 @@ export function exportMissionDraft(draft: MissionDraft) {
     rewards: {
       credits: parseNumber(draft.rewards.credits) ?? 0,
       ...(draft.rewards.hideItemRewards ? { hide_item_rewards: true } : {}),
+      ...(draft.rewards.hideItemRewardsUntilComplete ? { hide_item_rewards_until_complete: true } : {}),
       items: draft.rewards.itemRewards.map((entry) => serializeRewardItem(entry)).filter((entry): entry is JsonObject => !!entry),
       reputation: serializeReputationEntries(draft.rewards.reputationEntries),
       ...(draft.rewards.hideModRewards ? { hide_mod_rewards: true } : {}),
+      ...(draft.rewards.hideModRewardsUntilComplete ? { hide_mod_rewards_until_complete: true } : {}),
       mods: draft.rewards.modRewards.map((entry) => serializeRewardMod(entry)).filter((entry): entry is Exclude<typeof entry, null> => entry !== null),
       xp: parseNumber(draft.rewards.xp) ?? 0,
     },
@@ -1717,7 +1818,9 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
             type === "kill" ||
             type === "mine" ||
             type === "buy" ||
-            type === "sell") &&
+            type === "sell" ||
+            type === "status_applied" ||
+            type === "ability_success") &&
           objective.count.trim() &&
           parseNumber(objective.count) === undefined
         ) {
@@ -1727,6 +1830,44 @@ export function validateMissionDrafts(missions: MissionDraft[], knownMissionIds:
             draftIndex,
             itemId: id || undefined,
             message: `${prefix} requires a numeric count.`,
+          });
+        }
+
+        for (const [fieldLabel, values] of [
+          ["required player status effect", objective.requiredPlayerStatusEffectIds],
+          ["status effect", objective.statusEffectIds],
+          ["ability", objective.abilityIds],
+        ] as const) {
+          for (const value of values) {
+            if (parseNumber(value) === undefined) {
+              messages.push({
+                level: "error",
+                scope: "missions",
+                draftIndex,
+                itemId: id || undefined,
+                message: `${prefix} has a non-numeric ${fieldLabel} id "${value}".`,
+              });
+            }
+          }
+        }
+
+        if (type === "status_applied" && objective.statusEffectIds.length === 0) {
+          messages.push({
+            level: "error",
+            scope: "missions",
+            draftIndex,
+            itemId: id || undefined,
+            message: `${prefix} requires a status_effect_id.`,
+          });
+        }
+
+        if (type === "ability_success" && objective.abilityIds.length === 0) {
+          messages.push({
+            level: "error",
+            scope: "missions",
+            draftIndex,
+            itemId: id || undefined,
+            message: `${prefix} requires an ability_id.`,
           });
         }
 
