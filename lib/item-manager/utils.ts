@@ -20,6 +20,7 @@ export const ITEM_TYPE_OPTIONS = [
   "Fuel",
   "Component",
   "Supply",
+  "Intel",
   "Hazardous",
   "Special",
 ] as const;
