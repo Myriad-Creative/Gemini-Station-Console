@@ -34,7 +34,7 @@ import type {
 import type { ZoneDraft, ZoneMobSpawnDraft, ZoneStagePlacementDraft, ZonesManagerWorkspace } from "@lib/zones-manager/types";
 import { createBlankZone, createBlankZoneMobSpawn, createBlankZoneStagePlacement, importZonesManagerWorkspace } from "@lib/zones-manager/utils";
 
-type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "barriers" | "labels" | "difficulty";
+type ToggleKey = "regions" | "environment" | "routes" | "zones" | "pois" | "stages" | "mobs" | "beacons" | "barriers" | "labels" | "difficulty";
 type Viewport = {
   width: number;
   height: number;
@@ -401,6 +401,7 @@ const DEFAULT_TOGGLES: Record<ToggleKey, boolean> = {
   pois: true,
   stages: true,
   mobs: true,
+  beacons: true,
   barriers: true,
   labels: true,
   difficulty: false,
@@ -4054,6 +4055,7 @@ export default function SystemMapViewer() {
       const zone = filteredZones[zoneIndex];
       for (let mobIndex = zone.mobs.length - 1; mobIndex >= 0; mobIndex -= 1) {
         const mob = zone.mobs[mobIndex];
+        if (!mobLayerVisible(mob)) continue;
         const spawnAreaHit = mob.spawnArea.shape.toLowerCase() === "polygon" && pointInPolygon(world, mob.spawnArea.worldPoints);
         if (spawnAreaHit || distance(world, mob.world) <= screenHitRadius) {
           return { zone, mob };
@@ -5085,7 +5087,7 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
-    const targetMobSpawnAreaPoint = toggles.mobs ? findMobSpawnAreaPointAtWorld(world) : null;
+    const targetMobSpawnAreaPoint = toggles.mobs || toggles.beacons ? findMobSpawnAreaPointAtWorld(world) : null;
     if (targetMobSpawnAreaPoint) {
       event.currentTarget.setPointerCapture(event.pointerId);
       mobSpawnAreaPointDragRef.current = {
@@ -5254,7 +5256,7 @@ export default function SystemMapViewer() {
       clearHover();
       return;
     }
-    const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
+    const targetMobSpawn = toggles.mobs || toggles.beacons ? findMobSpawnAtWorld(world) : null;
     if (targetMobSpawn) {
       event.currentTarget.setPointerCapture(event.pointerId);
       mobDragRef.current = {
@@ -5435,7 +5437,7 @@ export default function SystemMapViewer() {
       y: event.clientY - rect.top,
     };
     const world = screenToWorld(screen);
-    const targetMobSpawn = toggles.mobs ? findMobSpawnAtWorld(world) : null;
+    const targetMobSpawn = toggles.mobs || toggles.beacons ? findMobSpawnAtWorld(world) : null;
     const targetStagePlacement = toggles.stages ? findStagePlacementAtWorld(world) : null;
     const targetSalvageDebris = toggles.barriers ? findSalvageDebrisAtWorld(world) : null;
     const targetMineableAsteroid = toggles.barriers ? findMineableAsteroidAtWorld(world) : null;
@@ -5662,11 +5664,11 @@ export default function SystemMapViewer() {
       };
     }
 
-    if (toggles.mobs) {
+    if (toggles.mobs || toggles.beacons) {
       for (const zone of mapZones) {
         if (!zoneMatches(zone, normalizedQuery)) continue;
         for (const mob of zone.mobs) {
-          if (!mobMatches(mob, normalizedQuery)) continue;
+          if (!mobLayerVisible(mob) || !mobMatches(mob, normalizedQuery)) continue;
           const spawnAreaHit = mob.spawnArea.shape.toLowerCase() === "polygon" && pointInPolygon(world, mob.spawnArea.worldPoints);
           if (spawnAreaHit || distance(world, mob.world) <= screenHitRadius) {
             return {
@@ -6250,6 +6252,17 @@ export default function SystemMapViewer() {
       ...current,
       [key]: !current[key],
     }));
+  }
+
+  function hideAllLayers() {
+    setToggles(
+      Object.fromEntries((Object.keys(DEFAULT_TOGGLES) as ToggleKey[]).map((key) => [key, false])) as Record<ToggleKey, boolean>,
+    );
+    setStatus({ tone: "neutral", message: "All map filter layers are hidden." });
+  }
+
+  function mobLayerVisible(mob: Pick<SystemMapMobSpawn | SystemMapSceneMobSpawn, "navigationBeacon">) {
+    return mob.navigationBeacon ? toggles.beacons : toggles.mobs;
   }
 
   function openCreateZoneForm(world: SystemMapVec) {
@@ -8373,63 +8386,67 @@ export default function SystemMapViewer() {
                 )
               : null}
 
-            {toggles.mobs
+            {toggles.mobs || toggles.beacons
               ? filteredZones.flatMap((zone) =>
-                  zone.mobs.filter((mob) => mobMatches(mob, normalizedQuery)).flatMap((mob) => {
+                  zone.mobs.filter((mob) => mobMatches(mob, normalizedQuery) || mob.sceneSpawns.some((sceneMob) => mobMatches(sceneMob, normalizedQuery))).flatMap((mob) => {
                     const mobKey = mobIdentity(mob);
                     const mobColor = mob.draft ? "#34d399" : mob.modified ? "#facc15" : mob.missing ? "#ef4444" : mob.navigationBeacon ? "#38bdf8" : "#fb7185";
                     const isActiveMob = mobSpawnForm?.zoneId === zoneIdentity(zone) && mobSpawnForm.mobKey === mobKey;
                     const spawnAreaShape = mob.spawnArea.shape.toLowerCase();
-                    const items: JSX.Element[] = [
-                      <g key={`${zone.id}:${mob.mobId}:${mob.local.x}:${mob.local.y}:spawn`}>
-                        {spawnAreaShape === "polygon" && mob.spawnArea.worldPoints.length ? (
-                          <polygon
-                            points={mob.spawnArea.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-                            fill={mob.draft ? "rgba(52,211,153,0.06)" : mob.modified ? "rgba(250,204,21,0.06)" : "rgba(248,113,113,0.055)"}
-                            stroke={mob.draft ? "rgba(52,211,153,0.45)" : mob.modified ? "rgba(250,204,21,0.5)" : "rgba(248,113,113,0.45)"}
-                            strokeWidth={1.5 / camera.zoom}
-                          />
-                        ) : mob.radius > 0 ? (
-                          <circle
-                            cx={mob.world.x}
-                            cy={mob.world.y}
-                            r={mob.radius}
-                            fill={mob.draft ? "rgba(52,211,153,0.06)" : mob.modified ? "rgba(250,204,21,0.06)" : "rgba(248,113,113,0.055)"}
-                            stroke={mob.draft ? "rgba(52,211,153,0.45)" : mob.modified ? "rgba(250,204,21,0.5)" : "rgba(248,113,113,0.45)"}
-                            strokeWidth={1.5 / camera.zoom}
-                          />
-                        ) : null}
-                        {isActiveMob && spawnAreaShape === "polygon"
-                          ? mob.spawnArea.worldPoints.map((point, index) => {
-                              const pointKey = `${zoneIdentity(zone)}:${mobKey}:${index}`;
-                              return (
-                                <circle
-                                  key={pointKey}
-                                  cx={point.x}
-                                  cy={point.y}
-                                  r={(draggingMobSpawnAreaPoint === pointKey ? 8 : 6) / camera.zoom}
-                                  fill={mob.draft ? "#34d399" : mob.modified ? "#facc15" : "#fb7185"}
-                                  stroke="rgba(255,255,255,0.82)"
-                                  strokeWidth={(draggingMobSpawnAreaPoint === pointKey ? 2 : 1) / camera.zoom}
-                                />
-                              );
-                            })
-                          : null}
-                        {useMobSpriteMarkers ? (
-                          <MobSpriteMarker mob={mob} camera={camera} color={mobColor} basePx={MOB_SPRITE_MARKER_PX} active={draggingMobKey === mobKey} />
-                        ) : (
-                          <circle cx={mob.world.x} cy={mob.world.y} r={(draggingMobKey === mobKey ? 9 : 6) / camera.zoom} fill={mobColor} stroke="rgba(255,255,255,0.75)" strokeWidth={(draggingMobKey === mobKey ? 2 : 1) / camera.zoom} />
-                        )}
-                      </g>,
-                    ];
-                    for (const sceneMob of mob.sceneSpawns.filter((entry) => mobMatches(entry, normalizedQuery))) {
+                    const items: JSX.Element[] = [];
+                    if (mobLayerVisible(mob)) {
+                      items.push(
+                        <g key={`${zone.id}:${mob.mobId}:${mob.local.x}:${mob.local.y}:spawn`}>
+                          {spawnAreaShape === "polygon" && mob.spawnArea.worldPoints.length ? (
+                            <polygon
+                              points={mob.spawnArea.worldPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                              fill={mob.draft ? "rgba(52,211,153,0.06)" : mob.modified ? "rgba(250,204,21,0.06)" : "rgba(248,113,113,0.055)"}
+                              stroke={mob.draft ? "rgba(52,211,153,0.45)" : mob.modified ? "rgba(250,204,21,0.5)" : "rgba(248,113,113,0.45)"}
+                              strokeWidth={1.5 / camera.zoom}
+                            />
+                          ) : mob.radius > 0 ? (
+                            <circle
+                              cx={mob.world.x}
+                              cy={mob.world.y}
+                              r={mob.radius}
+                              fill={mob.draft ? "rgba(52,211,153,0.06)" : mob.modified ? "rgba(250,204,21,0.06)" : "rgba(248,113,113,0.055)"}
+                              stroke={mob.draft ? "rgba(52,211,153,0.45)" : mob.modified ? "rgba(250,204,21,0.5)" : "rgba(248,113,113,0.45)"}
+                              strokeWidth={1.5 / camera.zoom}
+                            />
+                          ) : null}
+                          {isActiveMob && spawnAreaShape === "polygon"
+                            ? mob.spawnArea.worldPoints.map((point, index) => {
+                                const pointKey = `${zoneIdentity(zone)}:${mobKey}:${index}`;
+                                return (
+                                  <circle
+                                    key={pointKey}
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={(draggingMobSpawnAreaPoint === pointKey ? 8 : 6) / camera.zoom}
+                                    fill={mob.draft ? "#34d399" : mob.modified ? "#facc15" : "#fb7185"}
+                                    stroke="rgba(255,255,255,0.82)"
+                                    strokeWidth={(draggingMobSpawnAreaPoint === pointKey ? 2 : 1) / camera.zoom}
+                                  />
+                                );
+                              })
+                            : null}
+                          {useMobSpriteMarkers ? (
+                            <MobSpriteMarker mob={mob} camera={camera} color={mobColor} basePx={MOB_SPRITE_MARKER_PX} active={draggingMobKey === mobKey} />
+                          ) : (
+                            <circle cx={mob.world.x} cy={mob.world.y} r={(draggingMobKey === mobKey ? 9 : 6) / camera.zoom} fill={mobColor} stroke="rgba(255,255,255,0.75)" strokeWidth={(draggingMobKey === mobKey ? 2 : 1) / camera.zoom} />
+                          )}
+                        </g>,
+                      );
+                    }
+                    for (const sceneMob of mob.sceneSpawns.filter((entry) => mobLayerVisible(entry) && mobMatches(entry, normalizedQuery))) {
+                      const sceneMobColor = sceneMob.missing ? "#ef4444" : sceneMob.navigationBeacon ? "#38bdf8" : "#f59e0b";
                       items.push(
                         useMobSpriteMarkers ? (
                           <MobSpriteMarker
                             key={`${zone.id}:${mob.mobId}:${sceneMob.nodeName}:${sceneMob.mobId}:${sceneMob.local.x}:${sceneMob.local.y}`}
                             mob={sceneMob}
                             camera={camera}
-                            color={sceneMob.missing ? "#ef4444" : "#f59e0b"}
+                            color={sceneMobColor}
                             basePx={SCENE_MOB_SPRITE_MARKER_PX}
                           />
                         ) : (
@@ -8438,7 +8455,7 @@ export default function SystemMapViewer() {
                             cx={sceneMob.world.x}
                             cy={sceneMob.world.y}
                             r={4 / camera.zoom}
-                            fill={sceneMob.missing ? "#ef4444" : "#f59e0b"}
+                            fill={sceneMobColor}
                             stroke="rgba(255,255,255,0.68)"
                             strokeWidth={1 / camera.zoom}
                           />
@@ -8695,6 +8712,13 @@ export default function SystemMapViewer() {
               {key}
             </button>
           ))}
+          <button
+            type="button"
+            className="rounded border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/10"
+            onClick={hideAllLayers}
+          >
+            Show None
+          </button>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded border border-white/10 bg-black/20 px-3 py-2">
