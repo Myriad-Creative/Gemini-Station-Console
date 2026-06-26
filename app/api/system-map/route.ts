@@ -459,11 +459,29 @@ function mobHasIntelBroker(mob: JsonRecord) {
   return boolValue(mob.is_intel_broker) || services.includes("intel") || services.includes("intel_broker") || services.includes("intelligence");
 }
 
+function mobBeaconId(mob: JsonRecord) {
+  const direct = stringValue(mob.beacon_id ?? mob.navigation_beacon_id ?? mob.nav_beacon_id, "").trim();
+  if (direct) return direct;
+
+  const beacon = mob.beacon;
+  if (typeof beacon === "string") return beacon.trim();
+  const beaconRecord = asRecord(beacon);
+  return stringValue(beaconRecord.id ?? beaconRecord.beacon_id ?? beaconRecord.navigation_beacon_id, "").trim();
+}
+
+function mobIsNavigationBeacon(id: string, mob: JsonRecord) {
+  const tags = stringArrayValue(mob.tags).map((tag) => tag.toLowerCase());
+  const scene = stringValue(mob.scene, "").toLowerCase();
+  const sprite = stringValue(mob.sprite, "").toLowerCase();
+  return !!mobBeaconId(mob) || tags.includes("navigation_beacon") || scene.includes("nav_beacon") || sprite.includes("nav_beacon") || id.startsWith("nav_beacon_") || id.endsWith("_nav_beacon");
+}
+
 function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
   return mobJsonEntries(mobsJson)
     .map((entry) => {
       const mob = asRecord(entry);
       const id = stringValue(mob.id).trim();
+      const beaconId = mobBeaconId(mob);
       return {
         id,
         displayName: stringValue(mob.display_name ?? mob.name, id),
@@ -472,6 +490,8 @@ function buildMobCatalogEntries(mobsJson: unknown): SystemMapMobCatalogEntry[] {
         canAttack: boolValue(mob.can_attack),
         cargoTransport: mobHasCargoTransport(mob),
         intelBroker: mobHasIntelBroker(mob),
+        navigationBeacon: mobIsNavigationBeacon(id, mob),
+        beaconId: beaconId || (mobIsNavigationBeacon(id, mob) ? id : ""),
         sprite: stringValue(mob.sprite, ""),
         spriteScale: nullableVecValue(mob.sprite_scale),
         scene: stringValue(mob.scene, ""),
@@ -906,6 +926,7 @@ function parseSceneContents(
   function flush() {
     if (!mobId) return;
     const mob = mobCatalog.get(mobId) ?? {};
+    const beaconId = mobBeaconId(mob);
     mobSpawns.push({
       nodeName,
       mobId,
@@ -918,6 +939,8 @@ function parseSceneContents(
       respawnDelay,
       routeId,
       faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
+      navigationBeacon: mobIsNavigationBeacon(mobId, mob),
+      beaconId: beaconId || (mobIsNavigationBeacon(mobId, mob) ? mobId : ""),
       sprite: stringValue(mob.sprite, ""),
       spriteScale: nullableVecValue(mob.sprite_scale),
       missing: !mobCatalog.has(mobId),
@@ -1089,6 +1112,7 @@ function buildMobSpawn(
   const spawnArea = asRecord(spawn.spawn_area);
   const spawnAreaPoints = vecArrayValue(spawnArea.points);
   const scene = stringValue(mob.scene, "");
+  const beaconId = stringValue(spawn.beacon_id ?? spawn.navigation_beacon_id ?? spawn.nav_beacon_id, "").trim() || mobBeaconId(mob);
   const sceneContents = scene ? parseSceneContents(gameRootPath, scene, world, mobCatalog, stagesJson, hazardBarrierProfilesJson) : { mobSpawns: [], barriers: [] };
 
   return {
@@ -1115,6 +1139,8 @@ function buildMobSpawn(
     itemLootTable: stringValue(spawn.item_loot_table ?? spawn.loot_table ?? spawn.item_table, ""),
     modLootTable: stringValue(spawn.mod_loot_table ?? spawn.mod_table, ""),
     faction: stringValue(mob.faction ?? asRecord(mob.meta).Faction, ""),
+    navigationBeacon: mobIsNavigationBeacon(mobId, mob),
+    beaconId: beaconId || (mobIsNavigationBeacon(mobId, mob) ? mobId : ""),
     sprite: stringValue(mob.sprite, ""),
     spriteScale: nullableVecValue(mob.sprite_scale),
     scene,

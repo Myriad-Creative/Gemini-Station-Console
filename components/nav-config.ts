@@ -59,6 +59,8 @@ const INVENTORY_SECTION_LINKS: NavLink[] = [
 
 const WORLD_SECTION_LINKS: NavLink[] = [
   { href: "/data", label: "Data Dashboard" },
+  { href: "/data/system-map", label: "System Map", newTab: true },
+  { href: "/data/beacons", label: "Beacons" },
   { href: "/data/map", label: "Map Data" },
   { href: "/data/zones", label: "Zones" },
   { href: "/data/generated-areas", label: "Generated Areas" },

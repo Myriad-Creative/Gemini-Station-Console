@@ -12,6 +12,7 @@ export type UploadedDataAvailability = {
   sortingProfiles: boolean;
   smelterProfiles: boolean;
   intelProfiles: boolean;
+  beacons: boolean;
   poi: boolean;
   regions: boolean;
   tradeRoutes: boolean;
@@ -62,6 +63,7 @@ export type UploadedDataFileKind =
   | "sortingProfiles"
   | "smelterProfiles"
   | "intelProfiles"
+  | "beacons"
   | "poi"
   | "regions"
   | "tradeRoutes"
@@ -90,6 +92,7 @@ export const DATA_FILE_PATHS: Record<UploadedDataFileKind, string> = {
   sortingProfiles: path.join("data", "database", "sorting", "sorting_profiles.json"),
   smelterProfiles: path.join("data", "database", "smelter", "smelter_profiles.json"),
   intelProfiles: path.join("data", "database", "intel", "intel_profiles.json"),
+  beacons: path.join("data", "database", "beacons", "beacons.json"),
   poi: path.join("data", "map", "poi.json"),
   regions: path.join("data", "map", "regions.json"),
   tradeRoutes: path.join("data", "routes", "trade_routes.json"),
@@ -116,6 +119,7 @@ function emptyAvailability(): UploadedDataAvailability {
     sortingProfiles: false,
     smelterProfiles: false,
     intelProfiles: false,
+    beacons: false,
     poi: false,
     regions: false,
     tradeRoutes: false,
@@ -158,6 +162,7 @@ function detectAvailability(root: string): UploadedDataAvailability {
     sortingProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.sortingProfiles)),
     smelterProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.smelterProfiles)),
     intelProfiles: fs.existsSync(path.join(root, DATA_FILE_PATHS.intelProfiles)),
+    beacons: fs.existsSync(path.join(root, DATA_FILE_PATHS.beacons)),
     poi: fs.existsSync(path.join(root, DATA_FILE_PATHS.poi)),
     regions: fs.existsSync(path.join(root, DATA_FILE_PATHS.regions)),
     tradeRoutes: fs.existsSync(path.join(root, DATA_FILE_PATHS.tradeRoutes)),

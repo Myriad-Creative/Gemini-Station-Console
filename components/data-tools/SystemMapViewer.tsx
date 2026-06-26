@@ -277,6 +277,7 @@ type StageDragState = {
 type MobSpawnForm = {
   mode: "create" | "edit";
   placementKind: "single" | "spawner";
+  beaconOnly?: boolean;
   zoneId: string;
   mobKey: string | null;
   mobId: string;
@@ -3193,6 +3194,8 @@ function createMobSpawnFromForm(form: MobSpawnForm, zone: SystemMapZone, catalog
     itemLootTable: form.itemLootTable.trim(),
     modLootTable: form.modLootTable.trim(),
     faction: entry?.faction || "",
+    navigationBeacon: entry?.navigationBeacon ?? existingMob?.navigationBeacon ?? false,
+    beaconId: entry?.beaconId ?? existingMob?.beaconId ?? "",
     sprite: entry?.sprite || "",
     spriteScale: entry?.spriteScale ?? null,
     scene: entry?.scene || "",
@@ -3588,7 +3591,7 @@ function zoneMatches(zone: SystemMapZone, query: string) {
     zone.sector.x,
     zone.sector.y,
     ...zone.stages.flatMap((stage) => [stage.stageId, stage.name, stage.shape]),
-    ...zone.mobs.flatMap((mob) => [mob.mobId, mob.displayName, mob.faction, mob.itemLootTable, mob.modLootTable]),
+    ...zone.mobs.flatMap((mob) => [mob.mobId, mob.displayName, mob.faction, mob.itemLootTable, mob.modLootTable, mob.beaconId, mob.navigationBeacon ? "navigation beacon nav scannable" : ""]),
   ]
     .join(" ")
     .toLowerCase()
@@ -3622,7 +3625,18 @@ function updateZonePois(pois: SystemMapPoi[], originalZoneId: string, zone: Syst
 
 function mobMatches(mob: SystemMapMobSpawn | SystemMapSceneMobSpawn, query: string) {
   if (!query) return true;
-  return [mob.mobId, mob.displayName, mob.faction, "itemLootTable" in mob ? mob.itemLootTable : "", "modLootTable" in mob ? mob.modLootTable : ""].join(" ").toLowerCase().includes(query);
+  return [
+    mob.mobId,
+    mob.displayName,
+    mob.faction,
+    "itemLootTable" in mob ? mob.itemLootTable : "",
+    "modLootTable" in mob ? mob.modLootTable : "",
+    "beaconId" in mob ? mob.beaconId : "",
+    "navigationBeacon" in mob && mob.navigationBeacon ? "navigation beacon nav scannable" : "",
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
 }
 
 function lootTableMatches(table: SystemMapLootTableOption, query: string) {
@@ -5659,10 +5673,11 @@ export default function SystemMapViewer() {
               x: screen.x,
               y: screen.y,
               title: mob.displayName || mob.mobId,
-              subtitle: `Zone spawn in ${zone.name}`,
+              subtitle: mob.navigationBeacon ? `Navigation beacon in ${zone.name}` : `Zone spawn in ${zone.name}`,
               icon: safeIconSrc(mob.sprite, mob.mobId, mob.displayName),
               lines: [
                 `Mob ID: ${mob.mobId}`,
+                ...(mob.navigationBeacon ? [`Beacon ID: ${mob.beaconId || mob.mobId}`] : []),
                 `Count: ${mob.count}`,
                 mob.spawnArea.shape.toLowerCase() === "polygon" ? `Spawn area: polygon (${mob.spawnArea.points.length} points)` : `Radius: ${formatNumber(mob.radius)}`,
                 `Level: ${mob.levelMin ?? "?"}-${mob.levelMax ?? "?"} (${mob.rank})`,
@@ -5897,6 +5912,7 @@ export default function SystemMapViewer() {
               `Missions beginning here: ${missionStartCount}`,
               `Stages: ${zone.stages.length}`,
               `Zone mob rows: ${zone.mobs.length}`,
+              `Navigation beacons: ${zone.mobs.filter((mob) => mob.navigationBeacon).length}`,
               `Scene mob markers: ${zone.mobs.reduce((sum, mob) => sum + mob.sceneSpawns.length, 0)}`,
               `Mineable fields: ${zoneMineableAsteroids.length}`,
               `Mineable asteroids: ${zoneMineableInstanceCount}`,
@@ -6268,7 +6284,7 @@ export default function SystemMapViewer() {
     setStatus(null);
   }
 
-  function openCreateMobSpawnForm(zone: SystemMapZone, world: SystemMapVec, placementKind: MobSpawnForm["placementKind"] = "spawner") {
+  function openCreateMobSpawnForm(zone: SystemMapZone, world: SystemMapVec, placementKind: MobSpawnForm["placementKind"] = "spawner", options: { beaconOnly?: boolean } = {}) {
     setGateForm(null);
     setRouteForm(null);
     setZoneForm(null);
@@ -6280,12 +6296,14 @@ export default function SystemMapViewer() {
       x: Math.round(world.x - zone.world.x),
       y: Math.round(world.y - zone.world.y),
     };
+    const defaultMob = options.beaconOnly ? payload?.mobCatalog.find((mob) => mob.navigationBeacon) : payload?.mobCatalog[0];
     setMobSpawnForm({
       mode: "create",
       placementKind,
+      beaconOnly: !!options.beaconOnly,
       zoneId: zoneIdentity(zone),
       mobKey: null,
-      mobId: payload?.mobCatalog[0]?.id ?? "",
+      mobId: defaultMob?.id ?? "",
       localX: numberInputValue(local.x),
       localY: numberInputValue(local.y),
       count: "1",
@@ -6299,11 +6317,11 @@ export default function SystemMapViewer() {
       itemLootTable: "",
       modLootTable: "",
     });
-    setMobSpawnSearch("");
+    setMobSpawnSearch(defaultMob ? defaultMob.displayName || defaultMob.id : "");
     setMobItemLootTableSearch("");
     setMobModLootTableSearch("");
     setContextMenu(null);
-    setStatus(null);
+    setStatus(options.beaconOnly && !defaultMob ? { tone: "error", message: "No navigation beacon mob entries were found in mobs.json." } : null);
   }
 
   function openCreateStagePlacementForm(zone: SystemMapZone, world: SystemMapVec) {
@@ -6363,6 +6381,7 @@ export default function SystemMapViewer() {
     setMobSpawnForm({
       mode: "edit",
       placementKind: mob.count <= 1 && mob.radius <= 0 && mob.respawnDelay <= 0 && mob.spawnArea.shape.toLowerCase() !== "polygon" ? "single" : "spawner",
+      beaconOnly: mob.navigationBeacon,
       zoneId: zoneIdentity(zone),
       mobKey: mobIdentity(mob),
       mobId: mob.mobId,
@@ -6981,7 +7000,7 @@ export default function SystemMapViewer() {
       return;
     }
     if (!mobSpawnForm.mobId.trim()) {
-      setStatus({ tone: "error", message: "Choose a mob before adding the spawn point." });
+      setStatus({ tone: "error", message: mobSpawnForm.beaconOnly ? "Choose a navigation beacon before adding the placement." : "Choose a mob before adding the spawn point." });
       return;
     }
     if (mobSpawnForm.levelMin.trim() && !Number.isFinite(Number(mobSpawnForm.levelMin))) {
@@ -7012,8 +7031,8 @@ export default function SystemMapViewer() {
     setStatus({
       tone: zone.active ? "success" : "neutral",
       message: zone.active
-        ? `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.`
-        : `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}", but "${zone.name || zone.id}" is inactive. The game will skip this placement until the zone is marked Active.`,
+        ? `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.beaconOnly ? "navigation beacon" : mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}". Use Save Changes To Build to write it into ${zoneSaveTargetName(zone)}.`
+        : `${mobSpawnForm.mode === "create" ? "Added" : "Updated"} ${mobSpawnForm.beaconOnly ? "navigation beacon" : mobSpawnForm.placementKind === "single" ? "single mob placement" : "mob spawner"} "${nextMob.displayName}", but "${zone.name || zone.id}" is inactive. The game will skip this placement until the zone is marked Active.`,
     });
   }
 
@@ -7674,6 +7693,7 @@ export default function SystemMapViewer() {
   const mineableAsteroidDraftCount = draftEnvironmentalElements.filter((element) => element.type === "mineable_asteroid").length;
   const salvageDebrisDraftCount = draftEnvironmentalElements.filter((element) => element.type === "salvage_debris").length;
   const zoneMobCount = mapZones.reduce((sum, zone) => sum + zone.mobs.length, 0);
+  const navigationBeaconCount = mapZones.reduce((sum, zone) => sum + zone.mobs.filter((mob) => mob.navigationBeacon).length, 0);
   const hasZoneChanges = draftZones.length > 0 || editedZoneIds.length > 0 || deletedZoneIds.length > 0;
   const hasRouteChanges = draftRoutes.length > 0 || editedRouteIds.length > 0;
   const hasGateChanges = editedGateIds.length > 0;
@@ -7689,17 +7709,27 @@ export default function SystemMapViewer() {
   }, [payload?.stageCatalog, stagePlacementSearch]);
   const filteredMobCatalog = useMemo(() => {
     const normalized = mobSpawnSearch.trim().toLowerCase();
-    const catalog = payload?.mobCatalog ?? [];
+    const catalog = (payload?.mobCatalog ?? []).filter((mob) => (mobSpawnForm?.beaconOnly ? mob.navigationBeacon : true));
     if (!normalized) return catalog.slice(0, 40);
     return catalog
       .filter((mob) =>
-        [mob.id, mob.displayName, mob.level, mob.faction, mob.scene, mob.cargoTransport ? "cargo transport bank" : "", mob.intelBroker ? "intel broker intelligence market" : ""]
+        [
+          mob.id,
+          mob.displayName,
+          mob.level,
+          mob.faction,
+          mob.scene,
+          mob.beaconId,
+          mob.cargoTransport ? "cargo transport bank" : "",
+          mob.intelBroker ? "intel broker intelligence market" : "",
+          mob.navigationBeacon ? "navigation beacon nav scannable" : "",
+        ]
           .join(" ")
           .toLowerCase()
           .includes(normalized),
       )
       .slice(0, 40);
-  }, [mobSpawnSearch, payload?.mobCatalog]);
+  }, [mobSpawnForm?.beaconOnly, mobSpawnSearch, payload?.mobCatalog]);
   const filteredMobItemLootTables = useMemo(() => {
     const normalized = mobItemLootTableSearch.trim().toLowerCase();
     return lootTables.items.filter((table) => lootTableMatches(table, normalized)).slice(0, 30);
@@ -8347,7 +8377,7 @@ export default function SystemMapViewer() {
               ? filteredZones.flatMap((zone) =>
                   zone.mobs.filter((mob) => mobMatches(mob, normalizedQuery)).flatMap((mob) => {
                     const mobKey = mobIdentity(mob);
-                    const mobColor = mob.draft ? "#34d399" : mob.modified ? "#facc15" : mob.missing ? "#ef4444" : "#fb7185";
+                    const mobColor = mob.draft ? "#34d399" : mob.modified ? "#facc15" : mob.missing ? "#ef4444" : mob.navigationBeacon ? "#38bdf8" : "#fb7185";
                     const isActiveMob = mobSpawnForm?.zoneId === zoneIdentity(zone) && mobSpawnForm.mobKey === mobKey;
                     const spawnAreaShape = mob.spawnArea.shape.toLowerCase();
                     const items: JSX.Element[] = [
@@ -8616,7 +8646,7 @@ export default function SystemMapViewer() {
             <div className="text-2xl font-semibold text-white">System Map</div>
             <div className="mt-1 text-sm text-white/55">
               {payload
-                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${salvageDebrisCount} debris fields${salvageDebrisDraftCount ? ` (${salvageDebrisDraftCount} draft${salvageDebrisDraftCount === 1 ? "" : "s"})` : ""} · ${salvageDebrisInstanceCount} salvage nodes · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers · player spawn ${mapPlayerSpawn ? mapPlayerSpawn.activeSpawnId : "missing"}${mapPlayerSpawn?.modified ? " (edited)" : ""}`
+                ? `${mapZones.length} zones${draftZones.length ? ` (${draftZones.length} draft${draftZones.length === 1 ? "" : "s"})` : ""} · ${mapRoutes.length} trade routes${draftRoutes.length ? ` (${draftRoutes.length} draft${draftRoutes.length === 1 ? "" : "s"})` : ""} · ${mapGates.length} belt gates · ${environmentalBarrierCount} barriers${environmentalBarrierDraftCount ? ` (${environmentalBarrierDraftCount} draft${environmentalBarrierDraftCount === 1 ? "" : "s"})` : ""} · ${environmentalRegionCount} regions${environmentalRegionDraftCount ? ` (${environmentalRegionDraftCount} draft${environmentalRegionDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidCount} mineable asteroid fields${mineableAsteroidDraftCount ? ` (${mineableAsteroidDraftCount} draft${mineableAsteroidDraftCount === 1 ? "" : "s"})` : ""} · ${mineableAsteroidInstanceCount} spawned asteroids · ${salvageDebrisCount} debris fields${salvageDebrisDraftCount ? ` (${salvageDebrisDraftCount} draft${salvageDebrisDraftCount === 1 ? "" : "s"})` : ""} · ${salvageDebrisInstanceCount} salvage nodes · ${payload.pois.length} POIs · ${zoneMobCount} zone mob rows · ${navigationBeaconCount} beacons · ${sceneMobCount} scene markers · ${sceneBarrierCount} scene barriers · player spawn ${mapPlayerSpawn ? mapPlayerSpawn.activeSpawnId : "missing"}${mapPlayerSpawn?.modified ? " (edited)" : ""}`
                 : "Loading local game source..."}
             </div>
           </div>
@@ -8651,7 +8681,7 @@ export default function SystemMapViewer() {
         </div>
 
         <div className="mt-4">
-          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, authored barriers, regions, mineable asteroids, stages, or mobs..." />
+          <input className="input bg-black/30" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search zones, POIs, routes, gates, authored barriers, regions, mineable asteroids, stages, beacons, or mobs..." />
         </div>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
@@ -8792,6 +8822,18 @@ export default function SystemMapViewer() {
               }}
             >
               Place Single Mob Here
+            </button>
+          ) : null}
+          {contextMenu.zoneId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-cyan-100 hover:bg-cyan-300/10"
+              onClick={() => {
+                const zone = mapZones.find((entry) => zoneIdentity(entry) === contextMenu.zoneId);
+                if (zone) openCreateMobSpawnForm(zone, contextMenu.world, "single", { beaconOnly: true });
+              }}
+            >
+              Place Navigation Beacon Here
             </button>
           ) : null}
           {contextMenu.zoneId ? (
@@ -10183,8 +10225,12 @@ export default function SystemMapViewer() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xl font-semibold text-white">
-                  {mobSpawnForm.mode === "create"
-                    ? mobSpawnForm.placementKind === "single"
+                  {mobSpawnForm.beaconOnly
+                    ? mobSpawnForm.mode === "create"
+                      ? "Place Navigation Beacon"
+                      : "Edit Navigation Beacon Placement"
+                    : mobSpawnForm.mode === "create"
+                      ? mobSpawnForm.placementKind === "single"
                       ? "Place Single Mob"
                       : "Add Mob Spawner"
                     : mobSpawnForm.placementKind === "single"
@@ -10192,7 +10238,9 @@ export default function SystemMapViewer() {
                       : "Edit Mob Spawner"}
                 </div>
                 <div className="mt-1 text-sm text-white/55">
-                  {mobSpawnForm.placementKind === "single"
+                  {mobSpawnForm.beaconOnly
+                    ? "Choose one navigation beacon mob for this zone location. Scan lore and quest hooks are managed on Data > Beacons."
+                    : mobSpawnForm.placementKind === "single"
                     ? "Choose one authored mob for this exact location. This saves as a zone mob row with count 1, radius 0, and respawn 0."
                     : "Choose the mob, spawn count, local position, level band, loot tables, rank, spawn shape, and respawn cooldown."}
                 </div>
@@ -10215,14 +10263,18 @@ export default function SystemMapViewer() {
                   This zone is inactive. The game skips inactive zones, so saved mob spawns here will not appear until the zone is marked Active.
                 </div>
               ) : null}
-              {mobSpawnForm.placementKind === "single" ? (
+              {mobSpawnForm.beaconOnly ? (
+                <div className="mb-3 rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100">
+                  Beacon placement writes a single zone mob row. The selected mob must resolve to a beacon_id in mobs.json for the scanner to use beacons.json lore.
+                </div>
+              ) : mobSpawnForm.placementKind === "single" ? (
                 <div className="mb-3 rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100">
                   Single mob placement uses the same Zones.json mobs array as spawners, but it is anchored at this point and will not respawn unless you raise Respawn Cooldown above 0.
                 </div>
               ) : null}
               <label className="text-sm text-white/65">
-                Mob
-                <input className="input mt-1" value={mobSpawnSearch} placeholder="Search mobs by name, ID, faction, or scene..." onChange={(event) => setMobSpawnSearch(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+                {mobSpawnForm.beaconOnly ? "Navigation Beacon" : "Mob"}
+                <input className="input mt-1" value={mobSpawnSearch} placeholder={mobSpawnForm.beaconOnly ? "Search beacons by name, ID, faction, or scene..." : "Search mobs by name, ID, faction, or scene..."} onChange={(event) => setMobSpawnSearch(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
               </label>
               <div className="mt-3 max-h-64 space-y-2 overflow-auto rounded-xl border border-white/10 bg-black/20 p-2">
                 {filteredMobCatalog.map((mob) => {
@@ -10246,13 +10298,14 @@ export default function SystemMapViewer() {
                         <span className="block truncate text-xs text-white/40">{mob.faction || "No faction"} {mob.scene ? `· ${mob.scene}` : ""}</span>
                         {mob.cargoTransport ? <span className="mt-1 inline-flex rounded bg-emerald-300/10 px-2 py-0.5 text-xs text-emerald-100">Cargo Transport</span> : null}
                         {mob.intelBroker ? <span className="mt-1 inline-flex rounded bg-cyan-300/10 px-2 py-0.5 text-xs text-cyan-100">Intel Broker</span> : null}
+                        {mob.navigationBeacon ? <span className="mt-1 inline-flex rounded bg-sky-300/10 px-2 py-0.5 text-xs text-sky-100">Navigation Beacon{mob.beaconId ? ` · ${mob.beaconId}` : ""}</span> : null}
                         {mob.spriteScale ? <span className="block truncate text-xs text-cyan-100/70">Sprite scale {formatScale(mob.spriteScale)}</span> : null}
                       </span>
                       {selected ? <span className="rounded bg-cyan-300/15 px-2 py-1 text-xs text-cyan-100">Selected</span> : null}
                     </button>
                   );
                 })}
-                {!filteredMobCatalog.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">No mobs match the current search.</div> : null}
+                {!filteredMobCatalog.length ? <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">{mobSpawnForm.beaconOnly ? "No navigation beacons match the current search." : "No mobs match the current search."}</div> : null}
               </div>
             </div>
 
@@ -10422,7 +10475,7 @@ export default function SystemMapViewer() {
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               {mobSpawnForm.mode === "edit" && mobSpawnForm.mobKey ? (
                 <button type="button" className="rounded border border-red-300/25 bg-red-400/10 px-4 py-2 text-sm text-red-100 hover:bg-red-400/15" onClick={() => removeMobSpawn(mobSpawnForm.zoneId, mobSpawnForm.mobKey!)}>
-                  Delete Mob Spawn
+                  {mobSpawnForm.beaconOnly ? "Delete Beacon Placement" : "Delete Mob Spawn"}
                 </button>
               ) : null}
               <button
@@ -10436,7 +10489,11 @@ export default function SystemMapViewer() {
                 Done
               </button>
               <button type="button" className="btn-save-build" onClick={saveMobSpawnForm}>
-                {mobSpawnForm.mode === "create"
+                {mobSpawnForm.beaconOnly
+                  ? mobSpawnForm.mode === "create"
+                    ? "Place Beacon In Zone"
+                    : "Apply Beacon Changes"
+                  : mobSpawnForm.mode === "create"
                   ? mobSpawnForm.placementKind === "single"
                     ? "Place Mob In Zone"
                     : "Add Spawner To Zone"

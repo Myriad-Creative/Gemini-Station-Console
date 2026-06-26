@@ -37,9 +37,15 @@ const DATA_SECTIONS = [
   {
     href: "/data/system-map",
     title: "System Map",
-    description: "Open a full-screen visual map of sectors, zones, stage placements, POIs, routes, the Sun, asteroid belt gates, and known mob spawns.",
-    keys: ["zones", "stages", "mobs", "poi", "routes", "asteroidBeltGates"],
+    description: "Open a full-screen visual map of sectors, zones, stage placements, POIs, routes, navigation beacons, the Sun, asteroid belt gates, and known mob spawns.",
+    keys: ["zones", "stages", "mobs", "beacons", "poi", "routes", "asteroidBeltGates"],
     newTab: true,
+  },
+  {
+    href: "/data/beacons",
+    title: "Beacons",
+    description: "Manage navigation beacon scan lore, quest hooks, XP, tags, and scan tier text from beacons.json.",
+    keys: ["beacons", "mobs", "zones"],
   },
   {
     href: "/data/map",

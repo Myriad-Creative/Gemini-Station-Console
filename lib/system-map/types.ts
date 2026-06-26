@@ -74,6 +74,8 @@ export type SystemMapSceneMobSpawn = {
   respawnDelay: number | null;
   routeId: string;
   faction: string;
+  navigationBeacon: boolean;
+  beaconId: string;
   sprite: string;
   spriteScale: SystemMapVec | null;
   missing: boolean;
@@ -247,6 +249,8 @@ export type SystemMapMobSpawn = {
   itemLootTable: string;
   modLootTable: string;
   faction: string;
+  navigationBeacon: boolean;
+  beaconId: string;
   sprite: string;
   spriteScale: SystemMapVec | null;
   scene: string;
@@ -263,6 +267,8 @@ export type SystemMapMobCatalogEntry = {
   canAttack: boolean;
   cargoTransport: boolean;
   intelBroker: boolean;
+  navigationBeacon: boolean;
+  beaconId: string;
   sprite: string;
   spriteScale: SystemMapVec | null;
   scene: string;

@@ -13,6 +13,7 @@ const SUPPORTED_KINDS = new Set<UploadedDataFileKind>([
   "sortingProfiles",
   "smelterProfiles",
   "intelProfiles",
+  "beacons",
   "poi",
   "regions",
   "tradeRoutes",
